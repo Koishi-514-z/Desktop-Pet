@@ -2,7 +2,7 @@
 
 一个基于 Live2D 的 AI 桌宠。角色由大语言模型驱动对话，回复会被实时合成语音朗读出来，并根据情绪切换表情与动作，同时用口型同步让模型"开口说话"。
 
-> 当前为 Web 应用形态（Vue 3 + Vite），在浏览器中运行。
+> 前端基于 Vue 3 + Vite，通过 [Tauri 2](https://tauri.app/) 以桌面应用形式运行；开发调试时也可以直接在浏览器中打开。
 
 ## 功能
 
@@ -13,23 +13,53 @@
 - **情绪表达**：模型在回复中输出情绪标签（如 `<happy>`），前端据此随机播放带有对应标签的表情或动作。
 - **口型同步**：实时分析播放音频的音量，驱动模型嘴部开合。
 - **人物设定**：可自定义角色的名字、性格、背景故事与说话风格，并在多个人设之间切换。
+- **桌面窗口**：无边框、透明背景、始终置顶，不占用任务栏；透明区域鼠标穿透，不影响操作其他应用；通过托盘图标控制。
 - **可配置**：所有设置均可在应用内的设置面板修改，并持久化到 `localStorage`。
 
 ## 快速开始
 
-环境要求：Node.js `^20.19.0` 或 `>=22.12.0`，推荐使用 [pnpm](https://pnpm.io/)。
+环境要求：
+
+- Node.js `^20.19.0` 或 `>=22.12.0`，推荐使用 [pnpm](https://pnpm.io/)
+- 以桌面应用运行时还需要 [Rust](https://www.rust-lang.org/tools/install)（`1.90` 及以上）以及 Tauri 的[系统依赖](https://tauri.app/start/prerequisites/)（Windows 上为 WebView2，Windows 10/11 通常已自带）
 
 ```sh
 pnpm install
+```
+
+**以桌面应用运行**（会自动启动 Vite 开发服务器，首次运行需要编译 Rust 依赖，耗时较长）：
+
+```sh
+pnpm exec tauri dev
+```
+
+**在浏览器中运行**（仅前端，不含鼠标穿透、托盘等桌面功能）：
+
+```sh
 pnpm dev
 ```
 
-启动后在浏览器中打开终端输出的地址，然后：
+启动后：
 
 1. 点击右下角的 ⚙️ 打开设置面板，在 **Provider** 页填写 LLM 与 TTS 服务的 API Key，并选择要使用的模型（及声线）。
 2. 点击 💬 打开对话面板，开始聊天。
 
 > 页面通过 CDN 加载 Live2D Cubism Core（见 [index.html](index.html)），首次运行需要能访问 `cubism.live2d.com`。
+
+## 桌面窗口
+
+桌宠窗口铺满当前显示器的工作区（不遮挡任务栏），背景完全透明，看起来就像模型直接站在桌面上。
+
+- **鼠标穿透**：鼠标位于透明区域时，点击会落到下方的其他应用上；只有位于模型的不透明像素或设置 / 对话面板上时，才由桌宠响应。按住鼠标拖拽期间不会切换为穿透。
+- **全局视线跟随**：模型的视线会跟随整个桌面上的鼠标，而不仅限于窗口内。
+- **托盘图标**：窗口不在任务栏显示，通过托盘图标操作。左键单击显示 / 隐藏桌宠，右键菜单提供：
+  - 显示 / 隐藏
+  - 始终置顶（开关）
+  - 重置窗口位置
+  - 退出
+- 打包后的版本会屏蔽 WebView 自带的右键菜单，开发模式下保留以便调试。
+
+> 实现方式：开启穿透后网页收不到鼠标事件，因此前端（[desktop.ts](src/composables/desktop.ts)）会定时轮询全局鼠标坐标，结合 `elementFromPoint` 与 Live2D 画布的像素采样判断当前位置是否需要响应，再调用 `setIgnoreCursorEvents` 切换穿透状态。需要参与这一判断的透明容器以 `data-passthrough` 属性标记。
 
 ## 支持的服务
 
@@ -84,6 +114,10 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 ## 项目结构
 
 ```
+src-tauri/                   # Tauri 桌面端
+├── src/lib.rs               # 窗口定位、托盘图标与菜单
+├── tauri.conf.json          # 窗口配置（无边框、透明、置顶等）
+└── capabilities/            # 前端可调用的窗口权限
 src/
 ├── components/
 │   ├── Stage.vue            # 串联对话、语音合成与播放队列
@@ -93,7 +127,8 @@ src/
 │   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景）
 ├── composables/
 │   ├── queues.ts            # 文本处理、语音合成、音频播放队列
-│   └── animation.ts         # 视线跟随
+│   ├── animation.ts         # 视线跟随
+│   └── desktop.ts           # 桌面窗口：鼠标穿透与全局鼠标坐标
 ├── stores/                  # Pinia 状态（chat / speech / audio / live2d / persona / providers / scene）
 ├── utils/                   # 网络请求、队列、数学工具等
 └── pages/HomePage.vue
@@ -103,8 +138,10 @@ src/
 
 | 命令 | 说明 |
 | --- | --- |
-| `pnpm dev` | 启动开发服务器 |
-| `pnpm build` | 类型检查并构建生产版本 |
+| `pnpm exec tauri dev` | 以桌面应用形式启动开发版本 |
+| `pnpm exec tauri build` | 构建桌面应用安装包 |
+| `pnpm dev` | 启动前端开发服务器（浏览器中运行） |
+| `pnpm build` | 类型检查并构建前端生产版本 |
 | `pnpm preview` | 预览构建产物 |
 | `pnpm type-check` | 使用 `vue-tsc` 进行类型检查 |
 | `pnpm lint` | 运行 oxlint 与 ESLint（自动修复） |
@@ -114,5 +151,7 @@ src/
 
 ## 注意事项
 
-- API Key 等设置仅保存在浏览器的 `localStorage` 中，并由浏览器直接请求各服务商接口。
+- API Key 等设置仅保存在本地（WebView / 浏览器的 `localStorage`）中，并由前端直接请求各服务商接口。桌面应用与浏览器中的设置互不相通。
+- 打包前需要将 [tauri.conf.json](src-tauri/tauri.conf.json) 中的 `identifier` 改为唯一的值（默认的 `com.tauri.dev` 无法用于打包）。修改后 WebView 的数据目录随之改变，之前保存的设置需要重新填写。
+- 目前窗口只覆盖一块显示器。
 - 仓库内置的 ATRI 模型及语音素材版权归原作者所有，仅供学习交流使用。

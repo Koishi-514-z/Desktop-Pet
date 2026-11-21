@@ -21,6 +21,7 @@ import { useLive2DEyeFocus } from '@/composables/animation'
 import { clamp, randInt } from '@/utils/math'
 import { useAudioStore } from '@/stores/audio'
 import { useSceneStore } from '@/stores/scene'
+import { isTauri, PASSTHROUGH_ATTR, setModelHitTester, useDesktopCursor } from '@/composables/desktop'
 
 type CubismModel = Cubism4InternalModel['coreModel']
 
@@ -55,6 +56,17 @@ const eyeFocus = useLive2DEyeFocus()
 
 // 实时记录鼠标在画布坐标系中的位置，供每帧的视线跟随逻辑使用
 const pointer = ref<{ x: number, y: number }>({ x: 0, y: 0 })
+
+// 桌面窗口中轮询得到的全局鼠标坐标：开启鼠标穿透后网页收不到 pointermove，
+// 用它驱动视线跟随，使模型能注视整个桌面上的鼠标
+const desktopCursor = useDesktopCursor()
+
+// 鼠标位置下的模型像素命中结果，在每帧渲染完成后采样，供鼠标穿透判断使用
+const HIT_ALPHA_THRESHOLD = 16
+const HIT_SAMPLE_INTERVAL = 30
+const hitPixel = new Uint8Array(4)
+let modelHit = false
+let lastHitSampleAt = 0
 
 /**
  * 根据画布尺寸与模型原始尺寸，计算让模型完整显示的基础缩放
@@ -249,6 +261,38 @@ function onTick() {
 }
 
 /**
+ * 渲染完成后，读取鼠标所在位置的画布像素，判断鼠标是否位于模型的不透明区域上。
+ * 必须在同一帧渲染之后立即读取，否则（未开启 preserveDrawingBuffer 时）缓冲区内容已失效
+ */
+function sampleModelHit() {
+  if (!app.value || !model.value || !desktopCursor.value) {
+    modelHit = false
+    return
+  }
+
+  const now = performance.now()
+  if (now - lastHitSampleAt < HIT_SAMPLE_INTERVAL) return
+  lastHitSampleAt = now
+
+  const { x, y } = desktopCursor.value
+  if (!model.value.getBounds().contains(x, y)) {
+    modelHit = false
+    return
+  }
+
+  const renderer = app.value.renderer as PIXI.Renderer
+  const gl = renderer.gl
+  const resolution = renderer.resolution
+  // WebGL 的像素坐标原点在左下角
+  const px = Math.floor(x * resolution)
+  const py = Math.floor(renderer.view.height - y * resolution - 1)
+
+  renderer.framebuffer.bind()
+  gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, hitPixel)
+  modelHit = hitPixel[3]! > HIT_ALPHA_THRESHOLD
+}
+
+/**
  * 监听窗口尺寸变化，重新设置渲染器尺寸并重新适配模型
  */
 function onResize() {
@@ -320,6 +364,7 @@ onMounted(async () => {
     autoDensity: true,
     resolution: sceneStore.resolution,
   })
+  app.value.view.setAttribute(PASSTHROUGH_ATTR, '')
   container.appendChild(app.value.view as HTMLCanvasElement)
 
   // 加载 Live2D 模型
@@ -341,6 +386,19 @@ onMounted(async () => {
 
   app.value.ticker.maxFPS = sceneStore.maxFPS
   app.value.ticker.add(onTick)
+
+  // 桌面窗口中：在渲染（LOW 优先级）之后采样模型像素，用于鼠标穿透判断
+  if (isTauri) {
+    app.value.ticker.add(sampleModelHit, undefined, PIXI.UPDATE_PRIORITY.UTILITY)
+    setModelHitTester(() => modelHit)
+  }
+})
+
+// 全局鼠标移动时，同步到视线跟随使用的 pointer
+watch(desktopCursor, (position) => {
+  if (!position) return
+  pointer.value = position
+  moveCursorTimestamp.value = Date.now()
 })
 
 // live2dStore 中的缩放/位置发生变化时（例如用户在设置面板中调整），同步到模型
@@ -383,6 +441,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   app.value?.view.removeEventListener?.('wheel', onWheel as EventListener)
   app.value?.ticker.remove(onTick)
+  app.value?.ticker.remove(sampleModelHit)
+  setModelHitTester(null)
 
   unloadModel()
   app.value?.destroy(true, { children: true, texture: true, baseTexture: true })
@@ -391,7 +451,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="live2d-container"></div>
+  <div ref="containerRef" class="live2d-container" data-passthrough></div>
 </template>
 
 <style scoped>

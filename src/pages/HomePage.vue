@@ -5,7 +5,7 @@ import Stage from '@/components/Stage.vue'
 </script>
 
 <template>
-  <main>
+  <main data-passthrough>
     <Stage class="stage" />
     <InteractiveArea />
     <SettingBox />

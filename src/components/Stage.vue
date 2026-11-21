@@ -108,7 +108,7 @@ audioPlayingQueue.onItemReceived(async ({ data }) => {
 </script>
 
 <template>
-  <main>
+  <main data-passthrough>
     <Live2dModel />
   </main>
 </template>
