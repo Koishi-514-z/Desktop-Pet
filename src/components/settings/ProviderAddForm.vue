@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProviderCategory, ProviderProtocol } from '@/stores/providers'
 import { computed, ref } from 'vue'
-import { protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
+import { protocolRequiresApiKey, protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
 
 const props = defineProps<{ category: ProviderCategory }>()
 const emit = defineEmits<{ back: [], created: [id: string] }>()
@@ -30,6 +30,7 @@ const protocolOptions = computed((): { value: ProviderProtocol, label: string }[
     { value: 'lmnt', label: 'LMNT' },
     { value: 'hume', label: 'Hume' },
     { value: 'deepgram', label: 'Deepgram' },
+    { value: 'index-tts', label: 'IndexTTS (本地部署)' },
   ]
   return props.category === 'tts' ? ttsOptions : llmOptions
 })
@@ -97,12 +98,12 @@ async function submit() {
 
     <div v-if="showBaseUrl" class="field">
       <label>Base URL</label>
-      <input v-model="form.baseUrl" type="text" placeholder="https://...">
+      <input v-model="form.baseUrl" type="text" :placeholder="form.protocol === 'index-tts' ? 'http://127.0.0.1:7861/v1' : 'https://...'">
     </div>
 
     <div class="field">
       <label>API Key</label>
-      <input v-model="form.apiKey" type="password" placeholder="sk-...">
+      <input v-model="form.apiKey" type="password" :placeholder="protocolRequiresApiKey(form.protocol) ? 'sk-...' : '可选'">
     </div>
 
     <div class="detail-actions">

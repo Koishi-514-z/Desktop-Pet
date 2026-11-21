@@ -109,7 +109,7 @@ export const useLive2dStore = defineStore('live2d', () => {
   // 口型同步：根据音频播放音量驱动嘴部张合
   // lipSyncGain 为音量放大倍数
   const useLipSync = useLocalStorage('settings/live2d/useLipSync', true)
-  const lipSyncGain = useLocalStorage('settings/live2d/lipSyncGain', 6)
+  const lipSyncGain = useLocalStorage('settings/live2d/lipSyncGain', 3)
 
   // 鼠标交互：拖拽移动模型 / 滚轮缩放模型 / 点击触发动作组
   // scrollScaleStep 为每次滚轮缩放的步长，minScale/maxScale 为缩放范围限制
@@ -238,7 +238,7 @@ export const useLive2dStore = defineStore('live2d', () => {
     focusLerpFactorIdle.value = 0.005
     focusLerpFactorMouse.value = 0.02
     useLipSync.value = true
-    lipSyncGain.value = 6
+    lipSyncGain.value = 3
     useDrag.value = true
     useScroll.value = true
     scrollScaleStep.value = 0.01
@@ -260,7 +260,7 @@ export const useLive2dStore = defineStore('live2d', () => {
   )
 
   onMounted(() => {
-    resetAllToDefault()
+    // resetAllToDefault()
   })
 
   return {

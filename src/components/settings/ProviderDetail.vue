@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProviderProtocol } from '@/stores/providers'
 import { computed, ref, watch } from 'vue'
-import { protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
+import { protocolRequiresApiKey, protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
 
 const props = defineProps<{ providerId: string }>()
 const emit = defineEmits<{ back: [] }>()
@@ -51,6 +51,7 @@ const protocolOptions = computed((): { value: ProviderProtocol, label: string }[
     { value: 'lmnt', label: 'LMNT' },
     { value: 'hume', label: 'Hume' },
     { value: 'deepgram', label: 'Deepgram' },
+    { value: 'index-tts', label: 'IndexTTS (本地部署)' },
   ]
   return provider.value?.category === 'tts' ? ttsOptions : llmOptions
 })
@@ -92,6 +93,57 @@ async function refresh() {
   }
   finally {
     refreshing.value = false
+  }
+}
+
+// 自定义音色上传（仅支持 uploadVoice 的 provider，如 index-tts）
+const voiceName = ref('')
+const voiceFile = ref<File | null>(null)
+const voiceFileInput = ref<HTMLInputElement | null>(null)
+const uploadingVoice = ref(false)
+const voiceMessage = ref('')
+
+const canUploadVoice = computed(() => voiceName.value.trim() !== '' && voiceFile.value !== null && !uploadingVoice.value)
+
+function onVoiceFileChange(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0] ?? null
+  voiceFile.value = file
+  // 默认以文件名作为音色名
+  if (file && voiceName.value.trim() === '') voiceName.value = file.name.replace(/\.[^.]+$/, '')
+}
+
+async function uploadVoice() {
+  if (!provider.value || !canUploadVoice.value) return
+
+  uploadingVoice.value = true
+  voiceMessage.value = ''
+  try {
+    const voice = await providersStore.uploadProviderVoice(provider.value.id, voiceFile.value!, voiceName.value.trim())
+    voiceMessage.value = `已上传音色「${voice.name}」`
+    voiceName.value = ''
+    voiceFile.value = null
+    if (voiceFileInput.value) voiceFileInput.value.value = ''
+  }
+  catch (error) {
+    console.error(error)
+    voiceMessage.value = `上传失败：${error instanceof Error ? error.message : String(error)}`
+  }
+  finally {
+    uploadingVoice.value = false
+  }
+}
+
+async function deleteSelectedVoice() {
+  if (!provider.value || !form.value.selectedVoiceId) return
+  if (!confirm(`确定删除音色「${form.value.selectedVoiceId}」吗？`)) return
+
+  try {
+    await providersStore.deleteProviderVoice(provider.value.id, form.value.selectedVoiceId)
+    voiceMessage.value = ''
+  }
+  catch (error) {
+    console.error(error)
+    voiceMessage.value = `删除失败：${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -141,7 +193,7 @@ function remove() {
     <div class="field">
       <label>API Key</label>
       <div class="field-row">
-        <input v-model="form.apiKey" :type="showApiKey ? 'text' : 'password'" placeholder="sk-...">
+        <input v-model="form.apiKey" :type="showApiKey ? 'text' : 'password'" :placeholder="protocolRequiresApiKey(form.protocol) ? 'sk-...' : '可选'">
         <button class="field-action" type="button" @click="showApiKey = !showApiKey">
           {{ showApiKey ? '隐藏' : '显示' }}
         </button>
@@ -159,11 +211,28 @@ function remove() {
 
     <div v-if="provider.voices && provider.voices.length > 0" class="field">
       <label>当前声线</label>
-      <select v-model="form.selectedVoiceId">
-        <option v-for="voice in provider.voices" :key="voice.id" :value="voice.id">
-          {{ voice.name }}
-        </option>
-      </select>
+      <div class="field-row">
+        <select v-model="form.selectedVoiceId">
+          <option v-for="voice in provider.voices" :key="voice.id" :value="voice.id">
+            {{ voice.name }}
+          </option>
+        </select>
+        <button v-if="provider.deleteVoice" class="field-action" type="button" @click="deleteSelectedVoice">
+          删除
+        </button>
+      </div>
+    </div>
+
+    <div v-if="provider.uploadVoice" class="field">
+      <label>上传音色参考音频</label>
+      <input v-model="voiceName" type="text" placeholder="音色名称">
+      <div class="field-row">
+        <input ref="voiceFileInput" type="file" accept="audio/*" @change="onVoiceFileChange">
+        <button class="field-action" type="button" :disabled="!canUploadVoice" @click="uploadVoice">
+          {{ uploadingVoice ? '上传中...' : '上传' }}
+        </button>
+      </div>
+      <label v-if="voiceMessage">{{ voiceMessage }}</label>
     </div>
 
     <div class="detail-actions">

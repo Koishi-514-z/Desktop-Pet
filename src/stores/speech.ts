@@ -26,6 +26,9 @@ function resolveSpeechModel(provider: Provider) {
       return createHume({ apiKey }).speech()
     case 'deepgram':
       return createDeepgram({ apiKey }).speech(modelId)
+    case 'index-tts':
+      // server 提供 OpenAI 兼容的 /audio/speech 接口；本地服务可不设 apiKey
+      return createOpenAI({ apiKey, baseURL: baseUrl, name: 'index-tts' }).speech(modelId || 'index-tts')
     default:
       throw new Error(`协议 ${protocol} 暂不支持语音合成`)
   }
@@ -56,6 +59,8 @@ export const useSpeechStore = defineStore('speech', () => {
         model,
         text,
         voice: provider.selectedVoiceId || undefined,
+        // index-tts 本地服务只输出 wav
+        ...(provider.protocol === 'index-tts' ? { outputFormat: 'wav' } : {}),
       })
 
       onFinishHooks.value.forEach(hook => hook(audio))

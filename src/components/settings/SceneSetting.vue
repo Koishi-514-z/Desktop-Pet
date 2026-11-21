@@ -1,7 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useSceneStore } from '@/stores/scene'
 
 const sceneStore = useSceneStore()
+
+// 以 0~100 的百分比形式编辑播放音量（存储值为 0~1）
+const volumePercent = computed({
+  get: () => Math.round(sceneStore.playbackVolume * 100),
+  set: (value: number) => {
+    sceneStore.playbackVolume = Math.min(Math.max(value, 0), 100) / 100
+  },
+})
 </script>
 
 <template>
@@ -30,6 +39,19 @@ const sceneStore = useSceneStore()
         </div>
       </div>
     </section>
+
+    <section class="scene-section">
+      <h3 class="section-title">
+        音频
+      </h3>
+      <div class="field">
+        <label>播放音量</label>
+        <div class="field-row volume-row">
+          <input v-model.number="volumePercent" type="range" min="0" max="100" step="1">
+          <span class="volume-value">{{ volumePercent }}%</span>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -55,5 +77,23 @@ const sceneStore = useSceneStore()
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.volume-row {
+  align-items: center;
+}
+
+.volume-row input[type='range'] {
+  padding: 0;
+  background: transparent;
+  border: none;
+  accent-color: #fff;
+}
+
+.volume-value {
+  min-width: 40px;
+  font-size: 12px;
+  color: rgb(255 255 255 / 80%);
+  text-align: right;
 }
 </style>

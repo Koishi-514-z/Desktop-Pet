@@ -1,16 +1,24 @@
 import type { GeneratedAudioFile } from 'ai'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { useSceneStore } from './scene'
 
 export const useAudioStore = defineStore('audio', () => {
+  const sceneStore = useSceneStore()
+
   // 当前正在播放的 <audio> 元素
   let currentAudio: HTMLAudioElement | null = null
   // 当前音频对应的 Blob URL，播放结束后需要释放
   let currentObjectUrl: string | null = null
+  // 结束当前这段播放（resolve 对应 play() 返回的 Promise）
+  let resolveCurrent: (() => void) | null = null
 
   // 用于实时分析播放音量的 AudioContext / AnalyserNode
   let audioContext: AudioContext | null = null
   let analyser: AnalyserNode | null = null
+  let mediaSource: MediaElementAudioSourceNode | null = null
+  // 控制播放音量的增益节点（位于 analyser 之后，因此口型同步不受音量影响）
+  let gainNode: GainNode | null = null
   let volumeFrameId: number | null = null
 
   // 是否正在播放音频
@@ -29,17 +37,36 @@ export const useAudioStore = defineStore('audio', () => {
   // 当前播放音频的实时音量（0~1，基于波形 RMS 计算）
   const volume = ref(0)
 
-  // 基于 AnalyserNode 实时采集 <audio> 元素的音量，写入 volume
+  // 将设置中的音量限制在 0~1 之间
+  function getPlaybackVolume() {
+    const value = Number(sceneStore.playbackVolume)
+    return Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 1
+  }
+
+  // 音量设置变化时实时作用于正在播放的音频
+  watch(() => sceneStore.playbackVolume, () => {
+    if (gainNode) gainNode.gain.value = getPlaybackVolume()
+  })
+
+  // 基于 AnalyserNode 实时采集 <audio> 元素的音量，写入 volume，
+  // 并经 GainNode 按设置的音量输出
   function startVolumeMeter(element: HTMLAudioElement) {
     audioContext ??= new AudioContext()
+    if (audioContext.state === 'suspended') audioContext.resume()
 
-    const source = audioContext.createMediaElementSource(element)
+    if (!gainNode) {
+      gainNode = audioContext.createGain()
+      gainNode.connect(audioContext.destination)
+    }
+    gainNode.gain.value = getPlaybackVolume()
+
+    mediaSource = audioContext.createMediaElementSource(element)
     analyser = audioContext.createAnalyser()
     analyser.fftSize = 512
 
-    // 接入 analyser 的同时仍需连到 destination，否则元素将无声
-    source.connect(analyser)
-    analyser.connect(audioContext.destination)
+    // source -> analyser -> gain -> destination
+    mediaSource.connect(analyser)
+    analyser.connect(gainNode)
 
     const data = new Uint8Array(analyser.fftSize)
     const tick = () => {
@@ -65,6 +92,9 @@ export const useAudioStore = defineStore('audio', () => {
       cancelAnimationFrame(volumeFrameId)
       volumeFrameId = null
     }
+    mediaSource?.disconnect()
+    mediaSource = null
+    analyser?.disconnect()
     analyser = null
     volume.value = 0
   }
@@ -113,34 +143,48 @@ export const useAudioStore = defineStore('audio', () => {
     const element = new Audio(url)
     currentAudio = element
 
-    element.addEventListener('ended', () => {
-      isPlaying.value = false
-      cleanup()
-      onEndHooks.value.forEach(hook => hook(audio))
-    })
+    // 返回的 Promise 在本段音频播放结束 / 出错 / 被 stop() 时才 resolve，
+    // 以便调用方 await 后再播放下一段
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = (callback?: () => void) => {
+        if (settled) return
+        settled = true
+        if (resolveCurrent === finish) resolveCurrent = null
+        isPlaying.value = false
+        cleanup()
+        callback?.()
+        resolve()
+      }
+      resolveCurrent = finish
 
-    element.addEventListener('error', () => {
-      isPlaying.value = false
-      cleanup()
-      onErrorHooks.value.forEach(hook => hook(new Error('音频播放失败')))
-    })
+      element.addEventListener('ended', () => {
+        finish(() => onEndHooks.value.forEach(hook => hook(audio)))
+      })
 
-    try {
+      element.addEventListener('error', () => {
+        finish(() => onErrorHooks.value.forEach(hook => hook(new Error('音频播放失败'))))
+      })
+
       isPlaying.value = true
-      await element.play()
+      // 在播放前接入音频图，确保从第一帧起就按设置的音量输出
       startVolumeMeter(element)
-    }
-    catch (error) {
-      isPlaying.value = false
-      cleanup()
-      onErrorHooks.value.forEach(hook => hook(error))
-    }
+      element.play()
+        .catch((error) => {
+          finish(() => onErrorHooks.value.forEach(hook => hook(error)))
+        })
+    })
   }
 
-  // 停止当前播放
+  // 停止当前播放，并让正在等待的 play() 立即返回
   function stop() {
-    isPlaying.value = false
-    cleanup()
+    if (resolveCurrent) {
+      resolveCurrent()
+    }
+    else {
+      isPlaying.value = false
+      cleanup()
+    }
   }
 
   // 添加播放结束/出错时的钩子函数

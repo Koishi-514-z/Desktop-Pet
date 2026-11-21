@@ -226,8 +226,10 @@
   gap: 6px;
 }
 
-.field-row input {
+.field-row input,
+.field-row select {
   flex: 1;
+  min-width: 0;
 }
 
 .field-action {

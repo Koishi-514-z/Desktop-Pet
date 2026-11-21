@@ -1,18 +1,25 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
-import { get } from '@/utils/web'
+import { del, get, post } from '@/utils/web'
 
 export type ProviderCategory = 'llm' | 'tts'
 
 // provider 所使用的 API 协议，决定 ChatStore / SpeechStore 中使用哪个 AI SDK 适配器与其通信
-export type ProviderProtocol = 'openai' | 'anthropic' | 'google' | 'elevenlabs' | 'lmnt' | 'hume' | 'deepgram'
+export type ProviderProtocol = 'openai' | 'anthropic' | 'google' | 'elevenlabs' | 'lmnt' | 'hume' | 'deepgram' | 'index-tts'
 
 // 不需要配置 baseUrl 的协议（对应的 AI SDK provider 使用固定的官方接口地址）
 const PROTOCOLS_WITHOUT_BASE_URL: ProviderProtocol[] = ['elevenlabs', 'lmnt', 'hume', 'deepgram']
 
 export function protocolRequiresBaseUrl(protocol: ProviderProtocol): boolean {
   return !PROTOCOLS_WITHOUT_BASE_URL.includes(protocol)
+}
+
+// apiKey 可选的协议（本地部署的服务通常不需要鉴权）
+const PROTOCOLS_WITH_OPTIONAL_API_KEY: ProviderProtocol[] = ['index-tts']
+
+export function protocolRequiresApiKey(protocol: ProviderProtocol): boolean {
+  return !PROTOCOLS_WITH_OPTIONAL_API_KEY.includes(protocol)
 }
 
 export interface ProviderModel {
@@ -45,7 +52,14 @@ export interface Provider {
   voices?: ProviderVoice[]
   selectedVoiceId?: string
   listVoices?: () => Promise<ProviderVoice[]>
+  // 支持自定义音色的 TTS provider 使用（如 index-tts）：上传音色参考音频 / 删除音色
+  uploadVoice?: (file: Blob, name: string, options?: { overwrite?: boolean }) => Promise<ProviderVoice>
+  deleteVoice?: (voiceId: string) => Promise<void>
 }
+
+// 由协议决定的 provider 方法，不会被持久化，需要在加载后重新挂载
+export type ProviderHandlers = Pick<Provider, 'validator' | 'listModels' | 'listVoices' | 'uploadVoice' | 'deleteVoice'>
+type ProviderHandlerKey = keyof ProviderHandlers
 
 // 缓存有效期：24 小时
 const PROVIDER_INFO_CACHE_TTL = 1000 * 60 * 60 * 24
@@ -135,8 +149,13 @@ const DEEPGRAM_TTS_MODELS: ProviderModel[] = [
   { id: 'aura-stella-en', name: 'Aura Stella (en)' },
 ]
 
+// index-tts 本地服务的请求头，未配置 apiKey 时不携带鉴权信息
+function indexTTSHeaders(provider: Provider): Record<string, string> {
+  return provider.apiKey ? { Authorization: `Bearer ${provider.apiKey}` } : {}
+}
+
 // 各协议对应的 handlers 实现，供预置 provider 与 addProvider 自动填充使用
-const PROTOCOL_HANDLERS: Record<ProviderProtocol, Pick<Provider, 'validator' | 'listModels' | 'listVoices'>> = {
+const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
   openai: {
     validator: async function (this: Provider) {
       try {
@@ -332,6 +351,63 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, Pick<Provider, 'validator' | '
       return []
     },
   },
+  // 本地部署的 IndexTTS
+  'index-tts': {
+    validator: async function (this: Provider) {
+      try {
+        await get(`${this.baseUrl.replace(/\/$/, '')}/models`, {
+          headers: indexTTSHeaders(this),
+        })
+        return true
+      }
+      catch (error) {
+        console.error(error)
+        return false
+      }
+    },
+    listModels: async function (this: Provider) {
+      try {
+        const { data } = await get<{ data: { id: string }[] }>(`${this.baseUrl.replace(/\/$/, '')}/models`, {
+          headers: indexTTSHeaders(this),
+        })
+        return data.map((model): ProviderModel => ({ id: model.id, name: model.id }))
+      }
+      catch (error) {
+        console.error(error)
+        return []
+      }
+    },
+    listVoices: async function (this: Provider) {
+      try {
+        const { voices } = await get<{ voices: { id: string, name: string }[] }>(`${this.baseUrl.replace(/\/$/, '')}/audio/voices`, {
+          headers: indexTTSHeaders(this),
+        })
+        return voices.map((voice): ProviderVoice => ({ id: voice.id, name: voice.name }))
+      }
+      catch (error) {
+        console.error(error)
+        return []
+      }
+    },
+    // 上传新的音色参考音频，服务端会将其转换为 wav 并保存为同名预设。失败时抛出异常，由调用方提示用户
+    uploadVoice: async function (this: Provider, file: Blob, name: string, options: { overwrite?: boolean } = {}) {
+      const body = new FormData()
+      body.append('name', name)
+      body.append('file', file, file instanceof File ? file.name : `${name}.wav`)
+      body.append('overwrite', String(options.overwrite ?? false))
+
+      const voice = await post<{ id: string, name: string }>(`${this.baseUrl.replace(/\/$/, '')}/audio/voices`, {
+        headers: indexTTSHeaders(this),
+        body,
+      })
+      return { id: voice.id, name: voice.name }
+    },
+    deleteVoice: async function (this: Provider, voiceId: string) {
+      await del(`${this.baseUrl.replace(/\/$/, '')}/audio/voices/${encodeURIComponent(voiceId)}`, {
+        headers: indexTTSHeaders(this),
+      })
+    },
+  },
 }
 
 const defaultProviders: Provider[] = [
@@ -392,8 +468,8 @@ const defaultProviders: Provider[] = [
     name: 'My API',
     category: 'llm',
     protocol: 'openai',
-    baseUrl: 'https://lingyunapi.com/v1',
-    apiKey: 'sk-HHTY39cvNx5p3FmhOdvPKSTsWHPEKpVKLGXQqiek7d1LvKhY',
+    baseUrl: 'https://easymagic.ai/v1',
+    apiKey: 'sk-nIhWQfVA3rfkfFJVDYtGYxOJol9iw4UTpuO4gQLlxfRY4pUT',
     description: '自定义 API。',
     isValid: false,
     models: [],
@@ -416,6 +492,21 @@ const defaultProviders: Provider[] = [
     selectedVoiceId: '',
     ...PROTOCOL_HANDLERS.openai,
   },
+  {
+    id: 'index-tts',
+    name: 'IndexTTS',
+    category: 'tts',
+    protocol: 'index-tts',
+    baseUrl: 'http://localhost:8000/v1',
+    apiKey: '',
+    description: '本地部署的 IndexTTS',
+    isValid: false,
+    models: [],
+    selectedModelId: '',
+    voices: [],
+    selectedVoiceId: '',
+    ...PROTOCOL_HANDLERS['index-tts'],
+  }
 ]
 
 export const useProvidersStore = defineStore('providers', () => {
@@ -433,17 +524,11 @@ export const useProvidersStore = defineStore('providers', () => {
   }
 
   // 新增 provider
-  async function addProvider(provider: Omit<Provider, 'validator' | 'listModels' | 'listVoices'>) {
+  async function addProvider(provider: Omit<Provider, ProviderHandlerKey>) {
     if (provider.id === '') provider.id = createProviderId()
-    const handlers = PROTOCOL_HANDLERS[provider.protocol]
-    providers.value.push({
-      ...provider,
-      validator: handlers.validator,
-      listModels: handlers.listModels,
-      ...(provider.category === 'tts' ? { 
-        listVoices: handlers.listVoices 
-      } : {}),
-    })
+    const newProvider = { ...provider } as Provider
+    setProviderHandlers(newProvider)
+    providers.value.push(newProvider)
     await loadProviderInfo(provider.id)
     return provider.id
   }
@@ -503,8 +588,8 @@ export const useProvidersStore = defineStore('providers', () => {
     const provider = getProviderById(id)
     if (!provider) return
 
-    // 未配置 apiKey，或协议需要 baseUrl 但未配置时，无需请求，直接标记为不可用
-    if (!provider.apiKey || (protocolRequiresBaseUrl(provider.protocol) && !provider.baseUrl)) {
+    // 协议需要 apiKey / baseUrl 但未配置时，无需请求，直接标记为不可用
+    if ((protocolRequiresApiKey(provider.protocol) && !provider.apiKey) || (protocolRequiresBaseUrl(provider.protocol) && !provider.baseUrl)) {
       provider.isValid = false
       provider.models = []
       if (provider.category === 'tts') provider.voices = []
@@ -547,6 +632,8 @@ export const useProvidersStore = defineStore('providers', () => {
 
     // 移除该 provider 的旧缓存，并清理其他 provider 的过期缓存
     cachedProviders.value = cachedProviders.value.filter((p) => p.id !== id && p.timestamp > Date.now() - PROVIDER_INFO_CACHE_TTL)
+    // 不缓存失败结果，避免本地服务暂未启动时被标记为不可用长达 24 小时
+    if (!provider.isValid) return
     cachedProviders.value.unshift({
       id,
       key,
@@ -562,6 +649,34 @@ export const useProvidersStore = defineStore('providers', () => {
     await loadProviderInfo(id, { force: true })
   }
 
+  // 重新拉取声线列表，并同步到缓存中
+  async function reloadVoices(provider: Provider) {
+    provider.voices = await provider.listVoices!()
+    applyVoiceDefaults(provider)
+
+    const cache = cachedProviders.value.find((p) => p.id === provider.id)
+    if (cache) cache.voices = provider.voices
+  }
+
+  // 为支持自定义音色的 TTS provider 上传新的音色参考音频，返回新建的声线
+  async function uploadProviderVoice(id: string, file: Blob, name: string, options?: { overwrite?: boolean }) {
+    const provider = getProviderById(id)
+    if (!provider?.uploadVoice) throw new Error('该 Provider 不支持上传音色')
+
+    const voice = await provider.uploadVoice(file, name, options)
+    await reloadVoices(provider)
+    return voice
+  }
+
+  // 删除支持自定义音色的 TTS provider 中的声线
+  async function deleteProviderVoice(id: string, voiceId: string) {
+    const provider = getProviderById(id)
+    if (!provider?.deleteVoice) throw new Error('该 Provider 不支持删除音色')
+
+    await provider.deleteVoice(voiceId)
+    await reloadVoices(provider)
+  }
+
   function isDefaultProvider(id: string) {
     return defaultProviders.some((p) => p.id === id)
   }
@@ -572,6 +687,9 @@ export const useProvidersStore = defineStore('providers', () => {
     provider.listModels = handlers.listModels
     if (provider.category === 'tts') {
       provider.listVoices = handlers.listVoices
+      // 不支持自定义音色的协议为 undefined，切换协议时会一并清除
+      provider.uploadVoice = handlers.uploadVoice
+      provider.deleteVoice = handlers.deleteVoice
     }
   }
 
@@ -579,7 +697,7 @@ export const useProvidersStore = defineStore('providers', () => {
     providers.value = defaultProviders
     cachedProviders.value = []
     currentLLMProviderId.value = 'my-api'
-    currentTTSProviderId.value = ''
+    currentTTSProviderId.value = 'index-tts'
   }
 
   onMounted(async () => {
@@ -601,6 +719,8 @@ export const useProvidersStore = defineStore('providers', () => {
     removeProvider,
     updateProvider,
     refreshProviderInfo,
+    uploadProviderVoice,
+    deleteProviderVoice,
     getLLMProviders,
     getTTSProviders,
     getCurrentLLMProvider,

@@ -66,7 +66,8 @@ speechGeneratingQueue.onItemReceived(async ({ data }) => {
   return { type: 'audio', audio }
 })
 
-speechGeneratingQueue.onItemGenerated(async ({ data }) => {
+speechGeneratingQueue.onItemGenerated(async ({ data, sequence, originalData }) => {
+  console.log('speechGeneratingQueue.onItemGenerated', sequence, originalData)
   audioPlayingQueue.enQueue(data)
 })
 
@@ -76,8 +77,6 @@ audioStore.onError(async (error: unknown) => {
 })
 
 audioPlayingQueue.onItemReceived(async ({ data }) => {
-  console.log('audioPlayingQueue.onItemReceived', data)
-
   switch (data.type) {
     case 'audio':
       await audioStore.play(data.audio)
