@@ -1,0 +1,126 @@
+.settings-toggle-button {
+  position: fixed;
+  right: 24px;
+  bottom: 84px;
+  z-index: 1000;
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  color: #fff;
+  cursor: pointer;
+  background: rgb(64 158 255 / 85%);
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.settings-toggle-button:hover {
+  background: rgb(64 158 255 / 100%);
+}
+
+.settings-panel {
+  position: fixed;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  width: 640px;
+  height: 720px;
+  overflow: hidden;
+  color: #fff;
+  background: rgb(30 30 34 / 70%);
+  border-radius: 12px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 24px rgb(0 0 0 / 40%);
+}
+
+.panel-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: move;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  background: rgb(0 0 0 / 20%);
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.close-button {
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+  color: rgb(255 255 255 / 70%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.close-button:hover {
+  color: #fff;
+}
+
+.settings-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-tabs {
+  display: flex;
+  flex: 0 0 100px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  overflow-y: auto;
+  background: rgb(0 0 0 / 15%);
+  border-right: 1px solid rgb(255 255 255 / 8%);
+}
+
+.settings-tab {
+  padding: 8px 10px;
+  font-size: 12px;
+  text-align: left;
+  color: rgb(255 255 255 / 80%);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  background: rgb(255 255 255 / 8%);
+}
+
+.settings-tab.active {
+  color: #fff;
+  background: rgb(255 255 255 / 16%);
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.settings-placeholder {
+  margin: 0;
+  font-size: 13px;
+  color: rgb(255 255 255 / 50%);
+}
+
+.settings-tabs::-webkit-scrollbar,
+.settings-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.settings-tabs::-webkit-scrollbar-thumb,
+.settings-content::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 15%);
+  border-radius: 2px;
+}

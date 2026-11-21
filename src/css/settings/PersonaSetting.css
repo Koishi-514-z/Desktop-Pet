@@ -1,0 +1,272 @@
+/* ===== 共用基础样式（与 Live2dSetting.css 保持一致）===== */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 12px;
+  color: rgb(255 255 255 / 60%);
+}
+
+.field input,
+.field select {
+  padding: 6px 8px;
+  font: inherit;
+  color: #fff;
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 6px;
+  outline: none;
+}
+
+.field input::placeholder {
+  color: rgb(255 255 255 / 35%);
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.back-button {
+  padding: 2px 6px;
+  font-size: 14px;
+  color: rgb(255 255 255 / 70%);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.back-button:hover {
+  color: #fff;
+}
+
+.detail-title {
+  flex: 1;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  font-size: 11px;
+  color: rgb(255 255 255 / 60%);
+  background: rgb(255 255 255 / 10%);
+  border-radius: 10px;
+}
+
+.status-badge.valid {
+  color: #67c23a;
+  background: rgb(103 194 58 / 15%);
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.action-button {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: rgb(255 255 255 / 85%);
+  cursor: pointer;
+  background: rgb(255 255 255 / 10%);
+  border: none;
+  border-radius: 6px;
+}
+
+.action-button:hover {
+  background: rgb(255 255 255 / 18%);
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.action-button.active {
+  color: #fff;
+  background: rgb(64 158 255 / 70%);
+}
+
+.action-button.danger:hover {
+  background: rgb(255 90 90 / 25%);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.card-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-description {
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: rgb(255 255 255 / 50%);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.card-action {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: rgb(255 255 255 / 80%);
+  cursor: pointer;
+  background: rgb(255 255 255 / 10%);
+  border: none;
+  border-radius: 6px;
+}
+
+.card-action:hover {
+  background: rgb(255 255 255 / 18%);
+}
+
+.card-action.active {
+  color: #fff;
+  background: rgb(64 158 255 / 70%);
+}
+
+.card-remove {
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: rgb(255 255 255 / 50%);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.card-remove:hover {
+  color: #ff8080;
+}
+
+.add-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ===== 人设专属样式 ===== */
+
+.persona-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.persona-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.persona-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.persona-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  cursor: pointer;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 8px;
+}
+
+.persona-card:hover {
+  background: rgb(255 255 255 / 10%);
+}
+
+.persona-card.current {
+  border-color: rgb(64 158 255 / 60%);
+}
+
+.persona-card .card-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.add-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgb(255 255 255 / 50%);
+  background: transparent;
+  border: 1px dashed rgb(255 255 255 / 15%);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.add-card:hover {
+  color: rgb(255 255 255 / 80%);
+  border-color: rgb(255 255 255 / 30%);
+}
+
+.field textarea {
+  padding: 6px 8px;
+  font: inherit;
+  color: #fff;
+  resize: vertical;
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 6px;
+  outline: none;
+}
+
+.field textarea::placeholder {
+  color: rgb(255 255 255 / 35%);
+}
+
+.prompt-preview {
+  margin: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgb(255 255 255 / 55%);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgb(0 0 0 / 20%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
