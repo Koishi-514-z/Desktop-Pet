@@ -469,7 +469,7 @@ const defaultProviders: Provider[] = [
     category: 'llm',
     protocol: 'openai',
     baseUrl: 'https://easymagic.ai/v1',
-    apiKey: 'sk-nIhWQfVA3rfkfFJVDYtGYxOJol9iw4UTpuO4gQLlxfRY4pUT',
+    apiKey: '',
     description: '自定义 API。',
     isValid: false,
     models: [],
