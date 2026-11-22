@@ -23,3 +23,10 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.12.7", features = ["tray-icon"] }
 tauri-plugin-log = "2"
+# 划词：全局快捷键、读写剪贴板、模拟按键复制选中的文字
+tauri-plugin-global-shortcut = "2"
+arboard = "3"
+enigo = "0.6"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse"] }

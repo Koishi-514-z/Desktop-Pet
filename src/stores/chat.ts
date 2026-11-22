@@ -1,5 +1,5 @@
 import type { LanguageModel, ModelMessage } from 'ai'
-import type { AgentEvent, AgentResult } from '@/agent'
+import type { AgentEvent, AgentResult, DirectToolCall, ToolDisplay } from '@/agent'
 import type { Provider } from '@/stores/providers'
 import type { DueReminder } from '@/stores/reminders'
 import { createAnthropic } from '@ai-sdk/anthropic'
@@ -10,7 +10,8 @@ import { streamText } from 'ai'
 import { defineStore } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { buildAgentContextPrompt, buildEventMessage, runAgent } from '@/agent'
-import { formatDateTime } from '@/agent/utils'
+import { attachQuote, MAX_TEXT_LENGTH } from '@/agent/skills/selection'
+import { formatDateTime, truncate } from '@/agent/utils'
 import { EMOTION_TAG_REGEX_GLOBAL } from '@/composables/queues'
 import { useAgentStore } from '@/stores/agent'
 import { usePersonaStore } from '@/stores/persona'
@@ -25,12 +26,50 @@ export interface ChatMessage {
   hidden?: boolean
   // assistant 消息：生成该回复时使用的技能 id
   skills?: string[]
+  // assistant 消息：技能产出的、需要完整展示的结果卡片（如译文）
+  displays?: ToolDisplay[]
+  // user 消息：附带的划词内容
+  quote?: string
+}
+
+export interface SendMessageOptions {
+  // 附带的划词内容
+  quote?: string
+  // 意图明确时直接调用指定工具，跳过意图识别（如划词工具栏上的按钮）
+  directCall?: DirectToolCall
 }
 
 // 一轮回复的触发方式：用户发言，或系统事件（如提醒到时）
 type Turn =
-  | { type: 'user', content: string }
+  | { type: 'user', content: string } & SendMessageOptions
   | { type: 'event', content: string }
+
+// 较早的划词内容与结果卡片在请求中截断到的长度，节省上下文
+const HISTORY_ATTACHMENT_LENGTH = 1000
+
+// 转换为请求 LLM 的消息：把划词内容与已展示的结果卡片拼接到消息正文中。
+// 最近一次划词保留全文（追问时工具会从中读取原文），更早的则截断
+function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
+  let latestQuoteIndex = -1
+  messages.forEach((message, index) => {
+    if (message.quote) latestQuoteIndex = index
+  })
+
+  return messages.flatMap((message, index): ModelMessage[] => {
+    if (message.role === 'system') return []
+
+    if (message.role === 'user') {
+      const content = message.quote
+        ? attachQuote(message.content, index === latestQuoteIndex ? message.quote : truncate(message.quote, HISTORY_ATTACHMENT_LENGTH))
+        : message.content
+      return [{ role: 'user', content }]
+    }
+
+    const cards = (message.displays ?? [])
+      .map((display) => `【已展示给用户的「${display.title}」】\n${truncate(display.content, HISTORY_ATTACHMENT_LENGTH)}`)
+    return [{ role: 'assistant', content: [message.content, ...cards].filter(Boolean).join('\n\n') }]
+  })
+}
 
 // 一个会话，包含其自身的消息历史
 export interface ChatSession {
@@ -164,8 +203,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 发送一条用户消息，并以流式方式接收模型回复，期间通过 hooks 回调通知调用方
-  function sendMessage(content: string) {
-    return enqueueReply({ type: 'user', content })
+  function sendMessage(content: string, options: SendMessageOptions = {}) {
+    return enqueueReply({ type: 'user', content, ...options })
   }
 
   // 让桌宠针对一个系统事件主动开口说话，event 为对事件的描述
@@ -199,7 +238,8 @@ export const useChatStore = defineStore('chat', () => {
     const session = ensureCurrentSession()
 
     if (turn.type === 'user') {
-      session.messages.push({ role: 'user', content: turn.content })
+      const quote = turn.quote?.trim()
+      session.messages.push({ role: 'user', content: turn.content, ...(quote ? { quote: quote.slice(0, MAX_TEXT_LENGTH) } : {}) })
       if (session.title === '新对话' && !session.messages.some((m) => m.role === 'assistant')) {
         session.title = turn.content.slice(0, 20)
       }
@@ -214,9 +254,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 请求消息不包含下面新增的占位回复；系统提示词单独传入，以便附加技能执行结果
     const systemPrompt = session.messages.find((m) => m.role === 'system')?.content ?? personaStore.systemPrompt
-    const dialog = session.messages
-      .filter((message) => message.role !== 'system')
-      .map(({ role, content }) => ({ role, content })) as ModelMessage[]
+    const dialog = toModelMessages(session.messages)
 
     // 占位的 assistant 消息，随流式响应实时更新其内容
     session.messages.push({ role: 'assistant', content: '' })
@@ -234,10 +272,13 @@ export const useChatStore = defineStore('chat', () => {
           model,
           messages: dialog,
           skills: agentStore.activeSkills,
+          directCall: turn.directCall,
           onEvent: (event) => { agentStatus.value = describeAgentEvent(event) },
         })
         if (agentResult) {
-          session.messages[assistantIndex]!.skills = agentResult.skills.map((skill) => skill.id)
+          const message = session.messages[assistantIndex]!
+          message.skills = agentResult.skills.map((skill) => skill.id)
+          if (agentResult.displays.length) message.displays = agentResult.displays
         }
       }
 
@@ -265,8 +306,8 @@ export const useChatStore = defineStore('chat', () => {
       onFinishHooks.value.forEach(hook => hook(fullText))
     }
     catch (error) {
-      // 未产生任何内容时移除空的占位回复
-      if (!fullText) {
+      // 未产生任何内容（文字与结果卡片）时移除空的占位回复
+      if (!fullText && !session.messages[assistantIndex]?.displays) {
         session.messages.splice(assistantIndex, 1)
       }
       onErrorHooks.value.forEach(hook => hook(error))

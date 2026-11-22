@@ -43,7 +43,7 @@ export function buildRouterPrompt(messages: ModelMessage[]): string {
 ${lines.length ? lines.join('\n') : '（无）'}
 
 # 用户的最新消息
-${latest ? messageText(latest) : ''}`
+${latest ? truncate(messageText(latest), 1500) : ''}`
 }
 
 // ===== 阶段二：工具执行 =====
@@ -84,25 +84,37 @@ export function buildAgentContextPrompt(result: AgentResult): string {
         .join('\n')
     : '（没有调用任何工具）'
 
-  const summary = result.error !== undefined
-    ? `执行过程出错：${result.error}`
-    : result.summary.trim() || '（无）'
-
-  return `# 本轮技能执行结果
+  const sections = [
+    `# 本轮技能执行结果
 
 为了回应用户的最新消息，你刚刚使用了技能：${skillNames}。以下是执行记录，只有你能看到，用户看不到：
 
 ## 工具调用
-${calls}
+${calls}`,
+  ]
 
-## 执行总结
-${summary}
+  if (result.error !== undefined) {
+    sections.push(`## 执行总结
+执行过程出错：${result.error}`)
+  }
+  else if (result.summary.trim()) {
+    sections.push(`## 执行总结
+${result.summary.trim()}`)
+  }
 
-## 回复要求
-- 以上结果真实可信，回答必须以此为准，不要编造结果之外的信息。
-- 如果执行失败或还缺少信息，用符合你性格的方式告诉用户，并说明需要什么。
-- 挑用户关心的重点，用口语自然地说出来，不要照搬原始数据或 JSON，也不要提到「工具」「函数」「技能」「执行记录」这类字眼，就像这些事是你自己做到的一样。
-- 仍然遵守前面的回复格式与情绪标签要求。`
+  const requirements = [
+    '- 以上结果真实可信，回答必须以此为准，不要编造结果之外的信息。',
+    '- 如果执行失败或还缺少信息，用符合你性格的方式告诉用户，并说明需要什么。',
+    '- 挑用户关心的重点，用口语自然地说出来，不要照搬原始数据或 JSON，也不要提到「工具」「函数」「技能」「执行记录」这类字眼，就像这些事是你自己做到的一样。',
+  ]
+  if (result.displays.length) {
+    const titles = result.displays.map((display) => `「${display.title}」`).join('')
+    requirements.push(`- ${titles}的完整内容已经单独展示在对话框里了，你的回复会被朗读出来，所以不要复述或改写全文，用一两句话简单说明、点出要点或给个小评价就好。`)
+  }
+  requirements.push('- 仍然遵守前面的回复格式与情绪标签要求。')
+  sections.push(`## 回复要求\n${requirements.join('\n')}`)
+
+  return sections.join('\n\n')
 }
 
 /** 系统事件（如提醒到时）以一条隐藏的用户消息告知角色扮演阶段的 LLM */

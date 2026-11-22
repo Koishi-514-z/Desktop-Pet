@@ -1,6 +1,7 @@
 import type { ToolSet } from 'ai'
-import type { AgentResult, AgentRunOptions, Skill, ToolCallRecord } from '@/agent/types'
+import type { AgentResult, AgentRunOptions, DirectToolCall, Skill, SkillContext, ToolCallRecord, ToolDisplay } from '@/agent/types'
 import { generateText, stepCountIs } from 'ai'
+import { extractDisplay } from '@/agent/context'
 import { buildExecutorSystemPrompt } from '@/agent/prompts'
 import { errorMessage, recentMessages } from '@/agent/utils'
 
@@ -28,7 +29,9 @@ export function collectTools(skills: Skill[]): ToolSet {
 export async function executeSkills(options: AgentRunOptions): Promise<AgentResult> {
   const { model, messages, skills, onEvent, abortSignal } = options
   const toolCalls: ToolCallRecord[] = []
+  const displays: ToolDisplay[] = []
   const recordedIds = new Set<string>()
+  const context: SkillContext = { model, abortSignal }
 
   try {
     const { text, steps } = await generateText({
@@ -39,13 +42,20 @@ export async function executeSkills(options: AgentRunOptions): Promise<AgentResu
       stopWhen: stepCountIs(MAX_STEPS),
       temperature: 0,
       abortSignal,
+      experimental_context: context,
       experimental_onToolCallStart: ({ toolCall }) => {
         onEvent?.({ type: 'tool-call', toolName: toolCall.toolName, input: toolCall.input })
       },
       experimental_onToolCallFinish: (event) => {
         const record: ToolCallRecord = { toolName: event.toolCall.toolName, input: event.toolCall.input }
-        if (event.success) record.output = event.output
-        else record.error = errorMessage(event.error)
+        if (event.success) {
+          record.output = event.output
+          const display = extractDisplay(event.output)
+          if (display) displays.push(display)
+        }
+        else {
+          record.error = errorMessage(event.error)
+        }
         recordedIds.add(event.toolCall.toolCallId)
         toolCalls.push(record)
         onEvent?.({ type: 'tool-result', record })
@@ -58,10 +68,53 @@ export async function executeSkills(options: AgentRunOptions): Promise<AgentResu
       toolCalls.push({ toolName: part.toolName, input: part.input, error: errorMessage(part.error) })
     }
 
-    return { skills, toolCalls, summary: text }
+    return { skills, toolCalls, displays, summary: text }
   }
   catch (error) {
     if (abortSignal?.aborted) throw error
-    return { skills, toolCalls, summary: '', error: errorMessage(error) }
+    return { skills, toolCalls, displays, summary: '', error: errorMessage(error) }
   }
+}
+
+/** 直接调用指定工具（不经过 LLM 选择工具），结果同样交给角色扮演阶段润色 */
+export async function executeDirectCall(options: AgentRunOptions, call: DirectToolCall): Promise<AgentResult> {
+  const { model, messages, skills, onEvent, abortSignal } = options
+
+  const skill = skills.find((s) => s.id === call.skillId)
+  if (!skill) throw new Error(`技能 ${call.skillId} 未启用`)
+  const tool = skill.tools[call.toolName]
+  if (!tool?.execute) throw new Error(`技能 ${call.skillId} 中没有可执行的工具 ${call.toolName}`)
+
+  onEvent?.({ type: 'routed', decision: { skillIds: [skill.id], reason: '直接调用' }, skills: [skill] })
+  onEvent?.({ type: 'tool-call', toolName: call.toolName, input: call.input })
+
+  const record: ToolCallRecord = { toolName: call.toolName, input: call.input }
+  const displays: ToolDisplay[] = []
+  try {
+    const context: SkillContext = { model, abortSignal }
+    const result = tool.execute(call.input, {
+      toolCallId: `direct-${Date.now()}`,
+      messages,
+      abortSignal,
+      experimental_context: context,
+    })
+    // execute 也可以是流式返回的异步迭代器，此时以最后一个值为结果
+    let output: unknown
+    if (result && typeof result === 'object' && Symbol.asyncIterator in result) {
+      for await (const value of result as AsyncIterable<unknown>) output = value
+    }
+    else {
+      output = await result
+    }
+    record.output = output
+    const display = extractDisplay(output)
+    if (display) displays.push(display)
+  }
+  catch (error) {
+    if (abortSignal?.aborted) throw error
+    record.error = errorMessage(error)
+  }
+
+  onEvent?.({ type: 'tool-result', record })
+  return { skills: [skill], toolCalls: [record], displays, summary: '' }
 }

@@ -4,6 +4,8 @@ use tauri::{
   AppHandle, Manager, WebviewWindow,
 };
 
+mod selection;
+
 const MAIN_WINDOW: &str = "main";
 
 /// 将窗口铺满主显示器的工作区（不遮挡任务栏），作为桌宠的透明画布
@@ -84,6 +86,9 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    .manage(selection::SelectionState::default())
+    .invoke_handler(tauri::generate_handler![selection::set_selection_shortcut])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

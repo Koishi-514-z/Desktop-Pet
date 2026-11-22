@@ -32,6 +32,37 @@ export interface RouteDecision {
   reason: string
 }
 
+/**
+ * 工具执行时可以通过 experimental_context 拿到的上下文，
+ * 使用 getSkillContext(options) 获取。例如工具内部需要再调用一次 LLM 时使用其中的 model。
+ */
+export interface SkillContext {
+  model: LanguageModel
+  abortSignal?: AbortSignal
+}
+
+/**
+ * 需要完整展示给用户的工具结果（如译文、总结），会以卡片的形式显示在回复下方。
+ * 工具在返回值中带上 display 字段即可：`return { display: { title: '翻译', content } }`。
+ * 角色扮演阶段的 LLM 不必复述卡片的全文，只需简短地说明或点评。
+ */
+export interface ToolDisplay {
+  title: string
+  content: string
+  /** code 以等宽字体展示 */
+  format?: 'text' | 'code'
+}
+
+/**
+ * 跳过意图识别与工具执行阶段的 LLM，直接调用某个技能的工具。
+ * 用于意图已经明确的场景，如划词工具栏上的按钮。
+ */
+export interface DirectToolCall {
+  skillId: string
+  toolName: string
+  input: unknown
+}
+
 /** 一次工具调用的记录 */
 export interface ToolCallRecord {
   toolName: string
@@ -48,8 +79,10 @@ export interface AgentResult {
   skills: Skill[]
   /** 按发生顺序排列的工具调用记录 */
   toolCalls: ToolCallRecord[]
-  /** 执行阶段 LLM 对执行过程的客观总结 */
+  /** 执行阶段 LLM 对执行过程的客观总结，直接调用工具时为空 */
   summary: string
+  /** 需要以卡片形式完整展示给用户的结果 */
+  displays: ToolDisplay[]
   /** 执行阶段本身出错（如模型请求失败）时的错误信息 */
   error?: string
 }
@@ -67,6 +100,8 @@ export interface AgentRunOptions {
   messages: ModelMessage[]
   /** 本次可用的技能 */
   skills: Skill[]
+  /** 直接调用指定工具，跳过意图识别与工具执行阶段的 LLM */
+  directCall?: DirectToolCall
   onEvent?: (event: AgentEvent) => void
   abortSignal?: AbortSignal
 }

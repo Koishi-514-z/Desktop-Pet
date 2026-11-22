@@ -1,9 +1,10 @@
 import type { AgentResult, AgentRunOptions } from '@/agent/types'
-import { executeSkills } from '@/agent/executor'
+import { executeDirectCall, executeSkills } from '@/agent/executor'
 import { routeIntent } from '@/agent/router'
 import { errorMessage } from '@/agent/utils'
 
 export type * from '@/agent/types'
+export { getSkillContext } from '@/agent/context'
 export { buildAgentContextPrompt, buildEventMessage } from '@/agent/prompts'
 
 /**
@@ -11,11 +12,20 @@ export { buildAgentContextPrompt, buildEventMessage } from '@/agent/prompts'
  * 1. 意图识别：判断用户的最新消息需要哪些技能；
  * 2. 工具执行：加载被选中技能的说明与工具，由 LLM 调用工具完成请求。
  *
+ * 指定了 directCall 时跳过以上两个阶段的 LLM，直接调用工具。
+ *
  * 返回 null 表示无需使用技能（普通闲聊），此时直接由角色扮演阶段回复即可。
  * 第三阶段（角色润色）由调用方把返回结果通过 buildAgentContextPrompt 附加到人设提示词上完成。
  */
 export async function runAgent(options: AgentRunOptions): Promise<AgentResult | null> {
-  const { skills, onEvent, abortSignal } = options
+  const { skills, directCall, onEvent, abortSignal } = options
+
+  if (directCall) {
+    const result = await executeDirectCall(options, directCall)
+    console.debug('[agent] 直接调用：', result)
+    return result
+  }
+
   if (skills.length === 0) return null
 
   onEvent?.({ type: 'routing' })
