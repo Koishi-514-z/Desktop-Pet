@@ -1,0 +1,146 @@
+{
+  "Type": 0,
+  "FileReferences": {
+    "Moc": "ayachi.moc3",
+    "Textures": [
+      "texture_00.png"
+    ],
+    "Physics": "ayachi.physics3.json",
+    "Motions": {
+      "Idle": [
+        {
+          "File": "待机动作2.motion3.json"
+        },
+        {
+          "File": "待机动作3.motion3.json"
+        }
+      ],
+      "Tap呆毛": [
+        {
+          "Name": "唱歌",
+          "File": "唱歌.motion3.json",
+          "Sound": "ReStart ～君とまた出逢えて～.wav",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ],
+      "Tap头顶": [
+        {
+          "Name": "柊史",
+          "File": "摸头.motion3.json",
+          "Sound": "柊史♪.wav",
+          "Text": "柊史君",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ],
+      "Tap脸": [
+        {
+          "Name": "啵央央",
+          "File": "摸头.motion3.json",
+          "Sound": "(啵央央).wav",
+          "Text": "(啵央央)",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ],
+      "Tap左胸": [
+        {
+          "Name": "盯",
+          "File": "......(盯).......motion3.json",
+          "Sound": "......(盯).......wav",
+          "Text": "......(盯)......",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ],
+      "Tap右胸": [
+        {
+          "Name": "盯",
+          "File": "......(盯).......motion3.json",
+          "Sound": "......(盯).......wav",
+          "Text": "......(盯)......",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ],
+      "Tap裙子": [
+        {
+          "Name": "0721",
+          "File": "0721.motion3.json",
+          "Sound": "我,我我我我我的...... 我想让你看我0721.wav",
+          "Text": "我，我我我我我的......我想让你看我0721",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ],
+      "Tap身体": [
+        {
+          "Name": "来吧，保科",
+          "File": "摸头.motion3.json",
+          "Sound": "来吧,保科.wav",
+          "Text": "来吧,保科",
+          "Tags": ["happy", "love", "shy", "smug"]
+        }
+      ]
+    },
+    "Expressions": [
+      {
+        "Name": "expression1.exp3",
+        "File": "expression1.exp3.json",
+        "Tags": []
+      },
+      {
+        "Name": "expression2.exp3",
+        "File": "expression2.exp3.json",
+        "Tags": []
+      },
+      {
+        "Name": "expression3.exp3",
+        "File": "expression3.exp3.json",
+        "Tags": []
+      },
+      {
+        "Name": "expression4.exp3",
+        "File": "expression4.exp3.json",
+        "Tags": []
+      },
+      {
+        "Name": "expression5.exp3",
+        "File": "expression5.exp3.json",
+        "Tags": []
+      }
+    ]
+  },
+  "HitAreas": [
+    {
+      "Name": "呆毛",
+      "Id": "ArtMesh73",
+      "Motion": "Tap呆毛"
+    },
+    {
+      "Name": "头顶",
+      "Id": "ArtMesh175",
+      "Motion": "Tap头顶"
+    },
+    {
+      "Name": "左胸",
+      "Id": "ArtMesh321",
+      "Motion": "Tap左胸"
+    },
+    {
+      "Name": "右胸",
+      "Id": "ArtMesh110",
+      "Motion": "Tap右胸"
+    },
+    {
+      "Name": "脸",
+      "Id": "ArtMesh178",
+      "Motion": "Tap脸"
+    },
+    {
+      "Name": "裙子",
+      "Id": "ArtMesh330",
+      "Motion": "Tap裙子"
+    },
+    {
+      "Name": "身体",
+      "Id": "ArtMesh332",
+      "Motion": "Tap身体"
+    }
+  ]
+}

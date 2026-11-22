@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { Live2dModelForm } from './Live2dModelFields.vue'
 import { computed, ref, watch } from 'vue'
 import { useLive2dStore, type Live2dMotion } from '@/stores/live2d'
+import Live2dModelFields from './Live2dModelFields.vue'
 
 const props = defineProps<{ modelId: string }>()
 const emit = defineEmits<{ back: [] }>()
@@ -9,7 +11,9 @@ const live2dStore = useLive2dStore()
 
 const model = computed(() => live2dStore.getModelById(props.modelId))
 const isCurrent = computed(() => live2dStore.currentModelId === props.modelId)
-const canRemove = computed(() => live2dStore.models.length > 1 && !live2dStore.isDefaultModel(props.modelId))
+const canRemove = computed(
+  () => live2dStore.models.length > 1 && !live2dStore.isDefaultModel(props.modelId),
+)
 
 // 按动作组聚合，方便分组展示
 const motionGroups = computed(() => {
@@ -22,7 +26,7 @@ const motionGroups = computed(() => {
 })
 
 // 本地编辑状态，点击"保存"后才写回 store
-const form = ref({
+const form = ref<Live2dModelForm>({
   name: '',
   description: '',
   url: '',
@@ -30,10 +34,11 @@ const form = ref({
   positionX: 0,
   positionY: 0,
   scale: 1,
-  defaultExpressionName: '',
 })
+const defaultExpressionName = ref('')
 
-watch(model, (m) => {
+function resetForm() {
+  const m = model.value
   if (!m) return
   form.value = {
     name: m.name,
@@ -43,9 +48,28 @@ watch(model, (m) => {
     positionX: m.position.x,
     positionY: m.position.y,
     scale: m.scale,
-    defaultExpressionName: m.defaultExpression.name,
   }
-}, { immediate: true, deep: true })
+  defaultExpressionName.value = m.defaultExpression.name
+}
+
+// 仅在切换模型时重置表单，避免模型加载后元数据更新时覆盖未保存的修改
+watch(() => props.modelId, resetForm, { immediate: true })
+
+const dirty = computed(() => {
+  const m = model.value
+  if (!m) return false
+  const f = form.value
+  return (
+    f.name !== m.name ||
+    f.description !== (m.description ?? '') ||
+    f.url !== m.url ||
+    f.image !== m.image ||
+    f.positionX !== m.position.x ||
+    f.positionY !== m.position.y ||
+    f.scale !== m.scale ||
+    defaultExpressionName.value !== m.defaultExpression.name
+  )
+})
 
 function save() {
   if (!model.value) return
@@ -57,7 +81,7 @@ function save() {
     image: form.value.image,
     position: { x: form.value.positionX, y: form.value.positionY },
     scale: form.value.scale,
-    defaultExpression: { name: form.value.defaultExpressionName },
+    defaultExpression: { name: defaultExpressionName.value },
   })
 }
 
@@ -71,198 +95,175 @@ function remove() {
   live2dStore.removeModel(model.value.id)
   emit('back')
 }
+
+// 点击动作卡片预览播放：仅当正在查看的模型就是桌面上已加载的当前模型时可用
+const lastPlayed = ref<{ group: string; index: number } | null>(null)
+
+function previewMotion(motion: Live2dMotion) {
+  if (!isCurrent.value) return
+  live2dStore.playMotion(motion.group, motion.index)
+  lastPlayed.value = { group: motion.group, index: motion.index }
+}
+
+function isLastPlayed(motion: Live2dMotion) {
+  return lastPlayed.value?.group === motion.group && lastPlayed.value.index === motion.index
+}
+
+// 模型资源分页
+type ResourceTab = 'expressions' | 'motions' | 'hitAreas'
+const activeTab = ref<ResourceTab>('expressions')
+
+const tabs = computed(() => [
+  { id: 'expressions' as const, label: '表情', count: model.value?.availableExpressions.length ?? 0 },
+  { id: 'motions' as const, label: '动作', count: model.value?.availableMotions.length ?? 0 },
+  { id: 'hitAreas' as const, label: '碰撞区域', count: model.value?.availableHitAreas.length ?? 0 },
+])
 </script>
 
 <template>
   <div v-if="model" class="model-detail">
     <header class="detail-header">
       <button class="back-button" title="返回" @click="emit('back')">
-        ←
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
       </button>
-      <span class="detail-title">{{ model.name }}</span>
-      <span class="status-badge" :class="{ valid: isCurrent }">
-        {{ isCurrent ? '使用中' : '未选用' }}
-      </span>
+      <span class="detail-title">模型详情</span>
     </header>
 
-    <div class="field">
-      <label>名称</label>
-      <input v-model="form.name" type="text" placeholder="模型名称">
-    </div>
-
-    <div class="field">
-      <label>描述</label>
-      <input v-model="form.description" type="text" placeholder="可选">
-    </div>
-
-    <div class="field">
-      <label>模型文件地址 (model3.json)</label>
-      <input v-model="form.url" type="text" placeholder="/assets/live2d/models/.../model.model3.json">
-    </div>
-
-    <div class="field">
-      <label>缩略图地址</label>
-      <div class="field-row">
-        <input v-model="form.image" type="text" placeholder="/assets/live2d/models/.../image.png">
-        <div class="thumbnail-preview">
-          <img v-if="form.image" :src="form.image" alt="预览">
-          <span v-else class="card-thumbnail-placeholder">无预览图</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="field-grid">
-      <div class="field">
-        <label>位置 X</label>
-        <input v-model.number="form.positionX" type="number" step="1">
-      </div>
-      <div class="field">
-        <label>位置 Y</label>
-        <input v-model.number="form.positionY" type="number" step="1">
-      </div>
-      <div class="field">
-        <label>缩放</label>
-        <input v-model.number="form.scale" type="number" min="0" step="0.05">
-      </div>
-    </div>
-
-    <div class="field">
-      <label>默认表情</label>
-      <select v-if="model.availableExpressions.length > 0" v-model="form.defaultExpressionName" :class="{ 'select-placeholder': !form.defaultExpressionName }">
-        <option value="">
-          无
-        </option>
-        <option v-for="expr in model.availableExpressions" :key="expr.name" :value="expr.name">
-          {{ expr.name }}
-        </option>
-      </select>
-      <input v-else v-model="form.defaultExpressionName" type="text" placeholder="表情名称，如 expression3.exp3">
-    </div>
-
-    <!-- 动作列表 -->
-    <div class="meta-section">
-      <span class="meta-section-label">动作 ({{ model.availableMotions.length }})</span>
-      <template v-if="motionGroups.size > 0">
-        <div v-for="[group, motions] in motionGroups" :key="group" class="motion-group">
-          <span class="motion-group-name">{{ group }}</span>
-          <div class="meta-tags">
-            <span
-              v-for="motion in motions"
-              :key="`${motion.group}-${motion.index}`"
-              class="meta-tag"
-              :title="motion.fileName"
-            >
-              {{ motion.index }}
-              <span v-if="motion.tags?.length" class="meta-tag-hint">· {{ motion.tags.join(', ') }}</span>
-            </span>
-          </div>
-        </div>
+    <Live2dModelFields v-model="form">
+      <template #badge>
+        <span class="thumb-badge" :class="{ on: isCurrent }">
+          {{ isCurrent ? '使用中' : '未选用' }}
+        </span>
       </template>
-      <span v-else class="meta-empty">暂无数据，加载模型后自动填充</span>
-    </div>
+    </Live2dModelFields>
 
-    <!-- 表情列表 -->
-    <div class="meta-section">
-      <span class="meta-section-label">表情 ({{ model.availableExpressions.length }})</span>
-      <div v-if="model.availableExpressions.length > 0" class="meta-tags">
-        <span
-          v-for="expr in model.availableExpressions"
-          :key="expr.name"
-          class="meta-tag"
-          :title="expr.fileName"
+    <!-- 模型资源 -->
+    <section class="resource-panel">
+      <div class="resource-tabs" role="tablist">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          class="resource-tab"
+          :class="{ active: activeTab === tab.id }"
+          :aria-selected="activeTab === tab.id"
+          @click="activeTab = tab.id"
         >
-          {{ expr.name }}
-          <span v-if="expr.tags?.length" class="meta-tag-hint">· {{ expr.tags.join(', ') }}</span>
-        </span>
+          {{ tab.label }}
+          <span class="tab-count">{{ tab.count }}</span>
+        </button>
       </div>
-      <span v-else class="meta-empty">暂无数据，加载模型后自动填充</span>
-    </div>
 
-    <!-- 碰撞区域列表 -->
-    <div class="meta-section">
-      <span class="meta-section-label">碰撞区域 ({{ model.availableHitAreas.length }})</span>
-      <div v-if="model.availableHitAreas.length > 0" class="meta-tags">
-        <span
-          v-for="area in model.availableHitAreas"
-          :key="area.id"
-          class="meta-tag"
-          :title="area.motion ? `触发动作: ${area.motion}` : ''"
-        >
-          {{ area.name }}
-          <span v-if="area.motion" class="meta-tag-hint">→ {{ area.motion }}</span>
-        </span>
+      <div class="resource-body">
+        <!-- 表情：点击设为默认表情 -->
+        <template v-if="activeTab === 'expressions'">
+          <template v-if="model.availableExpressions.length > 0">
+            <p class="resource-hint">点击表情将其设为默认表情</p>
+            <div class="tag-list">
+              <button
+                type="button"
+                class="res-tag selectable"
+                :class="{ selected: defaultExpressionName === '' }"
+                @click="defaultExpressionName = ''"
+              >
+                无默认表情
+              </button>
+              <button
+                v-for="expr in model.availableExpressions"
+                :key="expr.name"
+                type="button"
+                class="res-tag selectable"
+                :class="{ selected: defaultExpressionName === expr.name }"
+                :title="expr.fileName"
+                @click="defaultExpressionName = expr.name"
+              >
+                <svg
+                  v-if="defaultExpressionName === expr.name"
+                  class="tag-star"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
+                </svg>
+                {{ expr.name }}
+                <em v-if="expr.tags?.length">{{ expr.tags.join(', ') }}</em>
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <p class="resource-empty">暂无数据，模型加载后自动填充</p>
+            <label class="inline-field">
+              <span>默认表情</span>
+              <input v-model="defaultExpressionName" type="text" placeholder="如 expression3.exp3" />
+            </label>
+          </template>
+        </template>
+
+        <!-- 动作 -->
+        <template v-else-if="activeTab === 'motions'">
+          <div v-if="motionGroups.size > 0" class="motion-groups">
+            <p class="resource-hint">
+              {{ isCurrent ? '点击动作即可在桌面上播放预览' : '将此模型设为当前模型后，可点击动作进行预览' }}
+            </p>
+            <div v-for="[group, motions] in motionGroups" :key="group" class="motion-group">
+              <div class="motion-group-head">
+                <span class="motion-group-name">{{ group || '默认' }}</span>
+                <span class="motion-group-line" />
+                <span class="motion-group-count">{{ motions.length }}</span>
+              </div>
+              <div class="tag-list">
+                <button
+                  v-for="motion in motions"
+                  :key="`${motion.group}-${motion.index}`"
+                  type="button"
+                  class="res-tag motion-tag"
+                  :class="{ playable: isCurrent, played: isLastPlayed(motion) }"
+                  :disabled="!isCurrent"
+                  :title="isCurrent ? `播放 ${motion.fileName}` : motion.fileName"
+                  @click="previewMotion(motion)"
+                >
+                  <svg v-if="isCurrent" class="tag-play" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M7 4.5v15l12-7.5z" />
+                  </svg>
+                  #{{ motion.index }}
+                  <em v-if="motion.tags?.length">{{ motion.tags.join(', ') }}</em>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p v-else class="resource-empty">暂无数据，模型加载后自动填充</p>
+        </template>
+
+        <!-- 碰撞区域 -->
+        <template v-else>
+          <ul v-if="model.availableHitAreas.length > 0" class="hit-list">
+            <li v-for="area in model.availableHitAreas" :key="area.id" class="hit-item">
+              <span class="hit-name">{{ area.name }}</span>
+              <span class="hit-arrow">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+              </span>
+              <span class="hit-motion" :class="{ none: !area.motion }">
+                {{ area.motion || '未绑定动作' }}
+              </span>
+            </li>
+          </ul>
+          <p v-else class="resource-empty">暂无数据，模型加载后自动填充</p>
+        </template>
       </div>
-      <span v-else class="meta-empty">暂无数据，加载模型后自动填充</span>
-    </div>
+    </section>
 
-    <div class="detail-actions">
-      <button class="action-button" @click="save">
-        保存
-      </button>
-      <button class="action-button" :class="{ active: isCurrent }" @click="setCurrent">
+    <footer class="detail-actions">
+      <button class="action-button danger" :disabled="!canRemove" @click="remove">删除</button>
+      <span class="spacer" />
+      <button class="action-button" :class="{ active: isCurrent }" :disabled="isCurrent" @click="setCurrent">
         {{ isCurrent ? '使用中' : '设为当前' }}
       </button>
-      <button class="action-button danger" :disabled="!canRemove" @click="remove">
-        删除
+      <button class="action-button primary" :disabled="!dirty" @click="save">
+        {{ dirty ? '保存修改' : '已保存' }}
       </button>
-    </div>
+    </footer>
   </div>
 </template>
 
 <style scoped src="../../css/settings/Live2dSetting.css"></style>
-
-<style scoped>
-.meta-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.meta-section-label {
-  font-size: 12px;
-  color: rgb(255 255 255 / 60%);
-}
-
-.meta-empty {
-  font-size: 12px;
-  color: rgb(255 255 255 / 30%);
-}
-
-.motion-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.motion-group-name {
-  font-size: 11px;
-  color: rgb(255 255 255 / 45%);
-}
-
-.meta-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.meta-tag {
-  padding: 2px 8px;
-  font-size: 11px;
-  color: rgb(255 255 255 / 75%);
-  background: rgb(255 255 255 / 8%);
-  border-radius: 4px;
-}
-
-.meta-tag-hint {
-  color: rgb(255 255 255 / 40%);
-}
-
-.select-placeholder {
-  color: rgb(255 255 255 / 35%);
-}
-
-.field :deep(select option) {
-  color: #1a1a1a;
-  background: #fff;
-}
-</style>

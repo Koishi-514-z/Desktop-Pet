@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { PersonaForm } from './PersonaProfileFields.vue'
 import { computed, ref, watch } from 'vue'
 import { usePersonaStore } from '@/stores/persona'
+import PersonaProfileFields from './PersonaProfileFields.vue'
 
 const props = defineProps<{ personaId: string }>()
 const emit = defineEmits<{ back: [] }>()
@@ -12,14 +14,15 @@ const isCurrent = computed(() => personaStore.currentPersonaId === props.persona
 const canRemove = computed(() => !personaStore.isDefaultPersona(props.personaId))
 const systemPrompt = computed(() => personaStore.buildSystemPrompt(props.personaId))
 
-const form = ref({
+const form = ref<PersonaForm>({
   name: '',
   personality: '',
   background: '',
   speakingStyle: '',
 })
 
-watch(persona, (p) => {
+function resetForm() {
+  const p = persona.value
   if (!p) return
   form.value = {
     name: p.name,
@@ -27,10 +30,24 @@ watch(persona, (p) => {
     background: p.background ?? '',
     speakingStyle: p.speakingStyle ?? '',
   }
-}, { immediate: true, deep: true })
+}
+
+watch(() => props.personaId, resetForm, { immediate: true })
+
+const dirty = computed(() => {
+  const p = persona.value
+  if (!p) return false
+  const f = form.value
+  return (
+    f.name !== p.name ||
+    f.personality !== p.personality ||
+    f.background !== (p.background ?? '') ||
+    f.speakingStyle !== (p.speakingStyle ?? '')
+  )
+})
 
 function save() {
-  if (!persona.value) return
+  if (!persona.value || !dirty.value) return
   personaStore.updatePersona(persona.value.id, { ...form.value })
 }
 
@@ -39,56 +56,72 @@ function remove() {
   personaStore.removePersona(persona.value.id)
   emit('back')
 }
+
+// 系统提示词预览
+const promptExpanded = ref(false)
+const copied = ref(false)
+
+async function copyPrompt() {
+  try {
+    await navigator.clipboard.writeText(systemPrompt.value)
+    copied.value = true
+    setTimeout(() => (copied.value = false), 1500)
+  } catch (error) {
+    console.error(error)
+  }
+}
 </script>
 
 <template>
   <div v-if="persona" class="persona-detail">
     <header class="detail-header">
       <button class="back-button" title="返回" @click="emit('back')">
-        ←
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        角色列表
       </button>
-      <span class="detail-title">{{ persona.name }}</span>
-      <span class="status-badge" :class="{ valid: isCurrent }">
-        {{ isCurrent ? '使用中' : '未选用' }}
-      </span>
     </header>
 
-    <div class="field">
-      <label>名字</label>
-      <input v-model="form.name" type="text" placeholder="人设名字">
-    </div>
+    <PersonaProfileFields v-model="form">
+      <template #badge>
+        <span class="hero-badge" :class="{ on: isCurrent }">
+          {{ isCurrent ? '♥ 当前角色' : '未选用' }}
+        </span>
+      </template>
+    </PersonaProfileFields>
 
-    <div class="field">
-      <label>性格特点</label>
-      <textarea v-model="form.personality" rows="3" placeholder="描述性格，如：活泼、温柔、有点小调皮…" />
-    </div>
+    <!-- 系统提示词预览 -->
+    <section class="prompt-box" :class="{ expanded: promptExpanded }">
+      <header class="prompt-head">
+        <span class="prompt-dots"><i /><i /><i /></span>
+        <span class="prompt-title">system_prompt.md</span>
+        <span class="prompt-meta">{{ systemPrompt.length }} 字符 · 保存后更新</span>
+        <button class="prompt-action" type="button" @click="copyPrompt">
+          {{ copied ? '已复制' : '复制' }}
+        </button>
+        <button class="prompt-action" type="button" @click="promptExpanded = !promptExpanded">
+          {{ promptExpanded ? '收起' : '展开' }}
+        </button>
+      </header>
+      <pre class="prompt-body">{{ systemPrompt }}</pre>
+    </section>
 
-    <div class="field">
-      <label>背景故事</label>
-      <textarea v-model="form.background" rows="4" placeholder="可选，描述角色来历、经历等背景信息" />
-    </div>
-
-    <div class="field">
-      <label>说话风格</label>
-      <textarea v-model="form.speakingStyle" rows="3" placeholder="可选，描述说话方式，如：喜欢用颜文字、语气轻快…" />
-    </div>
-
-    <div class="field">
-      <label>系统提示词预览</label>
-      <pre class="prompt-preview">{{ systemPrompt }}</pre>
-    </div>
-
-    <div class="detail-actions">
-      <button class="action-button" @click="save">
-        保存
-      </button>
-      <button class="action-button" :class="{ active: isCurrent }" @click="personaStore.switchPersona(persona.id)">
-        {{ isCurrent ? '使用中' : '设为当前' }}
-      </button>
+    <footer class="detail-actions">
       <button class="action-button danger" :disabled="!canRemove" @click="remove">
-        删除
+        删除角色
       </button>
-    </div>
+      <span class="spacer" />
+      <button
+        class="action-button"
+        :class="{ active: isCurrent }"
+        :disabled="isCurrent"
+        @click="personaStore.switchPersona(persona.id)"
+      >
+        {{ isCurrent ? '当前角色' : '设为当前' }}
+      </button>
+      <button class="action-button primary" :disabled="!dirty" @click="save">
+        {{ dirty ? '保存修改' : '已保存' }}
+      </button>
+    </footer>
   </div>
 </template>
 

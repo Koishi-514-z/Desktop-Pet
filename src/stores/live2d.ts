@@ -180,7 +180,7 @@ export const useLive2dStore = defineStore('live2d', () => {
 
   // 播放指定动作。若未指定 index，则随机选择一个动作
   function playMotion(group: string, index?: number) {
-    if (!index) {
+    if (index === undefined) {
       const motions = motionMaps.value.get(group)
       if (!motions || motions.length === 0) return
       index = randInt(0, motions.length - 1)

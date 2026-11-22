@@ -2,9 +2,11 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { usePersonaStore } from '@/stores/persona'
+import { useSceneStore } from '@/stores/scene'
 
 const chatStore = useChatStore()
 const personaStore = usePersonaStore()
+const sceneStore = useSceneStore()
 
 // 字幕只在非空消息之间切换（流式回复的占位消息在收到首个字符前为空，不予显示）
 const messages = computed(() =>
@@ -100,7 +102,7 @@ watch(displayText, () => {
 
 <template>
   <Transition name="subtitle-fade">
-    <div v-if="currentMessage" class="subtitle">
+    <div v-if="sceneStore.showSubtitle && currentMessage" class="subtitle">
       <div class="subtitle-card" :class="currentMessage.role">
         <div class="speaker">
           <span class="speaker-name">{{ speakerName }}</span>

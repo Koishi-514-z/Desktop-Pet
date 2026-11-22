@@ -1,0 +1,563 @@
+{
+    "Version": 3,
+    "Type": 0,
+    "FileReferences": {
+        "Moc": "Moc.moc3",
+        "Textures": [
+            "Textures_.png",
+            "Textures__1.png",
+            "Textures__2.png",
+            "Textures__3.png",
+            "Textures__4.png"
+        ],
+        "Physics": "Physics.json",
+        "Motions": {
+            "Idle": [
+                {
+                    "Name": "站立",
+                    "File": "Motions_Idle_0.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机1",
+                    "File": "Motions_Idle_1.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机2",
+                    "File": "Motions_Idle_2.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机3",
+                    "File": "Motions_Idle_3.json",
+                    "Sound": "Motions_Idle_3.wav",
+                    "Text": "瞟瞟~~~紧张紧张",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "Start": [
+                {
+                    "Name": "登场",
+                    "File": "Motions_Start_0.json",
+                    "Sound": "Motions_Start_0.wav",
+                    "Text": "呼啊啊啊·····啊···哥哥，早hello个安",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "Tap": [
+                {
+                    "Name": "外框",
+                    "File": "Motions_Tap_0.json",
+                    "Sound": "Motions_Tap_0.wav",
+                    "Text": "唔唔······哥哥，来给我摸蹭摸蹭嘛~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "外框2",
+                    "File": "Motions_Tap_1.json",
+                    "Sound": "Motions_Tap_1.wav",
+                    "Text": "呀哇哇！哥哥好帅啊！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "外框3",
+                    "File": "Motions_Tap_2.json",
+                    "Sound": "Motions_Tap_2.wav",
+                    "Text": "在做重要的事情前，一定要先和我商量。明白了吗？",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapMaozi": [
+                {
+                    "Name": "帽子",
+                    "File": "Motions_TapMaozi_0.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapLian": [
+                {
+                    "Name": "摸头",
+                    "File": "Motions_TapLian_0.json",
+                    "Sound": "Motions_TapLian_0.wav",
+                    "SoundDelay": 210,
+                    "Text": "哎嘿嘿，哥哥摸蹭摸蹭好舒服~",
+                    "TextDelay": 210,
+                    "TextDuration": 5000,
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸头2",
+                    "File": "Motions_TapLian_1.json",
+                    "Sound": "Motions_TapLian_1.wav",
+                    "SoundDelay": 400,
+                    "Text": "呀嗯，请不要突然摸我的头啦。好痒啊，真是的~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸头3",
+                    "File": "Motions_TapLian_2.json",
+                    "Sound": "Motions_TapLian_2.wav",
+                    "SoundDelay": 300,
+                    "Text": "哇酷哇酷(≧∀≦)♪",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸脸",
+                    "File": "Motions_TapLian_3.json",
+                    "Sound": "Motions_TapLian_3.wav",
+                    "SoundDelay": 300,
+                    "Text": "变好喝—吧，变好喝—吧",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapXiong": [
+                {
+                    "Name": "摸胸",
+                    "File": "Motions_TapXiong_0.json",
+                    "Sound": "Motions_TapXiong_0.wav",
+                    "Text": "居然对妹妹发情，哥哥你这个糟糕的变态！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸胸2",
+                    "File": "Motions_TapXiong_1.json",
+                    "Sound": "Motions_TapXiong_1.wav",
+                    "Text": "看招~，我弄我弄~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸脸2",
+                    "File": "Motions_TapXiong_2.json",
+                    "Sound": "Motions_TapXiong_2.wav",
+                    "Text": "来~，精神起来~痛痛~痛痛~飞走咯~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapDuzi": [
+                {
+                    "Name": "摸肚子",
+                    "File": "Motions_TapDuzi_0.json",
+                    "Sound": "Motions_TapDuzi_0.wav",
+                    "Text": "唔咪······吃完饭就犯困了呢。让我滚一滚舒服舒服吧",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸肚子2",
+                    "File": "Motions_TapDuzi_1.json",
+                    "Sound": "Motions_TapDuzi_1.wav",
+                    "Text": "哥哥。我该不会变重了吧？，  {$br}Σ(っ °Д °;)っ！不，不会吧······这莫非是婚后肥！？",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapQunzi": [
+                {
+                    "Name": "摸裙子",
+                    "File": "Motions_TapQunzi_0.json",
+                    "Sound": "Motions_TapQunzi_0.wav",
+                    "SoundVolume": 0.791,
+                    "Text": "呀呀呀！这里不行、不行的啦~~~！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸裙子2",
+                    "File": "Motions_TapQunzi_1.json",
+                    "Sound": "Motions_TapQunzi_1.wav",
+                    "SoundVolume": 0.558,
+                    "Text": "呀呀！？请不要想些奇怪的东西。我可没有色色的意思喔",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸裙子3",
+                    "File": "Motions_TapQunzi_2.json",
+                    "Sound": "Motions_TapQunzi_2.wav",
+                    "SoundVolume": 0.634,
+                    "Text": "呀呼。被捉住了呢~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapTui_R": [
+                {
+                    "Name": "鹰仓杏璃",
+                    "File": "Motions_TapTui_R_0.json",
+                    "Sound": "Motions_TapTui_R_0.wav",
+                    "SoundDelay": 590,
+                    "Text": "哎嘿嘿，杏璃软乎乎的呀",
+                    "TextDelay": 1000,
+                    "TextDuration": 3000,
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃2",
+                    "File": "Motions_TapTui_R_1.json",
+                    "Sound": "Motions_TapTui_R_1.wav",
+                    "Text": "杏璃：哥哥~。{$br}杏铃：明明都已经有我了，居然还和别的女生私会，哥哥你个花心大菠萝！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃3",
+                    "File": "Motions_TapTui_R_2.json",
+                    "Sound": "Motions_TapTui_R_2.wav",
+                    "Text": "啊，找到了找到了。哥~哥",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃4",
+                    "File": "Motions_TapTui_R_3.json",
+                    "Sound": "Motions_TapTui_R_3.wav",
+                    "Text": "杏璃：我会一直待在你们身边，找准机会将优人NTR掉！{$br}杏铃：呀呀！？什么NTR啊，好没羞没躁。连我都还没有过正戏呢",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapTui_L": [
+                {
+                    "Name": "10年前",
+                    "File": "Motions_TapTui_L_0.json",
+                    "Sound": "Motions_TapTui_L_0.wav",
+                    "Text": "呀呼—！不愧是哥哥~，抱~哦",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前2",
+                    "File": "Motions_TapTui_L_1.json",
+                    "Sound": "Motions_TapTui_L_1.wav",
+                    "Text": "杏铃：哥哥,今后也要一直在一起哦~不要离开哦{$br}杏璃：啊,好诈。我也要在一起。杏铃：嗯。我们会一直一直在一起~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前3",
+                    "File": "Motions_TapTui_L_2.json",
+                    "Sound": "Motions_TapTui_L_2.wav",
+                    "Text": "嘻嘻~再夸奖夸奖我也没问题哦，哥哥~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前4",
+                    "File": "Motions_TapTui_L_3.json",
+                    "Sound": "Motions_TapTui_L_3.wav",
+                    "Text": "可以哟，我就再来安慰安慰你吧",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前5",
+                    "File": "Motions_TapTui_L_4.json",
+                    "Sound": "Motions_TapTui_L_4.wav",
+                    "Text": "这样啊。现在的你，即使没有我也已经能抓住别人的手了呢",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前6",
+                    "File": "Motions_TapTui_L_5.json",
+                    "Sound": "Motions_TapTui_L_5.wav",
+                    "Text": "代替我，去欣赏这个世界。哥哥",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前最后",
+                    "File": "Motions_TapTui_L_6.json",
+                    "Sound": "Motions_TapTui_L_6.wav",
+                    "Text": "欧尼酱",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "Leave300_1800_3600": [
+                {
+                    "Name": "待机4",
+                    "File": "Motions_Leave300_1800_3600_0.json",
+                    "Sound": "Motions_Leave300_1800_3600_0.wav",
+                    "Text": "呼瞄呼瞄·····哥哥",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机5",
+                    "File": "Motions_Leave300_1800_3600_1.json",
+                    "Sound": "Motions_Leave300_1800_3600_1.wav",
+                    "Text": "喵呜······那东西可放不进嘴巴里哟·····",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ],
+            "TapQuansuiji": [
+                {
+                    "Name": "10年前",
+                    "File": "Motions_TapTui_L_0.json",
+                    "Sound": "Motions_TapTui_L_0.wav",
+                    "Text": "呀呼—！不愧是哥哥~，抱~哦",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前2",
+                    "File": "Motions_TapTui_L_1.json",
+                    "Sound": "Motions_TapTui_L_1.wav",
+                    "Text": "杏铃：哥哥,今后也要一直在一起哦~不要离开哦{$br}杏璃：啊,好诈。我也要在一起。杏铃：嗯。我们会一直一直在一起~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前3",
+                    "File": "Motions_TapTui_L_2.json",
+                    "Sound": "Motions_TapTui_L_2.wav",
+                    "Text": "嘻嘻~再夸奖夸奖我也没问题哦，哥哥~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前4",
+                    "File": "Motions_TapTui_L_3.json",
+                    "Sound": "Motions_TapTui_L_3.wav",
+                    "Text": "可以哟，我就再来安慰安慰你吧",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前5",
+                    "File": "Motions_TapTui_L_4.json",
+                    "Sound": "Motions_TapTui_L_4.wav",
+                    "Text": "这样啊。现在的你，即使没有我也已经能抓住别人的手了呢",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前6",
+                    "File": "Motions_TapTui_L_5.json",
+                    "Sound": "Motions_TapTui_L_5.wav",
+                    "Text": "代替我，去欣赏这个世界。哥哥",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "10年前最后",
+                    "File": "Motions_TapTui_L_6.json",
+                    "Sound": "Motions_TapTui_L_6.wav",
+                    "Text": "欧尼酱",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "站立",
+                    "File": "Motions_Idle_0.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机1",
+                    "File": "Motions_Idle_1.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机2",
+                    "File": "Motions_Idle_2.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机3",
+                    "File": "Motions_Idle_3.json",
+                    "Sound": "Motions_Idle_3.wav",
+                    "Text": "瞟瞟~~~紧张紧张",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "登场",
+                    "File": "Motions_Start_0.json",
+                    "Sound": "Motions_Start_0.wav",
+                    "Text": "呼啊啊啊·····啊···哥哥，早hello个安",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "外框",
+                    "File": "Motions_Tap_0.json",
+                    "Sound": "Motions_Tap_0.wav",
+                    "Text": "唔唔······哥哥，来给我摸蹭摸蹭嘛~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "外框2",
+                    "File": "Motions_Tap_1.json",
+                    "Sound": "Motions_Tap_1.wav",
+                    "Text": "呀哇哇！哥哥好帅啊！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "外框3",
+                    "File": "Motions_Tap_2.json",
+                    "Sound": "Motions_Tap_2.wav",
+                    "Text": "在做重要的事情前，一定要先和我商量。明白了吗？",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "帽子",
+                    "File": "Motions_TapMaozi_0.json",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸头",
+                    "File": "Motions_TapLian_0.json",
+                    "Sound": "Motions_TapLian_0.wav",
+                    "SoundDelay": 210,
+                    "Text": "哎嘿嘿，哥哥摸蹭摸蹭好舒服~",
+                    "TextDelay": 210,
+                    "TextDuration": 5000,
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸头2",
+                    "File": "Motions_TapLian_1.json",
+                    "Sound": "Motions_TapLian_1.wav",
+                    "SoundDelay": 400,
+                    "Text": "呀嗯，请不要突然摸我的头啦。好痒啊，真是的~.wav",
+                    "TextDelay": 400,
+                    "TextDuration": 8000,
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸头3",
+                    "File": "Motions_TapLian_2.json",
+                    "Sound": "Motions_TapLian_2.wav",
+                    "SoundDelay": 300,
+                    "Text": "哇酷哇酷(≧∀≦)♪",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸脸",
+                    "File": "Motions_TapLian_3.json",
+                    "Sound": "Motions_TapLian_3.wav",
+                    "SoundDelay": 300,
+                    "Text": "变好喝—吧，变好喝—吧",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸胸",
+                    "File": "Motions_TapXiong_0.json",
+                    "Sound": "Motions_TapXiong_0.wav",
+                    "Text": "居然对妹妹发情，哥哥你这个糟糕的变态！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸胸2",
+                    "File": "Motions_TapXiong_1.json",
+                    "Sound": "Motions_TapXiong_1.wav",
+                    "Text": "看招~，我弄我弄~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸脸2",
+                    "File": "Motions_TapXiong_2.json",
+                    "Sound": "Motions_TapXiong_2.wav",
+                    "Text": "来~，精神起来~痛痛~痛痛~飞走咯~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸肚子",
+                    "File": "Motions_TapDuzi_0.json",
+                    "Sound": "Motions_TapDuzi_0.wav",
+                    "Text": "唔咪······吃完饭就犯困了呢。让我滚一滚舒服舒服吧",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸肚子2",
+                    "File": "Motions_TapDuzi_1.json",
+                    "Sound": "Motions_TapDuzi_1.wav",
+                    "Text": "哥哥。我该不会变重了吧？，  {$br}Σ(っ °Д °;)っ！不，不会吧······这莫非是婚后肥！？",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸裙子",
+                    "File": "Motions_TapQunzi_0.json",
+                    "Sound": "Motions_TapQunzi_0.wav",
+                    "Text": "呀呀呀！这里不行、不行的啦~~~！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸裙子2",
+                    "File": "Motions_TapQunzi_1.json",
+                    "Sound": "Motions_TapQunzi_1.wav",
+                    "Text": "呀呀！？请不要想些奇怪的东西。我可没有色色的意思喔",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "摸裙子3",
+                    "File": "Motions_TapQunzi_2.json",
+                    "Sound": "Motions_TapQunzi_2.wav",
+                    "Text": "呀呼。被捉住了呢~",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃",
+                    "File": "Motions_TapTui_R_0.json",
+                    "Sound": "Motions_TapTui_R_0.wav",
+                    "Text": "哎嘿嘿，杏璃软乎乎的呀",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃2",
+                    "File": "Motions_TapTui_R_1.json",
+                    "Sound": "Motions_TapTui_R_1.wav",
+                    "Text": "杏璃：哥哥~。{$br}杏铃：明明都已经有我了，居然还和别的女生私会，哥哥你个花心大菠萝！",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃3",
+                    "File": "Motions_TapTui_R_2.json",
+                    "Sound": "Motions_TapTui_R_2.wav",
+                    "Text": "啊，找到了找到了。哥~哥",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "鹰仓杏璃4",
+                    "File": "Motions_TapTui_R_3.json",
+                    "Sound": "Motions_TapTui_R_3.wav",
+                    "Text": "杏璃：我会一直待在你们身边，找准机会将优人NTR掉！杏铃：呀呀！？什么NTR啊，好没羞没躁。连我都还没有过正戏呢",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机4",
+                    "File": "Motions_Leave300_1800_3600_0.json",
+                    "Sound": "Motions_Leave300_1800_3600_0.wav",
+                    "Text": "呼瞄呼瞄·····哥哥",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                },
+                {
+                    "Name": "待机5",
+                    "File": "Motions_Leave300_1800_3600_1.json",
+                    "Sound": "Motions_Leave300_1800_3600_1.wav",
+                    "Text": "喵呜······那东西可放不进嘴巴里哟·····",
+                    "Tags": ["happy", "love", "shy", "smug"]
+                }
+            ]
+        }
+    },
+    "HitAreas": [
+        {
+            "Name": "Maozi",
+            "Id": "Maozi2",
+            "Motion": "TapMaozi"
+        },
+        {
+            "Name": "Lian",
+            "Id": "Lian3",
+            "Motion": "TapLian"
+        },
+        {
+            "Name": "Xiong",
+            "Id": "Yifu_Shang",
+            "Motion": "TapXiong"
+        },
+        {
+            "Name": "Duzi",
+            "Id": "Hudiejie_Xia",
+            "Motion": "TapDuzi"
+        },
+        {
+            "Name": "Qunzi",
+            "Id": "Qunzi",
+            "Motion": "TapQunzi"
+        },
+        {
+            "Name": "Tui_R",
+            "Id": "Tui_L2",
+            "Motion": "TapTui_L"
+        },
+        {
+            "Name": "Tui_L",
+            "Id": "Tui_R2",
+            "Motion": "TapTui_R"
+        },
+        {
+            "Name": "Quansuiji",
+            "Id": "Toufa_2_R",
+            "Motion": "TapQuansuiji"
+        }
+    ]
+}

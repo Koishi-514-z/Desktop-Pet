@@ -24,15 +24,15 @@
   pointer-events: auto;
   background:
     radial-gradient(120% 140% at 0% 0%, var(--accent-soft) 0%, transparent 45%),
-    linear-gradient(160deg, rgb(40 40 52 / 78%) 0%, rgb(20 20 28 / 82%) 100%);
-  border: 1px solid rgb(255 255 255 / 12%);
+    linear-gradient(160deg, rgb(40 40 52 / 45%) 0%, rgb(20 20 28 / 52%) 100%);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 18px;
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
   box-shadow:
-    0 10px 40px rgb(0 0 0 / 35%),
-    0 0 0 1px rgb(0 0 0 / 20%),
-    inset 0 1px 0 rgb(255 255 255 / 10%);
+    0 10px 40px rgb(0 0 0 / 22%),
+    0 0 0 1px rgb(0 0 0 / 12%),
+    inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .subtitle-card.user {
@@ -108,7 +108,9 @@
   letter-spacing: 0.02em;
   white-space: pre-wrap;
   word-break: break-word;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 60%),
+    0 0 8px rgb(0 0 0 / 35%);
   scroll-behavior: smooth;
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 20%) transparent;

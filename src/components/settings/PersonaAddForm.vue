@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import type { PersonaForm } from './PersonaProfileFields.vue'
 import { computed, ref } from 'vue'
 import { usePersonaStore } from '@/stores/persona'
+import PersonaProfileFields from './PersonaProfileFields.vue'
 
-const emit = defineEmits<{ back: [], created: [id: string] }>()
+const emit = defineEmits<{ back: []; created: [id: string] }>()
 
 const personaStore = usePersonaStore()
 
-const form = ref({
+const form = ref<PersonaForm>({
   name: '',
   personality: '',
   background: '',
@@ -33,36 +35,24 @@ function submit() {
   <div class="persona-detail">
     <header class="detail-header">
       <button class="back-button" title="返回" @click="emit('back')">
-        ←
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        角色列表
       </button>
-      <span class="detail-title">添加人设</span>
     </header>
 
-    <div class="field">
-      <label>名字</label>
-      <input v-model="form.name" type="text" placeholder="人设名字">
-    </div>
+    <PersonaProfileFields v-model="form">
+      <template #badge>
+        <span class="hero-badge">✦ 新角色</span>
+      </template>
+    </PersonaProfileFields>
 
-    <div class="field">
-      <label>性格特点</label>
-      <textarea v-model="form.personality" rows="3" placeholder="描述性格，如：活泼、温柔、有点小调皮…" />
-    </div>
-
-    <div class="field">
-      <label>背景故事</label>
-      <textarea v-model="form.background" rows="4" placeholder="可选，描述角色来历、经历等背景信息" />
-    </div>
-
-    <div class="field">
-      <label>说话风格</label>
-      <textarea v-model="form.speakingStyle" rows="3" placeholder="可选，描述说话方式，如：喜欢用颜文字、语气轻快…" />
-    </div>
-
-    <div class="detail-actions">
-      <button class="action-button" :disabled="!canSubmit" @click="submit">
-        添加
+    <footer class="detail-actions">
+      <span class="spacer" />
+      <button class="action-button" @click="emit('back')">取消</button>
+      <button class="action-button primary" :disabled="!canSubmit" @click="submit">
+        创建角色
       </button>
-    </div>
+    </footer>
   </div>
 </template>
 

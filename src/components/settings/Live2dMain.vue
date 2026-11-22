@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useLive2dStore } from '@/stores/live2d'
+import { getInitial } from '@/utils/avatar'
 
 const emit = defineEmits<{
   select: [id: string]
@@ -8,148 +9,211 @@ const emit = defineEmits<{
 
 const live2dStore = useLive2dStore()
 
+type ToggleKey = 'useFocus' | 'useLipSync' | 'useDrag' | 'useScroll' | 'useHit'
+type ParamKey =
+  | 'eyeFocusTimeout'
+  | 'eyeFocusSensitivity'
+  | 'focusLerpFactorIdle'
+  | 'focusLerpFactorMouse'
+  | 'lipSyncGain'
+  | 'scrollScaleStep'
+  | 'minScale'
+  | 'maxScale'
+
+interface FeatureParam {
+  key: ParamKey
+  label: string
+  unit?: string
+  min?: number
+  max?: number
+  step: number
+}
+
+interface Feature {
+  key: ToggleKey
+  title: string
+  description: string
+  // 图标的 SVG path 列表与配色
+  icon: string[]
+  tone: string
+  params: FeatureParam[]
+}
+
+const features: Feature[] = [
+  {
+    key: 'useFocus',
+    title: '视线跟随',
+    description: '模型的视线会跟随桌面上的鼠标移动',
+    icon: ['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z', 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6z'],
+    tone: 'cyan',
+    params: [
+      { key: 'eyeFocusTimeout', label: '静止超时', unit: 'ms', min: 0, step: 500 },
+      { key: 'eyeFocusSensitivity', label: '跟随灵敏度', min: 0, step: 0.5 },
+      { key: 'focusLerpFactorIdle', label: '空闲缓动系数', min: 0, max: 1, step: 0.001 },
+      { key: 'focusLerpFactorMouse', label: '跟随缓动系数', min: 0, max: 1, step: 0.001 },
+    ],
+  },
+  {
+    key: 'useLipSync',
+    title: '口型同步',
+    description: '说话时根据语音音量驱动嘴部开合',
+    icon: ['M3 10v4M7 7v10M11 4v16M15 7v10M19 10v4'],
+    tone: 'pink',
+    params: [{ key: 'lipSyncGain', label: '音量放大倍数', unit: '×', min: 0, step: 0.5 }],
+  },
+  {
+    key: 'useDrag',
+    title: '拖拽移动',
+    description: '按住模型即可在桌面上拖动位置',
+    icon: [
+      'M12 3v18M3 12h18',
+      'M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3',
+    ],
+    tone: 'amber',
+    params: [],
+  },
+  {
+    key: 'useScroll',
+    title: '滚轮缩放',
+    description: '在模型上滚动鼠标滚轮调整大小',
+    icon: ['M11 4a7 7 0 1 0 0 14 7 7 0 1 0 0-14z', 'M20 20l-4-4M11 8v6M8 11h6'],
+    tone: 'violet',
+    params: [
+      { key: 'scrollScaleStep', label: '缩放步长', min: 0, step: 0.01 },
+      { key: 'minScale', label: '最小缩放', unit: '×', min: 0, step: 0.1 },
+      { key: 'maxScale', label: '最大缩放', unit: '×', min: 0, step: 0.1 },
+    ],
+  },
+  {
+    key: 'useHit',
+    title: '点击互动',
+    description: '点击模型的不同部位触发对应动作',
+    icon: ['M9 9l10 4-4.5 1.5L13 19z', 'M5 5l2 2M9 3v3M3 9h3'],
+    tone: 'green',
+    params: [],
+  },
+]
+
 function isCurrent(id: string) {
   return live2dStore.currentModelId === id
-}
-
-function setCurrent(id: string) {
-  live2dStore.switchModel(id)
-}
-
-function remove(id: string) {
-  live2dStore.removeModel(id)
 }
 </script>
 
 <template>
   <div class="live2d-main">
-    <div class="live2d-main-header">
-      <h3 class="section-title group-title">
-        全局设置
-      </h3>
-      <button class="field-action" @click="live2dStore.resetGlobalOptionsToDefault()">
-        恢复默认全局设置
-      </button>
-    </div>
+    <!-- 模型库 -->
+    <section class="block">
+      <div class="block-head">
+        <h3 class="block-title">
+          模型库
+          <span class="block-count">{{ live2dStore.models.length }}</span>
+        </h3>
+        <span class="block-hint">点击卡片编辑模型</span>
+      </div>
 
-    <section class="live2d-section">
-      <h3 class="section-title">
-        视线跟随
-      </h3>
-      <div class="toggle-row">
-        <span>启用视线跟随</span>
-        <input v-model="live2dStore.useFocus" type="checkbox" class="toggle">
-      </div>
-      <template v-if="live2dStore.useFocus">
-        <div class="field-grid">
-          <div class="field">
-            <label>静止超时 (ms)</label>
-            <input v-model.number="live2dStore.eyeFocusTimeout" type="number" min="0" step="500">
-          </div>
-          <div class="field">
-            <label>跟随灵敏度</label>
-            <input v-model.number="live2dStore.eyeFocusSensitivity" type="number" min="0" step="0.5">
-          </div>
-          <div class="field">
-            <label>空闲缓动系数</label>
-            <input v-model.number="live2dStore.focusLerpFactorIdle" type="number" min="0" max="1" step="0.001">
-          </div>
-          <div class="field">
-            <label>跟随缓动系数</label>
-            <input v-model.number="live2dStore.focusLerpFactorMouse" type="number" min="0" max="1" step="0.001">
-          </div>
-        </div>
-      </template>
-    </section>
-
-    <section class="live2d-section">
-      <h3 class="section-title">
-        口型同步
-      </h3>
-      <div class="toggle-row">
-        <span>启用口型同步</span>
-        <input v-model="live2dStore.useLipSync" type="checkbox" class="toggle">
-      </div>
-      <template v-if="live2dStore.useLipSync">
-        <div class="field-grid">
-          <div class="field">
-            <label>音量放大倍数</label>
-            <input v-model.number="live2dStore.lipSyncGain" type="number" min="0" step="0.5">
-          </div>
-        </div>
-      </template>
-    </section>
-
-    <section class="live2d-section">
-      <h3 class="section-title">
-        鼠标交互
-      </h3>
-      <div class="toggle-row">
-        <span>拖拽移动模型</span>
-        <input v-model="live2dStore.useDrag" type="checkbox" class="toggle">
-      </div>
-      <div class="toggle-row">
-        <span>滚轮缩放模型</span>
-        <input v-model="live2dStore.useScroll" type="checkbox" class="toggle">
-      </div>
-      <template v-if="live2dStore.useScroll">
-        <div class="field-grid">
-          <div class="field">
-            <label>缩放步长</label>
-            <input v-model.number="live2dStore.scrollScaleStep" type="number" min="0" step="0.01">
-          </div>
-          <div class="field">
-            <label>最小缩放</label>
-            <input v-model.number="live2dStore.minScale" type="number" min="0" step="0.1">
-          </div>
-          <div class="field">
-            <label>最大缩放</label>
-            <input v-model.number="live2dStore.maxScale" type="number" min="0" step="0.1">
-          </div>
-        </div>
-      </template>
-      <div class="toggle-row">
-        <span>点击触发动作</span>
-        <input v-model="live2dStore.useHit" type="checkbox" class="toggle">
-      </div>
-    </section>
-
-    <section class="live2d-section">
-      <h3 class="section-title group-title model-section-title">
-        模型设置
-      </h3>
-      <div class="model-cards">
+      <div class="gallery">
         <div
           v-for="model in live2dStore.models"
           :key="model.id"
-          class="model-card"
+          class="poster"
           :class="{ current: isCurrent(model.id) }"
           @click="emit('select', model.id)"
         >
-          <div class="card-header">
-            <span class="card-name">{{ model.name }}</span>
+          <div class="poster-image">
+            <img v-if="model.image" :src="model.image" :alt="model.name" />
+            <span v-else class="poster-initial">{{ getInitial(model.name) }}</span>
           </div>
-          <div class="card-thumbnail">
-            <img v-if="model.image" :src="model.image" :alt="model.name">
-            <span v-else class="card-thumbnail-placeholder">无预览图</span>
-          </div>
-          <div class="card-actions">
+
+          <span v-if="isCurrent(model.id)" class="poster-ribbon">
+            <i class="ribbon-dot" />
+            使用中
+          </span>
+
+          <button
+            v-if="!live2dStore.isDefaultModel(model.id)"
+            class="poster-remove"
+            title="删除"
+            @click.stop="live2dStore.removeModel(model.id)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+
+          <div class="poster-info">
+            <span class="poster-name">{{ model.name }}</span>
+            <span v-if="model.description" class="poster-desc">{{ model.description }}</span>
             <button
-              class="card-action"
-              :class="{ active: isCurrent(model.id) }"
-              @click.stop="setCurrent(model.id)"
+              v-if="!isCurrent(model.id)"
+              class="poster-use"
+              @click.stop="live2dStore.switchModel(model.id)"
             >
-              {{ isCurrent(model.id) ? '使用中' : '设为当前' }}
-            </button>
-            <button class="card-remove" title="删除" :disabled="live2dStore.isDefaultModel(model.id)" @click.stop="remove(model.id)">
-              ×
+              换上这个模型
             </button>
           </div>
         </div>
 
-        <div class="model-card add-card" @click="emit('add')">
-          <span class="add-icon">+</span>
+        <button class="poster add-poster" type="button" @click="emit('add')">
+          <span class="add-ring">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          </span>
           <span>添加模型</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 交互行为 -->
+    <section class="block">
+      <div class="block-head">
+        <h3 class="block-title">交互行为</h3>
+        <button class="text-button" @click="live2dStore.resetGlobalOptionsToDefault()">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          恢复默认
+        </button>
+      </div>
+
+      <div class="feature-list">
+        <div
+          v-for="feature in features"
+          :key="feature.key"
+          class="feature"
+          :class="[feature.tone, { on: live2dStore[feature.key] }]"
+        >
+          <label class="feature-row">
+            <span class="feature-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path v-for="d in feature.icon" :key="d" :d="d" />
+              </svg>
+            </span>
+            <span class="feature-text">
+              <span class="feature-title">{{ feature.title }}</span>
+              <span class="feature-desc">{{ feature.description }}</span>
+            </span>
+            <span class="switch">
+              <input v-model="live2dStore[feature.key]" type="checkbox" />
+              <span class="switch-track" />
+            </span>
+          </label>
+
+          <div
+            v-if="feature.params.length > 0 && live2dStore[feature.key]"
+            class="feature-params"
+          >
+            <label v-for="param in feature.params" :key="param.key" class="param">
+              <span class="param-label">{{ param.label }}</span>
+              <span class="param-input">
+                <input
+                  v-model.number="live2dStore[param.key]"
+                  type="number"
+                  :min="param.min"
+                  :max="param.max"
+                  :step="param.step"
+                />
+                <span v-if="param.unit" class="param-unit">{{ param.unit }}</span>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
     </section>

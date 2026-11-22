@@ -1,52 +1,128 @@
+/* ===== 通用 ===== */
+
+svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgb(255 255 255 / 65%);
+  vertical-align: 1px;
+  background: rgb(255 255 255 / 10%);
+  border-radius: 9px;
+}
+
+/* Provider 头像：LLM 为蓝紫色，TTS 为粉橙色 */
+.provider-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #5b9dff, #8a5cff);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgb(91 157 255 / 30%);
+}
+
+.provider-avatar.tts {
+  background: linear-gradient(135deg, #ff8fb8, #ff9f5a);
+  box-shadow: 0 4px 12px rgb(255 143 184 / 30%);
+}
+
+.provider-avatar.small {
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+/* ===== 列表 ===== */
+
 .provider-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .provider-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .section-title {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: rgb(255 255 255 / 70%);
+  color: rgb(255 255 255 / 80%);
 }
 
 .provider-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
 }
 
 .provider-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  gap: 8px;
+  padding: 12px;
+  overflow: hidden;
   cursor: pointer;
-  background: rgb(255 255 255 / 6%);
+  background: linear-gradient(160deg, rgb(255 255 255 / 8%), rgb(255 255 255 / 3%));
   border: 1px solid rgb(255 255 255 / 8%);
-  border-radius: 8px;
+  border-radius: 12px;
+  transition:
+    transform 0.15s,
+    background 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .provider-card:hover {
-  background: rgb(255 255 255 / 10%);
+  background: linear-gradient(160deg, rgb(255 255 255 / 12%), rgb(255 255 255 / 5%));
+  border-color: rgb(255 255 255 / 16%);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 25%);
+  transform: translateY(-2px);
 }
 
 .provider-card.current {
-  border-color: rgb(64 158 255 / 60%);
+  border-color: rgb(64 158 255 / 65%);
+  box-shadow:
+    0 0 0 1px rgb(64 158 255 / 25%),
+    0 6px 18px rgb(64 158 255 / 15%);
 }
 
 .card-header {
   display: flex;
+  gap: 10px;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+}
+
+.card-heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .card-name {
@@ -57,16 +133,24 @@
   white-space: nowrap;
 }
 
+.card-protocol {
+  font-size: 11px;
+  color: rgb(255 255 255 / 45%);
+}
+
 .card-badge {
   flex-shrink: 0;
+  align-self: flex-start;
   width: 8px;
   height: 8px;
+  margin-top: 4px;
   background: rgb(255 255 255 / 25%);
   border-radius: 50%;
 }
 
 .card-badge.valid {
   background: #67c23a;
+  box-shadow: 0 0 0 3px rgb(103 194 58 / 20%);
 }
 
 .card-description {
@@ -78,70 +162,134 @@
   white-space: nowrap;
 }
 
+.card-selection {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 5px 8px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: rgb(255 255 255 / 75%);
+  white-space: nowrap;
+  background: rgb(0 0 0 / 18%);
+  border-radius: 6px;
+}
+
+.card-selection svg {
+  width: 12px;
+  height: 12px;
+  color: #8ab8ff;
+}
+
+.card-selection.empty {
+  color: rgb(255 255 255 / 35%);
+}
+
+.card-selection.empty svg {
+  color: inherit;
+}
+
 .card-actions {
   display: flex;
+  gap: 6px;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-top: 4px;
 }
 
 .card-action {
-  padding: 4px 8px;
+  padding: 4px 10px;
   font-size: 11px;
   color: rgb(255 255 255 / 80%);
   cursor: pointer;
   background: rgb(255 255 255 / 10%);
   border: none;
-  border-radius: 6px;
+  border-radius: 999px;
+  transition: background 0.2s;
 }
 
-.card-action:hover {
+.card-action:hover:not(:disabled) {
   background: rgb(255 255 255 / 18%);
+}
+
+.card-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .card-action.active {
   color: #fff;
-  background: rgb(64 158 255 / 70%);
+  background: linear-gradient(135deg, #409eff, #6a7bff);
 }
 
 .card-remove {
-  padding: 0 4px;
-  font-size: 14px;
-  line-height: 1;
-  color: rgb(255 255 255 / 50%);
+  display: flex;
+  padding: 4px;
+  color: rgb(255 255 255 / 40%);
   cursor: pointer;
   background: transparent;
   border: none;
+  border-radius: 6px;
+  opacity: 0;
+  transition:
+    opacity 0.2s,
+    color 0.2s,
+    background 0.2s;
 }
 
-.card-remove:hover {
+.card-remove svg {
+  width: 14px;
+  height: 14px;
+}
+
+.provider-card:hover .card-remove {
+  opacity: 1;
+}
+
+.card-remove:hover:not(:disabled) {
   color: #ff8080;
+  background: rgb(255 90 90 / 15%);
+}
+
+.card-remove:disabled {
+  display: none;
 }
 
 .add-card {
-  display: flex;
   flex-direction: row;
+  gap: 8px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  min-height: 120px;
+  font: inherit;
   font-size: 12px;
   color: rgb(255 255 255 / 50%);
   background: transparent;
-  border: 1px dashed rgb(255 255 255 / 15%);
+  border: 1px dashed rgb(255 255 255 / 18%);
 }
 
 .add-card:hover {
-  color: rgb(255 255 255 / 80%);
-  border-color: rgb(255 255 255 / 30%);
+  color: rgb(255 255 255 / 90%);
+  background: rgb(64 158 255 / 8%);
+  border-color: rgb(64 158 255 / 50%);
 }
 
 .add-icon {
-  font-size: 16px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgb(255 255 255 / 8%);
+  border-radius: 50%;
 }
 
-/* 详情 / 添加表单 */
+.add-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ===== 详情 / 添加表单 ===== */
 
 .provider-detail {
   display: flex;
@@ -151,50 +299,151 @@
 
 .detail-header {
   display: flex;
+  gap: 10px;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .back-button {
-  padding: 2px 6px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   color: rgb(255 255 255 / 70%);
   cursor: pointer;
-  background: transparent;
+  background: rgb(255 255 255 / 6%);
   border: none;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.back-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .back-button:hover {
   color: #fff;
+  background: rgb(255 255 255 / 14%);
+}
+
+.detail-heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .detail-title {
-  flex: 1;
   overflow: hidden;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.detail-subtitle {
+  font-size: 11px;
+  color: rgb(255 255 255 / 50%);
+}
+
 .status-badge {
-  padding: 2px 8px;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 5px;
+  align-items: center;
+  padding: 3px 10px;
   font-size: 11px;
   color: rgb(255 255 255 / 60%);
   background: rgb(255 255 255 / 10%);
-  border-radius: 10px;
+  border-radius: 999px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background: currentcolor;
+  border-radius: 50%;
 }
 
 .status-badge.valid {
-  color: #67c23a;
+  color: #7dd35a;
   background: rgb(103 194 58 / 15%);
+}
+
+/* 分区面板 */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgb(255 255 255 / 4%);
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 12px;
+}
+
+.panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 85%);
+  letter-spacing: 0.04em;
+}
+
+.panel-hint {
+  max-width: 60%;
+  overflow: hidden;
+  font-size: 11px;
+  color: #8ab8ff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-note {
+  margin: 0;
+  font-size: 11px;
+  color: rgb(255 255 255 / 40%);
+}
+
+.empty-state {
+  padding: 14px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgb(255 255 255 / 45%);
+  text-align: center;
+  border: 1px dashed rgb(255 255 255 / 12%);
+  border-radius: 10px;
+}
+
+.empty-hint {
+  margin: 0;
+  font-size: 12px;
+  color: rgb(255 255 255 / 40%);
+  text-align: center;
+}
+
+/* 表单字段 */
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
+  min-width: 0;
 }
 
 .field label {
@@ -202,81 +451,507 @@
   color: rgb(255 255 255 / 60%);
 }
 
+.required {
+  color: #ff8080;
+}
+
 .field input,
-.field select {
-  padding: 6px 8px;
+.field-row input,
+.search-box input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
   font: inherit;
+  font-size: 13px;
   color: #fff;
-  background: rgb(255 255 255 / 8%);
-  border: 1px solid rgb(255 255 255 / 15%);
-  border-radius: 6px;
+  box-sizing: border-box;
+  background: rgb(0 0 0 / 20%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
   outline: none;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    background 0.2s;
 }
 
-.field input::placeholder {
-  color: rgb(255 255 255 / 35%);
+.field input:focus,
+.field-row input:focus,
+.search-box input:focus {
+  background: rgb(0 0 0 / 28%);
+  border-color: rgb(64 158 255 / 70%);
+  box-shadow: 0 0 0 3px rgb(64 158 255 / 18%);
 }
 
-.field select option {
-  color: #000;
+.field input::placeholder,
+.field-row input::placeholder,
+.search-box input::placeholder {
+  color: rgb(255 255 255 / 30%);
 }
 
 .field-row {
   display: flex;
+  gap: 8px;
+}
+
+.input-with-icon {
+  position: relative;
+}
+
+.input-with-icon input {
+  padding-right: 36px;
+}
+
+.input-icon-button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: flex;
+  padding: 5px;
+  color: rgb(255 255 255 / 50%);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  transform: translateY(-50%);
+}
+
+.input-icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.input-icon-button:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 10%);
+}
+
+/* 协议选择胶囊 */
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
-.field-row input,
-.field-row select {
+.chip {
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: rgb(255 255 255 / 70%);
+  cursor: pointer;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 999px;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s;
+}
+
+.chip:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 12%);
+}
+
+.chip.active {
+  color: #fff;
+  background: rgb(64 158 255 / 25%);
+  border-color: rgb(64 158 255 / 70%);
+}
+
+/* 搜索框 */
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-box svg {
+  position: absolute;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: rgb(255 255 255 / 40%);
+  pointer-events: none;
+}
+
+.search-box input {
+  padding-left: 30px;
+}
+
+/* 模型 / 声线卡片 */
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  max-height: 268px;
+  padding: 6px;
+  margin: -6px;
+  overflow-y: auto;
+}
+
+/* 声线名称通常较短，每行可放更多 */
+.option-grid.voice-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.option-grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+.option-grid::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 15%);
+  border-radius: 2px;
+}
+
+.option-card {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  font: inherit;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  background: rgb(255 255 255 / 5%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 10px;
+  outline: none;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.15s;
+}
+
+.option-card:hover {
+  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 16%);
+}
+
+.option-card:active {
+  transform: scale(0.98);
+}
+
+.option-card:focus-visible {
+  box-shadow: 0 0 0 2px rgb(64 158 255 / 60%);
+}
+
+.option-card.selected {
+  background: linear-gradient(135deg, rgb(64 158 255 / 25%), rgb(138 92 255 / 18%));
+  border-color: rgb(64 158 255 / 70%);
+  box-shadow: 0 4px 14px rgb(64 158 255 / 18%);
+}
+
+.option-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  color: rgb(255 255 255 / 60%);
+  background: rgb(255 255 255 / 8%);
+  border-radius: 7px;
+  transition:
+    color 0.2s,
+    background 0.2s;
+}
+
+.option-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.option-card.selected .option-icon {
+  color: #fff;
+  background: linear-gradient(135deg, #409eff, #8a5cff);
+}
+
+.voice-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 20%);
+}
+
+.option-text {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
 }
 
-.field-action {
-  padding: 0 10px;
+.option-name {
+  overflow: hidden;
   font-size: 12px;
-  color: rgb(255 255 255 / 80%);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-meta {
+  overflow: hidden;
+  font-size: 10px;
+  color: rgb(255 255 255 / 45%);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-meta.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* 选中标记 */
+.option-check {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: #fff;
+  background: #409eff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 30%);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 0.2s,
+    transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.option-check svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 3;
+}
+
+.option-card.selected .option-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.option-delete {
+  display: flex;
+  flex-shrink: 0;
+  padding: 4px;
+  color: rgb(255 255 255 / 45%);
   cursor: pointer;
-  background: rgb(255 255 255 / 10%);
+  background: transparent;
   border: none;
   border-radius: 6px;
+  opacity: 0;
+  transition:
+    opacity 0.2s,
+    color 0.2s,
+    background 0.2s;
 }
 
-.field-action:hover {
-  background: rgb(255 255 255 / 18%);
+.option-delete svg {
+  width: 13px;
+  height: 13px;
 }
 
+.voice-card:hover .option-delete,
+.voice-card:focus-within .option-delete {
+  opacity: 1;
+}
+
+.option-delete:hover {
+  color: #ff8080;
+  background: rgb(255 90 90 / 15%);
+}
+
+/* 上传音色 */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dropzone {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  cursor: pointer;
+  background: rgb(0 0 0 / 12%);
+  border: 1px dashed rgb(255 255 255 / 18%);
+  border-radius: 10px;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+
+.dropzone > svg {
+  width: 26px;
+  height: 26px;
+  padding: 7px;
+  color: rgb(255 255 255 / 60%);
+  background: rgb(255 255 255 / 8%);
+  border-radius: 50%;
+}
+
+.dropzone:hover,
+.dropzone.dragging {
+  background: rgb(64 158 255 / 8%);
+  border-color: rgb(64 158 255 / 55%);
+}
+
+.dropzone.filled {
+  border-style: solid;
+  border-color: rgb(255 143 184 / 45%);
+}
+
+.dropzone.filled > svg {
+  color: #fff;
+  background: linear-gradient(135deg, #ff8fb8, #ff9f5a);
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dropzone-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 85%);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropzone-sub {
+  font-size: 11px;
+  color: rgb(255 255 255 / 40%);
+}
+
+.message {
+  padding: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.message.success {
+  color: #8fe07a;
+  background: rgb(103 194 58 / 12%);
+}
+
+.message.error {
+  color: #ff9a9a;
+  background: rgb(255 90 90 / 12%);
+}
+
+/* 底部操作栏：悬浮吸附在可视区域底部 */
 .detail-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  background: rgb(40 40 48 / 88%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 12px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 -4px 20px rgb(0 0 0 / 25%);
+}
+
+.spacer {
+  flex: 1;
 }
 
 .action-button {
-  padding: 6px 12px;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 5px;
+  align-items: center;
+  padding: 7px 14px;
+  font: inherit;
   font-size: 12px;
   color: rgb(255 255 255 / 85%);
+  white-space: nowrap;
   cursor: pointer;
   background: rgb(255 255 255 / 10%);
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
+  transition:
+    background 0.2s,
+    opacity 0.2s,
+    box-shadow 0.2s;
 }
 
-.action-button:hover {
+.action-button:hover:not(:disabled) {
   background: rgb(255 255 255 / 18%);
 }
 
 .action-button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .action-button.active {
   color: #fff;
-  background: rgb(64 158 255 / 70%);
+  background: rgb(64 158 255 / 30%);
+  box-shadow: inset 0 0 0 1px rgb(64 158 255 / 60%);
 }
 
-.action-button.danger:hover {
-  background: rgb(255 90 90 / 25%);
+.action-button.primary {
+  color: #fff;
+  background: linear-gradient(135deg, #409eff, #6a7bff);
+}
+
+.action-button.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #53a8ff, #7b8aff);
+  box-shadow: 0 4px 14px rgb(64 158 255 / 35%);
+}
+
+.action-button.primary.dirty {
+  box-shadow: 0 0 0 3px rgb(64 158 255 / 25%);
+}
+
+.action-button.danger {
+  color: #ff9a9a;
+  background: rgb(255 90 90 / 10%);
+}
+
+.action-button.danger:hover:not(:disabled) {
+  background: rgb(255 90 90 / 22%);
+}
+
+.button-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.button-icon.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
