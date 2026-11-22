@@ -12,6 +12,7 @@
 - **语音合成**：回复按句切分后逐句合成并按顺序播放，播放音量可调。
 - **情绪表达**：模型在回复中输出情绪标签（如 `<happy>`），前端据此随机播放带有对应标签的表情或动作。
 - **口型同步**：实时分析播放音频的音量，驱动模型嘴部开合。
+- **Agent（技能 + 工具调用）**：先由 LLM 识别用户意图，需要时调用技能中的工具完成请求，再以角色口吻润色结果；内置日期时间、提醒、天气三个技能，提醒到时桌宠会主动开口。
 - **人物设定**：可自定义角色的名字、性格、背景故事与说话风格，并在多个人设之间切换。
 - **桌面窗口**：无边框、透明背景、始终置顶，不占用任务栏；透明区域鼠标穿透，不影响操作其他应用；通过托盘图标控制。
 - **可配置**：所有设置均可在应用内的设置面板修改，并持久化到 `localStorage`。
@@ -100,11 +101,55 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 
 可用的情绪标签：`neutral`、`happy`、`excited`、`love`、`shy`、`smug`、`surprised`、`confused`、`sad`、`angry`、`cry`、`sleepy`。另外，带有 `thinking` 标签的表情会在等待模型回复时播放。
 
+## Agent
+
+每条用户消息会经过三个阶段（[src/agent/](src/agent/)）：
+
+1. **意图识别**（[router.ts](src/agent/router.ts)）：LLM 只看到各技能的名称、描述与示例，输出 `{"skills": [...], "reason": "..."}`。不需要技能（闲聊）时直接进入第 3 步；识别失败也会退化为普通对话。
+2. **工具执行**（[executor.ts](src/agent/executor.ts)）：只把被选中技能的使用说明和工具交给 LLM，由它自主调用工具（最多 6 轮），并客观总结执行结果。工具抛出的错误、参数校验失败都会被记录下来，而不是中断流程。
+3. **角色润色**（[chat.ts](src/stores/chat.ts)）：执行记录被附加到人设提示词之后，由 LLM 以角色的口吻、带情绪标签流式回复，后续照常进入语音合成与表情动作流程。
+
+三个阶段使用同一个 LLM Provider。启用 Agent 后每条消息会多一次意图识别请求，可以在设置面板的 **技能** 页关闭 Agent 或单独禁用某个技能。
+
+| 技能 | 工具 | 说明 |
+| --- | --- | --- |
+| 日期时间 `datetime` | `get_current_time`、`days_between`、`shift_date` | 当前时间、日期间隔、日期推算 |
+| 提醒 `reminder` | `create_reminder`、`list_reminders`、`cancel_reminder` | 提醒持久化在本地，到时桌宠主动提醒；应用关闭期间错过的提醒会在下次启动时补发 |
+| 天气 `weather` | `get_weather` | 使用 [Open-Meteo](https://open-meteo.com/) 免费接口，无需 API Key |
+
+### 新增技能
+
+在 [src/agent/skills/](src/agent/skills/) 下实现一个 `Skill`，并在 [skills/index.ts](src/agent/skills/index.ts) 中注册：
+
+```ts
+import { tool } from 'ai'
+import { z } from 'zod'
+
+export const mySkill: Skill = {
+  id: 'my_skill',                       // 意图识别阶段输出的 id
+  name: '我的技能',                      // 界面展示名
+  description: '这个技能能处理哪些请求',    // 意图识别依据，越具体越好
+  examples: ['用户可能会怎么说'],
+  instructions: '技能被激活后，告诉 LLM 如何使用这些工具',
+  tools: {
+    do_something: tool({
+      description: '工具的作用',
+      inputSchema: z.object({ text: z.string().describe('参数说明') }),
+      execute: async ({ text }) => ({ result: text }), // 抛出的错误会被记录并告知 LLM
+    }),
+  },
+}
+```
+
+工具名在所有技能之间需唯一。需要让桌宠主动说话时（如定时任务完成），调用 `useChatStore().speakProactively('事件描述')`。
+
 ## 工作流程
 
 ```
 用户输入
-  → ChatStore（LLM 流式输出）
+  → ChatStore
+  → Agent：意图识别 → 工具执行（需要技能时）
+  → LLM 以角色口吻流式输出
   → 文本处理队列：解析 <情绪> 标签，按句末标点切分句子
   → 语音合成队列：逐句调用 TTS
   → 播放队列：按原始顺序播放音频 / 切换表情与动作
@@ -124,12 +169,14 @@ src/
 │   ├── Live2dModel.vue      # Live2D 渲染与交互
 │   ├── InteractiveArea.vue  # 对话面板
 │   ├── SettingBox.vue       # 设置面板
-│   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景）
+│   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景 / 技能）
+├── agent/                   # Agent：意图识别、工具执行与各技能
+│   └── skills/              # 内置技能（日期时间 / 提醒 / 天气）
 ├── composables/
 │   ├── queues.ts            # 文本处理、语音合成、音频播放队列
 │   ├── animation.ts         # 视线跟随
 │   └── desktop.ts           # 桌面窗口：鼠标穿透与全局鼠标坐标
-├── stores/                  # Pinia 状态（chat / speech / audio / live2d / persona / providers / scene）
+├── stores/                  # Pinia 状态（chat / agent / reminders / speech / audio / live2d / persona / providers / scene）
 ├── utils/                   # 网络请求、队列、数学工具等
 └── pages/HomePage.vue
 ```

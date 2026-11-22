@@ -1,5 +1,7 @@
 import type { LanguageModel, ModelMessage } from 'ai'
+import type { AgentEvent, AgentResult } from '@/agent'
 import type { Provider } from '@/stores/providers'
+import type { DueReminder } from '@/stores/reminders'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
@@ -7,15 +9,28 @@ import { useLocalStorage } from '@vueuse/core'
 import { streamText } from 'ai'
 import { defineStore } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
+import { buildAgentContextPrompt, buildEventMessage, runAgent } from '@/agent'
+import { formatDateTime } from '@/agent/utils'
 import { EMOTION_TAG_REGEX_GLOBAL } from '@/composables/queues'
+import { useAgentStore } from '@/stores/agent'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
+import { useRemindersStore } from '@/stores/reminders'
 
 // 本地持久化的对话消息（结构子集，调用 AI SDK 时再断言为 ModelMessage）
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
+  // 不在界面上展示的消息，如触发桌宠主动说话的系统事件
+  hidden?: boolean
+  // assistant 消息：生成该回复时使用的技能 id
+  skills?: string[]
 }
+
+// 一轮回复的触发方式：用户发言，或系统事件（如提醒到时）
+type Turn =
+  | { type: 'user', content: string }
+  | { type: 'event', content: string }
 
 // 一个会话，包含其自身的消息历史
 export interface ChatSession {
@@ -53,6 +68,8 @@ function resolveLanguageModel(provider: Provider): LanguageModel {
 export const useChatStore = defineStore('chat', () => {
   const providersStore = useProvidersStore()
   const personaStore = usePersonaStore()
+  const agentStore = useAgentStore()
+  const remindersStore = useRemindersStore()
 
   function createSession(title = '新对话'): ChatSession {
     const now = Date.now()
@@ -66,6 +83,8 @@ export const useChatStore = defineStore('chat', () => {
 
   // 是否正在等待/接收流式响应
   const isStreaming = ref(false)
+  // Agent 当前进度的描述（如「正在使用技能：天气」），为空表示没有在使用技能
+  const agentStatus = ref('')
 
   // 发送消息时的钩子函数，用于在流式响应的不同阶段进行处理
   const onStartHooks = ref<(() => Promise<void>)[]>([])
@@ -79,7 +98,7 @@ export const useChatStore = defineStore('chat', () => {
   // 当前选中会话的消息列表
   const messages = computed(() => currentSession.value?.messages ?? [])
   // 用于界面展示的消息列表，过滤掉隐藏的系统提示词
-  const visibleMessages = computed(() => messages.value.filter((message) => message.role !== 'system'))
+  const visibleMessages = computed(() => messages.value.filter((message) => message.role !== 'system' && !message.hidden))
 
   // 将指定会话移动到最前面
   function moveSessionToFront(id: string) {
@@ -136,8 +155,40 @@ export const useChatStore = defineStore('chat', () => {
     session.title = title
   }
 
+  // 同一时间只生成一条回复：用户消息与系统事件（如提醒到时）按顺序排队执行
+  let pendingReply: Promise<void> = Promise.resolve()
+  function enqueueReply(turn: Turn): Promise<void> {
+    const task = pendingReply.then(() => reply(turn))
+    pendingReply = task.catch(() => {})
+    return task
+  }
+
   // 发送一条用户消息，并以流式方式接收模型回复，期间通过 hooks 回调通知调用方
-  async function sendMessage(content: string) {
+  function sendMessage(content: string) {
+    return enqueueReply({ type: 'user', content })
+  }
+
+  // 让桌宠针对一个系统事件主动开口说话，event 为对事件的描述
+  function speakProactively(event: string) {
+    return enqueueReply({ type: 'event', content: event })
+  }
+
+  // 将 Agent 事件转换为界面上展示的进度描述
+  function describeAgentEvent(event: AgentEvent): string {
+    switch (event.type) {
+      case 'routing':
+        return ''
+      case 'routed':
+        return event.skills.length ? `正在使用技能：${event.skills.map((skill) => skill.name).join('、')}` : ''
+      default:
+        return agentStatus.value
+    }
+  }
+
+  // 生成一轮回复：
+  // 1. 意图识别 + 工具执行（仅用户发言时，由 Agent 完成）；
+  // 2. 将工具执行结果附加到人设提示词之后，由 LLM 以角色口吻流式生成最终回复
+  async function reply(turn: Turn) {
     const provider = providersStore.getCurrentLLMProvider()
     if (!provider) {
       onErrorHooks.value.forEach(hook => hook(new Error('未配置可用的 LLM Provider')))
@@ -147,16 +198,25 @@ export const useChatStore = defineStore('chat', () => {
 
     const session = ensureCurrentSession()
 
-    session.messages.push({ role: 'user', content })
-    if (session.title === '新对话' && session.messages.length === 2) {
-      session.title = content.slice(0, 20)
+    if (turn.type === 'user') {
+      session.messages.push({ role: 'user', content: turn.content })
+      if (session.title === '新对话' && !session.messages.some((m) => m.role === 'assistant')) {
+        session.title = turn.content.slice(0, 20)
+      }
+    }
+    else {
+      // 系统事件以隐藏的用户消息告知 LLM，同时保持 user / assistant 交替，兼容各服务商
+      session.messages.push({ role: 'user', content: buildEventMessage(turn.content), hidden: true })
     }
     session.updatedAt = Date.now()
     moveSessionToFront(session.id)
     isStreaming.value = true
 
-    // 请求消息不包含下面新增的占位回复
-    const requestMessages = session.messages.map((message) => ({ ...message })) as ModelMessage[]
+    // 请求消息不包含下面新增的占位回复；系统提示词单独传入，以便附加技能执行结果
+    const systemPrompt = session.messages.find((m) => m.role === 'system')?.content ?? personaStore.systemPrompt
+    const dialog = session.messages
+      .filter((message) => message.role !== 'system')
+      .map(({ role, content }) => ({ role, content })) as ModelMessage[]
 
     // 占位的 assistant 消息，随流式响应实时更新其内容
     session.messages.push({ role: 'assistant', content: '' })
@@ -166,14 +226,32 @@ export const useChatStore = defineStore('chat', () => {
     let isFirstChunk = true
     try {
       const model = resolveLanguageModel(provider)
+
+      // 阶段一、二：意图识别与工具执行，不需要技能时返回 null
+      let agentResult: AgentResult | null = null
+      if (turn.type === 'user') {
+        agentResult = await runAgent({
+          model,
+          messages: dialog,
+          skills: agentStore.activeSkills,
+          onEvent: (event) => { agentStatus.value = describeAgentEvent(event) },
+        })
+        if (agentResult) {
+          session.messages[assistantIndex]!.skills = agentResult.skills.map((skill) => skill.id)
+        }
+      }
+
+      // 阶段三：以角色口吻润色执行结果（或直接闲聊）
       const result = streamText({
         model,
-        messages: requestMessages,
+        system: agentResult ? `${systemPrompt}\n\n${buildAgentContextPrompt(agentResult)}` : systemPrompt,
+        messages: dialog,
       })
 
       for await (const delta of result.textStream) {
         if (isFirstChunk) {
           isFirstChunk = false
+          agentStatus.value = ''
           onFirstChunkArrivedHooks.value.forEach(hook => hook())
         }
 
@@ -194,10 +272,19 @@ export const useChatStore = defineStore('chat', () => {
       onErrorHooks.value.forEach(hook => hook(error))
     }
     finally {
-      console.log(sessions.value)
+      agentStatus.value = ''
       isStreaming.value = false
     }
   }
+
+  // 提醒到时，让桌宠主动提醒用户
+  remindersStore.onDue(async (reminder: DueReminder) => {
+    const due = formatDateTime(new Date(reminder.dueAt))
+    const event = reminder.late
+      ? `用户设定在 ${due} 的提醒「${reminder.message}」因为应用当时没有运行而错过了，现在才补上。请提醒用户，并说明晚了。`
+      : `用户之前让你设定的提醒时间到了，提醒内容是「${reminder.message}」。请提醒用户。`
+    speakProactively(event)
+  })
 
   // 清空当前会话的对话历史，保留隐藏的系统提示词
   function clearMessages() {
@@ -244,6 +331,7 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     visibleMessages,
     isStreaming,
+    agentStatus,
 
     createNewSession,
     switchSession,
@@ -251,6 +339,7 @@ export const useChatStore = defineStore('chat', () => {
     renameSession,
 
     sendMessage,
+    speakProactively,
     onStart,
     onFirstChunkArrived,
     onChunk,

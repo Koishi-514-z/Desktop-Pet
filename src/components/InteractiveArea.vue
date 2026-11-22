@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAgentStore } from '@/stores/agent'
 import { useChatStore } from '@/stores/chat'
 import { useSceneStore } from '@/stores/scene'
 
+const agentStore = useAgentStore()
 const chatStore = useChatStore()
 const sceneStore = useSceneStore()
 
@@ -141,7 +143,11 @@ onMounted(() => {
               <span v-if="message.content">{{ message.content }}</span>
               <span v-else-if="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1" class="typing">
                 <i></i><i></i><i></i>
+                <span v-if="chatStore.agentStatus" class="agent-status">{{ chatStore.agentStatus }}</span>
               </span>
+            </div>
+            <div v-if="message.role === 'assistant' && message.skills?.length" class="skill-tags">
+              <span v-for="id in message.skills" :key="id" class="skill-tag">{{ agentStore.getSkillById(id)?.name ?? id }}</span>
             </div>
           </div>
         </div>
