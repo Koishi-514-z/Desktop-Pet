@@ -31,6 +31,17 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.23"
 # 长期记忆：SQLite（bundled 会编译内置的 SQLite，无需另外安装）
 rusqlite = { version = "0.43", features = ["bundled"] }
+# 网页搜索：不受跨域限制的 HTTP 请求；用系统浏览器打开链接、在文件夹中显示文件
+tauri-plugin-http = "2"
+tauri-plugin-opener = "2"
+# 本地文件：规范化路径（避免 Windows 的 UNC 前缀）、识别 GBK 等编码、读取 docx / pptx
+dunce = "1"
+encoding_rs = "0.8"
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# 本地文件：读取 PDF 与 Excel（xlsx / xls / ods），新建与修改 xlsx
+pdf-extract = "0.12"
+calamine = { version = "0.38", features = ["dates"] }
+umya-spreadsheet = "3.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi"] }
@@ -38,6 +49,10 @@ windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win3
 # 截取指定窗口（「看屏幕」技能）。Linux 上依赖 pipewire 等系统库，暂不启用
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 xcap = "0.9"
+
+[dev-dependencies]
+# 测试中检查生成的 Office 文档 XML 是否合法
+quick-xml = "0.42"
 
 # 开发构建中也优化图片编码相关的依赖，否则大尺寸截图编码 PNG 会明显变慢
 [profile.dev.package.png]

@@ -822,6 +822,17 @@ svg {
   border-radius: 8px;
 }
 
+/* 改动预览：标签在上，内容以等宽字体原样展示 */
+.permission-target.code {
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .permission-target span {
   flex-shrink: 0;
   color: var(--text-faint);

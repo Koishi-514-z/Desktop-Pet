@@ -8,6 +8,17 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-ignore-cursor-events",
-    "core:window:allow-cursor-position"
+    "core:window:allow-cursor-position",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "https://*"
+        }
+      ]
+    }
   ]
 }

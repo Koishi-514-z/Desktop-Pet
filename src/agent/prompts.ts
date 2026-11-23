@@ -50,7 +50,10 @@ ${latest ? truncate(messageText(latest), 1500) : ''}`
 
 export function buildExecutorSystemPrompt(skills: Skill[], now = new Date(), background = ''): string {
   const skillSections = skills
-    .map((skill) => `## ${skill.name}（${skill.id}）\n${skill.instructions.trim()}`)
+    .map((skill) => {
+      const instructions = typeof skill.instructions === 'function' ? skill.instructions() : skill.instructions
+      return `## ${skill.name}（${skill.id}）\n${instructions.trim()}`
+    })
     .join('\n\n')
 
   return `你是桌宠的「工具执行模块」，负责调用工具完成用户的请求。你的输出不会直接展示给用户，而是交给负责角色扮演的模块整理后再回复，所以请保持客观、简洁，不需要寒暄或扮演角色。

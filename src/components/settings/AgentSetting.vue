@@ -2,17 +2,14 @@
 import type { CaptureKind } from '@/stores/capture'
 import { computed, ref } from 'vue'
 import { SCREEN_CAPTURE_PERMISSION } from '@/agent/skills/screen'
-import { formatDateTime } from '@/agent/utils'
 import { isTauri } from '@/composables/desktop'
 import { useAgentStore } from '@/stores/agent'
 import { DEFAULT_SHORTCUTS, useCaptureStore } from '@/stores/capture'
 import { useProvidersStore } from '@/stores/providers'
-import { useRemindersStore } from '@/stores/reminders'
 
 const agentStore = useAgentStore()
 const captureStore = useCaptureStore()
 const providersStore = useProvidersStore()
-const remindersStore = useRemindersStore()
 
 // ===== 划词 / 截图快捷键 =====
 
@@ -267,31 +264,6 @@ const visionProviderMissing = computed(() => !!agentStore.visionModel && !provid
         </span>
       </label>
     </section>
-
-    <section class="tile">
-      <header class="tile-head">
-        <span class="tile-icon">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="13" r="8" />
-            <path d="M12 9v4l2 2M5 3 2 6M19 3l3 3" />
-          </svg>
-        </span>
-        <span class="tile-title">待触发的提醒</span>
-      </header>
-
-      <p v-if="remindersStore.reminders.length === 0" class="setting-desc">
-        还没有提醒，可以在对话中说「十分钟后提醒我喝水」
-      </p>
-      <div v-for="reminder in remindersStore.reminders" :key="reminder.id" class="reminder">
-        <span class="setting-label">
-          <span>{{ reminder.message }}</span>
-          <span class="setting-desc">{{ formatDateTime(new Date(reminder.dueAt)) }}</span>
-        </span>
-        <button class="reset-button" type="button" @click="remindersStore.cancelReminder(reminder.id)">
-          取消
-        </button>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -305,13 +277,6 @@ const visionProviderMissing = computed(() => !!agentStore.visionModel && !provid
 
 .tile.disabled .toggle-setting {
   cursor: default;
-}
-
-.reminder {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .shortcut-row,

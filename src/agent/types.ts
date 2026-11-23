@@ -20,7 +20,8 @@ export interface Skill {
   /** 典型的用户说法，帮助意图识别 */
   examples?: string[]
   /** 技能被激活后注入给工具执行阶段 LLM 的使用说明 */
-  instructions: string
+  /** 也可以是函数，在执行时生成（如写入当前授权访问的文件夹） */
+  instructions: string | (() => string)
   /** 技能提供的工具，工具名在所有技能之间必须唯一 */
   tools: ToolSet
 }
@@ -62,6 +63,8 @@ export interface PermissionRequest {
   allowAlways?: boolean
   /** 补充说明，如数据会发送到哪里 */
   notice?: string
+  /** 操作对象的展示方式：code 以等宽字体原样展示（保留缩进），适合改动预览 */
+  targetFormat?: 'text' | 'code'
 }
 
 /**

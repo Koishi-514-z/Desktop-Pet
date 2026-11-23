@@ -1,0 +1,410 @@
+/* 待办面板：与对话面板一致的深色毛玻璃风格 */
+
+svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+/* ===== 悬浮按钮 ===== */
+
+.task-toggle {
+  position: fixed;
+  right: 24px;
+  bottom: 144px;
+  z-index: 1000;
+  width: 48px;
+  height: 48px;
+  font-size: 20px;
+  color: #fff;
+  cursor: pointer;
+  background: rgb(64 158 255 / 85%);
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.task-toggle:hover {
+  background: rgb(64 158 255 / 100%);
+}
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  color: #fff;
+  background: #64748b;
+  border-radius: 9px;
+}
+
+.task-toggle.alert .badge {
+  background: #ef4444;
+}
+
+/* ===== 面板 ===== */
+
+.task-panel {
+  --accent: #5b9dff;
+  --accent-2: #8b7bff;
+  --text-dim: rgb(255 255 255 / 55%);
+  --line: rgb(255 255 255 / 8%);
+
+  position: fixed;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100vw - 32px));
+  height: min(540px, calc(100vh - 32px));
+  overflow: hidden;
+  font-size: 13px;
+  color: #fff;
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgb(91 157 255 / 12%), transparent 60%),
+    rgb(24 24 30 / 82%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 18px;
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 45%);
+}
+
+.panel-enter-active,
+.panel-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.panel-enter-from,
+.panel-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+}
+
+.panel-header {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 12px 10px 10px 16px;
+  cursor: move;
+  -webkit-user-select: none;
+  user-select: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.panel-subtitle {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.overdue {
+  font-weight: 600;
+  color: #fca5a5;
+}
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.icon-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-button:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 8%);
+}
+
+.icon-button.danger:hover {
+  color: #ff8a8a;
+  background: rgb(255 107 107 / 14%);
+}
+
+/* ===== 输入 ===== */
+
+.quick-add,
+.edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-add {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.row.end {
+  justify-content: flex-end;
+}
+
+.label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #fff;
+  color-scheme: dark;
+  background: rgb(0 0 0 / 25%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  outline: none;
+}
+
+.field:focus {
+  border-color: rgb(91 157 255 / 60%);
+}
+
+.field:disabled {
+  opacity: 0.4;
+}
+
+.field.title {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.field.priority {
+  flex: 0 0 64px;
+}
+
+/* 快速添加栏里日期比时刻需要更多宽度，否则「年/月/日」会被日历图标挡住 */
+.quick-add .field.date {
+  flex-grow: 1.6;
+}
+
+textarea.field {
+  resize: vertical;
+}
+
+.field option {
+  color: #fff;
+  background: #1e1e22;
+}
+
+.add,
+.small {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+}
+
+.add,
+.small.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent;
+}
+
+.add:disabled,
+.small:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* ===== 筛选 ===== */
+
+.views {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.view {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.view:hover {
+  color: #fff;
+}
+
+.view.active {
+  color: #fff;
+  background: rgb(91 157 255 / 16%);
+  border-color: rgb(91 157 255 / 40%);
+}
+
+.count {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.error {
+  padding: 0 14px;
+  margin: 0;
+  font-size: 12px;
+  color: #ffb4b4;
+}
+
+/* ===== 列表 ===== */
+
+.tasks {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 10px 12px;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.empty {
+  margin: auto;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.task {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 8px 8px 10px;
+  background: rgb(255 255 255 / 4%);
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+}
+
+.task.priority-high {
+  border-left-color: #f87171;
+}
+
+.task.priority-low {
+  border-left-color: rgb(255 255 255 / 15%);
+}
+
+.task.done .title {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.check {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.title {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.notes {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.tag {
+  color: #b9b0ff;
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.task:hover .actions {
+  opacity: 1;
+}
+
+.edit {
+  flex: 1;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.tasks::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tasks::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 14%);
+  border-radius: 3px;
+}

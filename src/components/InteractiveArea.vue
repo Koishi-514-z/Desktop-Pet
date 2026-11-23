@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MAX_IMAGES } from '@/agent/skills/image'
 import { isTauri } from '@/composables/desktop'
 import type { ChatMessage } from '@/stores/chat'
+import LinkifiedText from '@/components/LinkifiedText.vue'
 import { categoryLabel } from '@/memory/types'
 import { useAgentStore } from '@/stores/agent'
 import { useCaptureStore } from '@/stores/capture'
@@ -480,7 +481,11 @@ onMounted(() => {
                       <p class="permission-reason">{{ chatStore.pendingPermission.request.reason }}</p>
                     </div>
                   </div>
-                  <p v-if="chatStore.pendingPermission.request.target" class="permission-target">
+                  <p
+                    v-if="chatStore.pendingPermission.request.target"
+                    class="permission-target"
+                    :class="{ code: chatStore.pendingPermission.request.targetFormat === 'code' }"
+                  >
                     <span>{{ chatStore.pendingPermission.request.targetLabel ?? '对象' }}</span>{{ chatStore.pendingPermission.request.target }}
                   </p>
                   <p v-if="chatStore.pendingPermission.request.notice" class="permission-notice">
@@ -520,7 +525,7 @@ onMounted(() => {
                       {{ copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}` ? '已复制' : '复制' }}
                     </button>
                   </header>
-                  <div class="result-content" :class="display.format">{{ display.content }}</div>
+                  <div class="result-content" :class="display.format"><LinkifiedText :text="display.content" /></div>
                 </div>
                 <div v-if="message.role === 'assistant' && (message.skills?.length || message.memories?.length || message.remembered?.length)" class="skill-tags">
                   <button

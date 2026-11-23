@@ -12,9 +12,12 @@
 - **语音合成**：回复按句切分后逐句合成并按顺序播放，播放音量可调。
 - **情绪表达**：模型在回复中输出情绪标签（如 `<happy>`），前端据此随机播放带有对应标签的表情或动作。
 - **口型同步**：实时分析播放音频的音量，驱动模型嘴部开合。
-- **Agent（技能 + 工具调用）**：先由 LLM 识别用户意图，需要时调用技能中的工具完成请求，再以角色口吻润色结果；内置日期时间、提醒、天气、划词助手、图片理解、看屏幕、记忆管理七个技能，提醒到时桌宠会主动开口。
+- **Agent（技能 + 工具调用）**：先由 LLM 识别用户意图，需要时调用技能中的工具完成请求，再以角色口吻润色结果；内置日期时间、天气、划词助手、图片理解、看屏幕、记忆管理、待办、本地文件、网页搜索九个技能，提醒到时桌宠会主动开口。
 - **划词**：在任意应用中选中文字后按下快捷键，即可翻译、解释、总结、润色或分析代码。
 - **图片理解**：发送图片或截图，即可解释图片内容、提取或翻译图中文字、分析报错。
+- **待办与提醒**：用自然语言创建、查询、修改待办或设置提醒（如「明天下午三点交周报，提前半小时提醒我」「十分钟后提醒我喝水」），支持优先级、标签、重复与提醒，到时桌宠主动开口；也可以在待办面板中直接管理。
+- **本地文件**：在授权的文件夹中查找文件、阅读文件内容（文本、代码、Word、PowerPoint、PDF、Excel），新建或修改文本文件、Word 文档与 Excel 表格，修改 PowerPoint 中的文字，按类型或月份整理文件夹；写入与移动前都需要确认，并且可以撤销，不会删除文件。
+- **网页搜索**：搜索互联网并阅读网页原文，综合多个来源回答并附上链接。
 - **长期记忆**：每轮对话后由 LLM 提取值得记住的信息，与已有记忆去重、合并后分类存储在本地 SQLite 中；每次回复前按语义相关性、重要程度、新近程度综合排名，把最相关的记忆写入 Prompt。
 - **人物设定**：可自定义角色的名字、性格、背景故事与说话风格，并在多个人设之间切换。
 - **桌面窗口**：无边框、透明背景、始终置顶，不占用任务栏；透明区域鼠标穿透，不影响操作其他应用；通过托盘图标控制。
@@ -47,6 +50,7 @@ pnpm dev
 
 1. 点击右下角的 ⚙️ 打开设置面板，在 **Provider** 页填写 LLM 与 TTS 服务的 API Key，并选择要使用的模型（及声线）。
 2. 点击 💬 打开对话面板，开始聊天。
+3. （可选）在 **工具** 页配置网页搜索服务，调整允许桌宠访问的文件夹。
 
 > 页面通过 CDN 加载 Live2D Cubism Core（见 [index.html](index.html)），首次运行需要能访问 `cubism.live2d.com`。
 
@@ -119,12 +123,14 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 | 技能 | 工具 | 说明 |
 | --- | --- | --- |
 | 日期时间 `datetime` | `get_current_time`、`days_between`、`shift_date` | 当前时间、日期间隔、日期推算 |
-| 提醒 `reminder` | `create_reminder`、`list_reminders`、`cancel_reminder` | 提醒持久化在本地，到时桌宠主动提醒；应用关闭期间错过的提醒会在下次启动时补发 |
 | 天气 `weather` | `get_weather` | 使用 [Open-Meteo](https://open-meteo.com/) 免费接口，无需 API Key |
 | 划词助手 `selection` | `translate_text`、`explain_text`、`summarize_text`、`polish_text`、`analyze_code` | 处理划词选中或直接发来的文字，结果以卡片形式完整展示，见下文「划词」 |
 | 图片理解 `image` | `describe_image`、`extract_image_text`、`translate_image`、`analyze_error` | 解释图片、看图答疑、提取 / 翻译图中文字、分析报错截图，见下文「图片理解」 |
 | 看屏幕 `screen` | `look_at_screen` | 由 LLM 判断是否需要看屏幕，经用户授权后截取当前窗口交给识图模型分析，见下文「看屏幕」 |
 | 记忆管理 `memory` | `list_memories`、`search_memories`、`forget_memories` | 用户问「你都记得我什么」或要求「把这件事忘了」时查看、忘掉记忆（忘掉前请用户确认），见下文「记忆管理」 |
+| 待办 `tasks` | `create_task`、`list_tasks`、`update_task`、`complete_task`、`delete_tasks` | 创建、查询、修改、完成待办，设置定时提醒，重复任务自动生成下一次；删除前请用户确认，见下文「待办与提醒」 |
+| 本地文件 `files` | `search_files`、`list_folder`、`read_file`、`write_file`、`edit_file`、`organize_folder`、`move_files`、`create_folder`、`reveal_file` | 在授权的文件夹中查找、阅读、新建与修改、整理文件；写入与移动前请用户确认，可以撤销，见下文「本地文件」 |
+| 网页搜索 `web` | `web_search`、`read_webpage` | 搜索互联网，阅读网页原文后回答并注明来源，见下文「网页搜索」 |
 
 ### 划词
 
@@ -167,6 +173,54 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 
 「始终允许」可以在设置面板 **技能 → 授权** 中撤销。截取窗口目前支持 Windows 与 macOS（macOS 需要授予屏幕录制权限）；最小化的窗口无法截取。
 
+### 待办与提醒
+
+在对话中用自然语言管理待办（[tasks.ts](src/agent/skills/tasks.ts)），如「帮我记一下明天下午三点交周报，提前半小时提醒我」「十分钟后提醒我喝水」「我今天还有什么要做的」「把交周报改到周五」「周报写完了」「每周一提醒我开例会」。LLM 先把「明天下午三点」这类说法换算成具体时间，再调用工具；时间无法识别或提醒时间已经过去时，工具会报错并让 LLM 修正。
+
+- 每个任务可以有备注、截止时间（可以只有日期）、优先级（低 / 普通 / 高）、标签、重复（每天 / 工作日 / 每周 / 每月）与提醒时间。
+- 提醒统一由待办管理：「十分钟后提醒我喝水」这样的单纯提醒也是一个只带提醒时间的任务。到了提醒时间桌宠主动开口，应用关闭期间错过的提醒会在下次启动时补发；任务完成、删除或清除提醒时间时，提醒随之取消。以前单独设置的提醒会自动转为待办任务。
+- 完成重复任务时自动生成下一次，截止时间与提醒时间一起顺延（每月 31 日的任务遇到小月时取月末）。
+- 删除任务前会弹出授权卡片，列出要删除的任务。
+
+点击右下角的 ☑ 打开 **待办面板**（可拖动）：在顶部快速添加；按「待办 / 今天 / 逾期 / 本周 / 已完成」查看；勾选完成，取消勾选恢复；双击任务或点击编辑按钮修改；可以一键清除已完成的任务。按钮上的数字是未完成的任务数，有逾期任务时变为红色。待办保存在 `localStorage` 中。
+
+### 本地文件
+
+「本地文件」技能（[files.ts](src/agent/skills/files.ts)、[src-tauri/src/files/](src-tauri/src/files/)）只能访问 **授权的文件夹** 及其子文件夹。第一次使用时会自动授权桌面、文档、下载、图片，可以在设置面板的 **工具 → 文件访问** 中取消授权或添加其他文件夹（不能授权磁盘根目录与系统目录）。对话中说「下载」「桌面/报告」时，会被解析为对应的授权文件夹。
+
+- **查找**：按文件名关键词、扩展名、修改时间（如「上周」）、文件内容查找，结果按修改时间从新到旧排列。会跳过隐藏文件与 `node_modules`、`.git` 等目录，单次最多扫描 5 万项、耗时 5 秒。
+- **阅读**：支持纯文本与代码文件（自动识别 UTF-8 / UTF-16 / GBK 编码）、Word（`.docx`）、PowerPoint（`.pptx`，按页列出）、PDF（按页列出，使用 [pdf-extract](https://github.com/jrmuizel/pdf-extract)）与表格（`.xlsx` / `.xls` / `.xlsb` / `.ods`，使用 [calamine](https://github.com/tafia/calamine)），最多读取前 12000 字。表格按工作表列出，第一行是列字母，每行开头是行号（每个工作表最多 1000 行、50 列），便于按「B3」这样的位置修改；公式显示计算结果。扫描件 PDF 没有文字，读不出内容（可以截图后交给「图片理解」）；暂不支持旧版的 `.doc` / `.ppt`。
+- **整理**：把文件夹第一层的文件按 **类型**（图片 / 文档 / 表格 / 演示文稿 / 压缩包 / 音频 / 视频 / 安装程序 / 代码 / 电子书 / 字体 / 其他）、**月份**（按修改时间，如 `2026-11`）或 **扩展名** 归入子文件夹，快捷方式与隐藏文件保持不动。也可以按要求移动、重命名指定的文件，或新建文件夹。
+- **新建与修改**（[write.rs](src-tauri/src/files/write.rs)）：`write_file` 新建文件（文本类文件、Word、Excel；所在文件夹不存在时自动创建），文件已存在时默认不覆盖；`edit_file` 修改已有文件——把文件中的一段原文替换为新内容（原文必须与文件内容完全一致，并且只出现一次，避免改错位置），或在末尾追加内容。修改时保持原文件的编码（UTF-8、UTF-8 BOM、UTF-16、GBK）与换行符（CRLF / LF）。纯文本类文件（txt、md、csv、json、yaml、html、代码等）最大 4 MB。不能写入 `bat` / `cmd` / `ps1` / `sh` 等脚本、带宏的 Office 文件（`.docm` / `.xlsm` / `.pptm`）、PDF、旧版的 `.doc` / `.xls` / `.ppt`，以及隐藏的文件或文件夹（如 `.git` 中的文件）；不能把文件内容清空。
+- **Office 文件**（[office.rs](src-tauri/src/files/office.rs)，最大 30 MB）：
+  - **Word**：新建时内容用简单的 Markdown（`#` 标题、`-` 列表、`1.` 编号、`>` 引用、`|` 表格、`**加粗**`），生成带标题样式与表格边框的 A4 文档；修改时在段落内替换文字（原文不能跨段落），只替换与原文不同的部分，没变的文字保持原来的字体、加粗等格式；也可以在末尾追加段落。只改动正文的 XML，图片、页眉页脚、样式等其他内容原样保留。
+  - **PowerPoint**：在幻灯片内替换文字（规则同 Word），没有改动的幻灯片原样保留。暂不支持新建文稿或追加内容。
+  - **Excel**：新建时内容用 CSV 或 Markdown 表格，以 `=` 开头的为公式，`001` 这类以 0 开头的编号保留为文字；修改时按位置修改单元格（如 `B3`），或在工作表末尾追加行。Excel 文件由 [umya-spreadsheet](https://github.com/MathNya/umya-spreadsheet) 读入后整体重新保存，公式的结果在 Excel 中打开后才会更新，少数高级内容（如数据透视表、切片器）可能丢失，确认卡片中会提示。
+  - 生成与修改的文件已经用 Microsoft Office（Word、Excel、PowerPoint）实际打开验证过。
+- **确认与撤销**：写入与移动前一定会弹出授权卡片，每次都需要确认（没有「始终允许」）：移动时列出完整的移动计划；写入时显示改动预览（`-` 为删除的行，`+` 为新增的行，并标出行号）。写入时会校验文件在确认期间没有被改动过，否则不写入。移动时重名会自动加上「 (1)」这样的编号，不会覆盖已有文件。所有操作记录在 **工具 → 文件操作记录** 中（最近 20 次），可以一键撤销：移动的文件移回原处；修改前的原文件备份在应用数据目录的 `file-backups` 中（最近 50 份），撤销时恢复原内容；新建的文件撤销时删除。文件在之后又被改动过时不会撤销，避免丢失之后的修改。
+- **在文件夹中显示**：在资源管理器中选中找到的文件，由用户自己打开。
+
+为了安全，技能不提供删除、打开或运行文件的工具（唯一会删除文件的情况是你在设置中撤销「新建文件」，且只删除桌宠新建、之后没有被改动过的那个文件）；Rust 端在每次调用时都会把路径规范化，重新检查它是否位于授权的文件夹内，拒绝 `..`，也不跟随符号链接，因此 LLM 无法越界访问。注意被阅读的文件内容会发送给对话模型的服务商。本地文件操作只能在桌面应用中使用。
+
+### 网页搜索
+
+「网页搜索」技能（[web.ts](src/agent/skills/web.ts)、[src/web/](src/web/)）先搜索，再挑 1 ~ 3 个最相关的结果阅读原文，综合后回答并注明来源。搜索结果以卡片列出，其中的链接可以点击，在默认浏览器中打开。用户直接发来链接（「帮我看看这个链接讲了什么」）时，直接读取网页，不需要配置搜索服务。
+
+搜索服务在设置面板的 **工具 → 网页搜索** 中选择，可以点击「测试连接」检查配置：
+
+| 服务 | 需要填写 | 说明 |
+| --- | --- | --- |
+| [Tavily](https://tavily.com/) | API Key | 为 AI 设计的搜索接口，结果附带网页摘要，每月有免费额度 |
+| [Brave Search](https://brave.com/search/api/) | API Key | 独立索引的搜索引擎接口，每月有免费额度 |
+| [SearXNG](https://docs.searxng.org/) | 实例地址 | 自建的开源元搜索引擎，免费；需要在实例的 `settings.yml` 中把 `json` 加入 `search.formats` |
+
+读取网页（[page.ts](src/web/page.ts)）：
+
+- 用 [Readability](https://github.com/mozilla/readability) 提取正文（提取失败时退化为整个页面的文字），再按页面结构转为纯文本：每个段落占一行，表格的单元格之间用「|」分隔，代码块保留缩进。根据响应头或 `<meta>` 识别 GBK 等编码。每个网页最多保留 8000 字。
+- 只读取公网的 http / https 网页，拒绝本机与局域网地址，并且每一次重定向都会重新检查，避免被网页内容诱导去访问内网服务。技能的使用说明要求 LLM 把网页内容只当作资料，不执行其中的指令。
+- 需要登录、由脚本动态生成内容的网页无法读取；暂不支持读取网页上的 PDF（可以下载后用「本地文件」读取）。
+- 网络请求通过 Tauri 的 HTTP 插件从 Rust 端发出，不受跨域限制；在浏览器中运行时会受跨域限制，多数网页无法读取。
+
 ### 新增技能
 
 在 [src/agent/skills/](src/agent/skills/) 下实现一个 `Skill`，并在 [skills/index.ts](src/agent/skills/index.ts) 中注册：
@@ -196,7 +250,8 @@ export const mySkill: Skill = {
 - **在工具中调用 LLM**：`getSkillContext(options)`（`execute` 的第二个参数）可以拿到当前使用的模型 `model` 与识图模型 `visionModel`，参考 [selection.ts](src/agent/skills/selection.ts)、[image.ts](src/agent/skills/image.ts)。
 - **结果卡片**：返回值中带上 `display: { title, content, format? }`，结果会以卡片形式完整展示在回复下方，角色只需简短点评，适合译文、总结这类需要原样呈现的长文本。
 - **直接调用**：`useChatStore().sendMessage(文字, { directCall: { skillId, toolName, input } })` 跳过意图识别直接执行工具，可同时用 `quote` 附带一段引用文字。
-- **请求授权**：涉及隐私或副作用的操作，在工具中调用 `getSkillContext(options).requestPermission({ kind, title, reason, target })`，对话中会弹出授权卡片，返回用户是否允许；同一 `kind` 选择「始终允许」后不再询问。另外 `attachImages` 可以把工具产生的图片附加到用户消息上，`setStatus` 可以更新界面上的进度。参考 [screen.ts](src/agent/skills/screen.ts)。
+- **请求授权**：涉及隐私或副作用的操作，在工具中调用 `getSkillContext(options).requestPermission({ kind, title, reason, target })`，对话中会弹出授权卡片，返回用户是否允许；同一 `kind` 选择「始终允许」后不再询问，传入 `allowAlways: false` 则每次都需要确认（如移动文件）。另外 `attachImages` 可以把工具产生的图片附加到用户消息上，`setStatus` 可以更新界面上的进度。参考 [screen.ts](src/agent/skills/screen.ts)、[files.ts](src/agent/skills/files.ts)。
+- **动态说明**：`instructions` 也可以是返回字符串的函数，每次激活技能时重新生成，例如「本地文件」技能会在说明中列出当前授权的文件夹。
 - **主动说话**：需要让桌宠主动开口时（如定时任务完成），调用 `useChatStore().speakProactively('事件描述')`。
 
 ## 长期记忆
@@ -282,25 +337,31 @@ src-tauri/                   # Tauri 桌面端
 ├── src/capture.rs           # 划词与截图：全局快捷键、模拟复制读取选中内容、调起系统截图工具
 ├── src/screen.rs            # 看屏幕：记录用户最近使用的窗口、截取指定窗口
 ├── src/memory/              # 长期记忆：SQLite 存储、变动记录与撤销（db.rs）、综合排名（rank.rs）、遗忘曲线与整理分组（maintain.rs）
+├── src/files/               # 本地文件：授权文件夹校验（roots.rs）、查找 / 整理 / 移动（ops.rs）、读取文本、Office 文件与 PDF（read.rs）、新建与修改文件（write.rs）、生成与修改 docx / pptx / xlsx（office.rs）
 ├── tauri.conf.json          # 窗口配置（无边框、透明、置顶等）
-└── capabilities/            # 前端可调用的窗口权限
+└── capabilities/            # 前端可调用的权限（窗口、HTTP 请求等）
 src/
 ├── components/
 │   ├── Stage.vue            # 串联对话、语音合成与播放队列
 │   ├── Live2dModel.vue      # Live2D 渲染与交互
 │   ├── InteractiveArea.vue  # 对话面板
+│   ├── LinkifiedText.vue    # 把结果卡片中的网址显示为可点击的链接
+│   ├── TaskPanel.vue        # 待办面板
 │   ├── CaptureToolbar.vue   # 划词 / 截图后弹出的工具栏
 │   ├── SettingBox.vue       # 设置面板
-│   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景 / 技能）
+│   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景 / 技能 / 记忆 / 工具）
 ├── agent/                   # Agent：意图识别、工具执行与各技能
-│   └── skills/              # 内置技能（日期时间 / 提醒 / 天气 / 划词助手 / 图片理解 / 看屏幕）
+│   └── skills/              # 内置技能（日期时间 / 天气 / 划词助手 / 图片理解 / 看屏幕 / 记忆管理 / 待办 / 本地文件 / 网页搜索）
 ├── memory/                  # 长期记忆：检索（recall.ts）、写入（extract / merge / writer.ts）、整理（consolidate.ts）、数据库命令封装
+├── tasks/                   # 待办：时间解析、筛选排序、重复任务的下一次时间（model.ts）
+├── files/                   # 本地文件命令的封装
+├── web/                     # 网页搜索（search.ts）与网页读取、正文提取（page.ts）
 ├── composables/
 │   ├── queues.ts            # 文本处理、语音合成、音频播放队列
 │   ├── animation.ts         # 视线跟随
 │   └── desktop.ts           # 桌面窗口：鼠标穿透与全局鼠标坐标
-├── stores/                  # Pinia 状态（chat / agent / memory / capture / reminders / speech / audio / live2d / persona / providers / scene）
-├── utils/                   # 网络请求、队列、图片存储（IndexedDB）、窗口截取等
+├── stores/                  # Pinia 状态（chat / agent / memory / tasks / tools / capture / reminders / speech / audio / live2d / persona / providers / scene）
+├── utils/                   # 网络请求（桌面应用中经 Rust 端发出）、队列、图片存储（IndexedDB）、窗口截取等
 └── pages/HomePage.vue
 ```
 
@@ -321,7 +382,8 @@ src/
 
 ## 注意事项
 
-- API Key 等设置仅保存在本地（WebView / 浏览器的 `localStorage`，对话中的图片保存在 IndexedDB，长期记忆保存在 SQLite）中，并由前端直接请求各服务商接口。桌面应用与浏览器中的设置互不相通。
+- API Key 等设置、待办与文件操作记录仅保存在本地（WebView / 浏览器的 `localStorage`，对话中的图片保存在 IndexedDB，长期记忆保存在 SQLite）中，并由前端直接请求各服务商接口。桌面应用与浏览器中的设置互不相通。
+- 被阅读的文件、网页内容与截图会发送给对话模型或识图模型的服务商，搜索词会发送给所选的搜索服务。
 - 打包前需要将 [tauri.conf.json](src-tauri/tauri.conf.json) 中的 `identifier` 改为唯一的值（默认的 `com.tauri.dev` 无法用于打包）。修改后 WebView 的数据目录随之改变，之前保存的设置需要重新填写。
 - 目前窗口只覆盖一块显示器。
 - 仓库内置的 ATRI 模型及语音素材版权归原作者所有，仅供学习交流使用。

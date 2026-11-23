@@ -1,0 +1,203 @@
+//! 本地文件：在用户授权的文件夹内查找、读取、整理、写入与修改文件，以及在文件夹中显示文件、用浏览器打开链接。
+//!
+//! 授权的文件夹由前端（设置中）传入，每次操作都会在 Rust 端重新规范化并校验路径，
+//! 不提供删除文件与打开（运行）文件的能力。
+
+mod ops;
+mod read;
+mod office;
+mod roots;
+mod write;
+
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod office_tests;
+
+use std::path::PathBuf;
+
+use serde::Serialize;
+use tauri::{AppHandle, Manager, Url};
+use tauri_plugin_opener::OpenerExt;
+
+use ops::{FileEntry, FileMove, MoveReport, OrganizeBy, SearchRequest, SearchResult};
+use roots::Roots;
+use write::{WritePreview, WriteRequest, WriteResult};
+
+/// 读取文件内容时默认最多返回的字数
+const DEFAULT_MAX_CHARS: usize = 12_000;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedFolder {
+  name: String,
+  path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListResult {
+  entries: Vec<FileEntry>,
+  /// 文件夹中的条目总数（entries 可能被截断）
+  total: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadResult {
+  path: String,
+  name: String,
+  size: u64,
+  content: String,
+  /// 内容是否被截断
+  truncated: bool,
+  /// 内容的总字数
+  total_chars: usize,
+  format: &'static str,
+  encoding: Option<&'static str>,
+}
+
+/// 在后台线程中执行文件操作，避免阻塞界面
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+  tauri::async_runtime::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
+/// 常用的文件夹（桌面、文档、下载、图片），作为默认的授权文件夹
+#[tauri::command]
+pub fn files_default_roots(app: AppHandle) -> Vec<NamedFolder> {
+  let path = app.path();
+  [
+    ("桌面", path.desktop_dir()),
+    ("文档", path.document_dir()),
+    ("下载", path.download_dir()),
+    ("图片", path.picture_dir()),
+  ]
+  .into_iter()
+  .filter_map(|(name, dir)| {
+    let dir = dunce::canonicalize(dir.ok()?).ok()?;
+    dir.is_dir().then(|| NamedFolder { name: name.to_string(), path: dir.display().to_string() })
+  })
+  .collect()
+}
+
+/// 检查一个文件夹能否被授权，返回规范化后的路径
+#[tauri::command]
+pub fn files_validate_root(path: String) -> Result<String, String> {
+  roots::validate_root(&path).map(|path| path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn files_search(roots: Vec<String>, request: SearchRequest) -> Result<SearchResult, String> {
+  blocking(move || ops::search(&Roots::new(&roots)?, &request)).await
+}
+
+#[tauri::command]
+pub async fn files_list(roots: Vec<String>, folder: String, limit: Option<usize>) -> Result<ListResult, String> {
+  blocking(move || {
+    let (entries, total) = ops::list(&Roots::new(&roots)?, &folder, limit.unwrap_or(200))?;
+    Ok(ListResult { entries, total })
+  })
+  .await
+}
+
+#[tauri::command]
+pub async fn files_read(roots: Vec<String>, path: String, max_chars: Option<usize>) -> Result<ReadResult, String> {
+  blocking(move || {
+    let path = Roots::new(&roots)?.resolve(&path)?;
+    if path.is_dir() {
+      return Err(format!("{} 是文件夹，不能读取内容", path.display()));
+    }
+    let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+    let text = read::read_text(&path)?;
+    let total_chars = text.content.chars().count();
+    let max_chars = max_chars.unwrap_or(DEFAULT_MAX_CHARS);
+    let truncated = total_chars > max_chars;
+    let content = if truncated { text.content.chars().take(max_chars).collect() } else { text.content };
+    Ok(ReadResult {
+      name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+      path: path.display().to_string(),
+      size,
+      content,
+      truncated,
+      total_chars,
+      format: text.format,
+      encoding: text.encoding,
+    })
+  })
+  .await
+}
+
+/// 生成整理计划（不会移动文件）
+#[tauri::command]
+pub async fn files_plan_organize(
+  roots: Vec<String>,
+  folder: String,
+  by: OrganizeBy,
+  utc_offset_minutes: Option<i64>,
+) -> Result<Vec<FileMove>, String> {
+  blocking(move || ops::plan_organize(&Roots::new(&roots)?, &folder, by, utc_offset_minutes.unwrap_or(0))).await
+}
+
+/// 执行移动，目标重名时自动加上编号；返回实际完成与失败的移动
+#[tauri::command]
+pub async fn files_move(roots: Vec<String>, moves: Vec<FileMove>) -> Result<MoveReport, String> {
+  blocking(move || Ok(ops::apply_moves(&Roots::new(&roots)?, &moves))).await
+}
+
+#[tauri::command]
+pub async fn files_create_folder(roots: Vec<String>, path: String) -> Result<String, String> {
+  blocking(move || ops::create_folder(&Roots::new(&roots)?, &path)).await
+}
+
+/// 修改文件前备份原文件的位置
+fn backup_dir(app: &AppHandle) -> Result<PathBuf, String> {
+  app.path().app_data_dir().map(|dir| dir.join("file-backups")).map_err(|e| format!("找不到应用数据目录：{e}"))
+}
+
+/// 生成写入预览（不会改动文件）
+#[tauri::command]
+pub async fn files_preview_write(roots: Vec<String>, request: WriteRequest) -> Result<WritePreview, String> {
+  blocking(move || write::preview(&Roots::new(&roots)?, &request)).await
+}
+
+/// 写入文件；expected_hash 为预览时原文件的哈希，文件在这期间被改动过时不写入
+#[tauri::command]
+pub async fn files_write(
+  app: AppHandle,
+  roots: Vec<String>,
+  request: WriteRequest,
+  expected_hash: Option<String>,
+) -> Result<WriteResult, String> {
+  let dir = backup_dir(&app)?;
+  blocking(move || write::apply(&Roots::new(&roots)?, &request, expected_hash.as_deref(), &dir)).await
+}
+
+/// 撤销一次写入：恢复原内容，新建的文件则删除；文件之后又被改动过时不撤销
+#[tauri::command]
+pub async fn files_undo_write(
+  app: AppHandle,
+  roots: Vec<String>,
+  path: String,
+  backup_id: Option<String>,
+  after_hash: String,
+) -> Result<(), String> {
+  let dir = backup_dir(&app)?;
+  blocking(move || write::undo(&Roots::new(&roots)?, &path, backup_id.as_deref(), &after_hash, &dir)).await
+}
+
+/// 在系统的文件管理器中显示文件（不会打开或运行它）
+#[tauri::command]
+pub fn files_reveal(app: AppHandle, roots: Vec<String>, path: String) -> Result<(), String> {
+  let path = Roots::new(&roots)?.resolve(&path)?;
+  app.opener().reveal_item_in_dir(path).map_err(|e| format!("无法打开文件夹：{e}"))
+}
+
+/// 用系统浏览器打开网址（只允许 http 与 https）
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+  let parsed = Url::parse(&url).map_err(|_| format!("无效的网址：{url}"))?;
+  if !matches!(parsed.scheme(), "http" | "https") {
+    return Err(format!("只能打开网页链接：{url}"));
+  }
+  app.opener().open_url(parsed.as_str(), None::<&str>).map_err(|e| format!("无法打开链接：{e}"))
+}

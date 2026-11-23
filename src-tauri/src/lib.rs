@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod capture;
+mod files;
 mod memory;
 mod screen;
 
@@ -89,6 +90,8 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_opener::init())
     .manage(capture::CaptureState::default())
     .invoke_handler(tauri::generate_handler![
       capture::set_capture_shortcut,
@@ -114,6 +117,19 @@ pub fn run() {
       memory::memory_consolidation_groups,
       memory::memory_pending_embeddings,
       memory::memory_set_embeddings,
+      files::files_default_roots,
+      files::files_validate_root,
+      files::files_search,
+      files::files_list,
+      files::files_read,
+      files::files_plan_organize,
+      files::files_move,
+      files::files_create_folder,
+      files::files_preview_write,
+      files::files_write,
+      files::files_undo_write,
+      files::files_reveal,
+      files::open_url,
       memory::memory_database_path,
     ])
     .setup(|app| {
