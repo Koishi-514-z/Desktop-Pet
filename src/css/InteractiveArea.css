@@ -773,6 +773,200 @@ svg {
   background: rgb(255 255 255 / 10%);
 }
 
+/* ===== 图片 ===== */
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.message-image {
+  width: auto;
+  height: 120px;
+  max-width: 220px;
+  padding: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 12px;
+  transition:
+    border-color 0.15s,
+    transform 0.15s;
+}
+
+.message-image:hover {
+  border-color: rgb(91 157 255 / 60%);
+  transform: translateY(-1px);
+}
+
+.message-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 输入框上方待发送的图片 */
+.pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pending-image {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 10px;
+}
+
+.pending-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.pending-image.loading {
+  background: linear-gradient(90deg, rgb(255 255 255 / 4%), rgb(255 255 255 / 12%), rgb(255 255 255 / 4%)) 0 0 / 200% 100%;
+  animation: shimmer 1.2s infinite linear;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.pending-image-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+  background: rgb(0 0 0 / 60%);
+  border: none;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.pending-image:hover .pending-image-remove {
+  opacity: 1;
+}
+
+.pending-image-remove svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2.6;
+}
+
+/* 输入框左侧的添加图片、截图按钮 */
+.composer-tools {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  align-items: center;
+  height: 34px;
+}
+
+.tool-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 9px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.tool-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.tool-button:hover:not(:disabled) {
+  color: #fff;
+  background: rgb(255 255 255 / 8%);
+}
+
+.tool-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* 拖入图片时的遮罩 */
+.interactive-area.file-dragging {
+  border-color: rgb(91 157 255 / 70%);
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #cfe0ff;
+  pointer-events: none;
+  background: rgb(24 24 30 / 72%);
+  border: 2px dashed rgb(91 157 255 / 60%);
+  border-radius: 20px;
+}
+
+.drop-overlay svg {
+  width: 36px;
+  height: 36px;
+}
+
+/* 查看大图 */
+.image-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+  background: rgb(10 10 14 / 88%);
+  border-radius: 20px;
+}
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 50%);
+}
+
 /* ===== 错误提示 ===== */
 
 .error {
@@ -828,7 +1022,7 @@ svg {
   display: flex;
   gap: 8px;
   align-items: flex-end;
-  padding: 8px 8px 8px 14px;
+  padding: 8px 8px 8px 6px;
   background: rgb(0 0 0 / 22%);
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 16px;

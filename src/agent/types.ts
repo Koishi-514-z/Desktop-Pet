@@ -38,6 +38,8 @@ export interface RouteDecision {
  */
 export interface SkillContext {
   model: LanguageModel
+  /** 用于理解图片的模型，未单独配置时与 model 相同 */
+  visionModel: LanguageModel
   abortSignal?: AbortSignal
 }
 
@@ -96,6 +98,8 @@ export type AgentEvent =
 
 export interface AgentRunOptions {
   model: LanguageModel
+  /** 用于理解图片的模型，省略时使用 model */
+  visionModel?: LanguageModel
   /** 对话上下文（不含系统提示词），最后一条应为用户的最新消息 */
   messages: ModelMessage[]
   /** 本次可用的技能 */

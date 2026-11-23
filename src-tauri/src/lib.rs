@@ -4,7 +4,7 @@ use tauri::{
   AppHandle, Manager, WebviewWindow,
 };
 
-mod selection;
+mod capture;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -87,8 +87,8 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-    .manage(selection::SelectionState::default())
-    .invoke_handler(tauri::generate_handler![selection::set_selection_shortcut])
+    .manage(capture::CaptureState::default())
+    .invoke_handler(tauri::generate_handler![capture::set_capture_shortcut, capture::take_screenshot])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

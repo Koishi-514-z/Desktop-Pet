@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InteractiveArea from '@/components/InteractiveArea.vue'
-import SelectionToolbar from '@/components/SelectionToolbar.vue'
+import CaptureToolbar from '@/components/CaptureToolbar.vue'
 import SettingBox from '@/components/SettingBox.vue'
 import Stage from '@/components/Stage.vue'
 import SubtitleBar from '@/components/SubtitleBar.vue'
@@ -12,7 +12,7 @@ import SubtitleBar from '@/components/SubtitleBar.vue'
     <SubtitleBar />
     <InteractiveArea />
     <SettingBox />
-    <SelectionToolbar />
+    <CaptureToolbar />
   </main>
 </template>
 

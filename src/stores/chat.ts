@@ -1,15 +1,13 @@
-import type { LanguageModel, ModelMessage } from 'ai'
+import type { ModelMessage } from 'ai'
 import type { AgentEvent, AgentResult, DirectToolCall, ToolDisplay } from '@/agent'
-import type { Provider } from '@/stores/providers'
 import type { DueReminder } from '@/stores/reminders'
-import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { createOpenAI } from '@ai-sdk/openai'
+import type { ImageRef } from '@/utils/images'
 import { useLocalStorage } from '@vueuse/core'
 import { streamText } from 'ai'
 import { defineStore } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { buildAgentContextPrompt, buildEventMessage, runAgent } from '@/agent'
+import { imageMarkers, MAX_IMAGES } from '@/agent/skills/image'
 import { attachQuote, MAX_TEXT_LENGTH } from '@/agent/skills/selection'
 import { formatDateTime, truncate } from '@/agent/utils'
 import { EMOTION_TAG_REGEX_GLOBAL } from '@/composables/queues'
@@ -17,6 +15,8 @@ import { useAgentStore } from '@/stores/agent'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
 import { useRemindersStore } from '@/stores/reminders'
+import { deleteImages } from '@/utils/images'
+import { resolveLanguageModel } from '@/utils/llm'
 
 // 本地持久化的对话消息（结构子集，调用 AI SDK 时再断言为 ModelMessage）
 export interface ChatMessage {
@@ -30,11 +30,15 @@ export interface ChatMessage {
   displays?: ToolDisplay[]
   // user 消息：附带的划词内容
   quote?: string
+  // user 消息：附带的图片（数据保存在 IndexedDB 中）
+  images?: ImageRef[]
 }
 
 export interface SendMessageOptions {
   // 附带的划词内容
   quote?: string
+  // 附带的图片，需先通过 addImage 保存
+  images?: ImageRef[]
   // 意图明确时直接调用指定工具，跳过意图识别（如划词工具栏上的按钮）
   directCall?: DirectToolCall
 }
@@ -47,8 +51,9 @@ type Turn =
 // 较早的划词内容与结果卡片在请求中截断到的长度，节省上下文
 const HISTORY_ATTACHMENT_LENGTH = 1000
 
-// 转换为请求 LLM 的消息：把划词内容与已展示的结果卡片拼接到消息正文中。
-// 最近一次划词保留全文（追问时工具会从中读取原文），更早的则截断
+// 转换为请求 LLM 的消息：把划词内容、图片标记与已展示的结果卡片拼接到消息正文中。
+// 最近一次划词保留全文（追问时工具会从中读取原文），更早的则截断。
+// 图片本身不发给对话模型（它不一定支持图片），由图片理解技能根据标记读取
 function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
   let latestQuoteIndex = -1
   messages.forEach((message, index) => {
@@ -59,9 +64,14 @@ function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
     if (message.role === 'system') return []
 
     if (message.role === 'user') {
-      const content = message.quote
-        ? attachQuote(message.content, index === latestQuoteIndex ? message.quote : truncate(message.quote, HISTORY_ATTACHMENT_LENGTH))
-        : message.content
+      const images = message.images ?? []
+      let content = message.content || (images.length ? `（发送了 ${images.length} 张图片）` : '')
+      if (message.quote) {
+        content = attachQuote(content, index === latestQuoteIndex ? message.quote : truncate(message.quote, HISTORY_ATTACHMENT_LENGTH))
+      }
+      if (images.length) {
+        content = `${content}\n\n${imageMarkers(images.map((image) => image.id))}`
+      }
       return [{ role: 'user', content }]
     }
 
@@ -84,24 +94,6 @@ function createSessionId(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `session-${Math.random().toString(36).slice(2)}`
-}
-
-// 根据 provider 配置的协议类型，创建对应的 AI SDK 语言模型实例
-function resolveLanguageModel(provider: Provider): LanguageModel {
-  const { apiKey, baseUrl, protocol } = provider
-  const modelId = provider.selectedModelId
-
-  switch (protocol) {
-    case 'openai':
-      // 使用 chat() 对应 Chat Completions 协议，兼容大多数第三方 OpenAI 兼容平台
-      return createOpenAI({ apiKey, baseURL: baseUrl }).chat(modelId)
-    case 'anthropic':
-      return createAnthropic({ apiKey, baseURL: baseUrl })(modelId)
-    case 'google':
-      return createGoogleGenerativeAI({ apiKey, baseURL: baseUrl })(modelId)
-    default:
-      throw new Error(`协议 ${protocol} 暂不支持对话`)
-  }
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -180,11 +172,18 @@ export const useChatStore = defineStore('chat', () => {
     const index = sessions.value.findIndex((s) => s.id === id)
     if (index === -1) return
 
-    sessions.value.splice(index, 1)
+    const [session] = sessions.value.splice(index, 1)
+    removeImagesOf(session?.messages ?? [])
 
     if (currentSessionId.value === id) {
       currentSessionId.value = sessions.value[0]?.id ?? ''
     }
+  }
+
+  // 删除消息中引用的图片数据
+  function removeImagesOf(messages: ChatMessage[]) {
+    const ids = messages.flatMap((message) => message.images?.map((image) => image.id) ?? [])
+    deleteImages(ids).catch((error) => console.warn('[chat] 删除图片失败：', error))
   }
 
   // 重命名会话
@@ -239,9 +238,15 @@ export const useChatStore = defineStore('chat', () => {
 
     if (turn.type === 'user') {
       const quote = turn.quote?.trim()
-      session.messages.push({ role: 'user', content: turn.content, ...(quote ? { quote: quote.slice(0, MAX_TEXT_LENGTH) } : {}) })
+      const images = turn.images?.slice(0, MAX_IMAGES)
+      session.messages.push({
+        role: 'user',
+        content: turn.content,
+        ...(quote ? { quote: quote.slice(0, MAX_TEXT_LENGTH) } : {}),
+        ...(images?.length ? { images } : {}),
+      })
       if (session.title === '新对话' && !session.messages.some((m) => m.role === 'assistant')) {
-        session.title = turn.content.slice(0, 20)
+        session.title = (turn.content || (images?.length ? '图片' : '新对话')).slice(0, 20)
       }
     }
     else {
@@ -271,6 +276,7 @@ export const useChatStore = defineStore('chat', () => {
         agentResult = await runAgent({
           model,
           messages: dialog,
+          visionModel: agentStore.resolveVisionModel(),
           skills: agentStore.activeSkills,
           directCall: turn.directCall,
           onEvent: (event) => { agentStatus.value = describeAgentEvent(event) },
@@ -331,6 +337,7 @@ export const useChatStore = defineStore('chat', () => {
   function clearMessages() {
     const session = currentSession.value
     if (!session) return
+    removeImagesOf(session.messages)
     session.messages = [{ role: 'system', content: personaStore.systemPrompt }]
     session.updatedAt = Date.now()
     moveSessionToFront(session.id)

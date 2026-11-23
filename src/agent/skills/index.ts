@@ -1,6 +1,7 @@
 import type { Skill } from '@/agent/types'
 import { markRaw } from 'vue'
 import { datetimeSkill } from '@/agent/skills/datetime'
+import { imageSkill } from '@/agent/skills/image'
 import { reminderSkill } from '@/agent/skills/reminder'
 import { selectionSkill } from '@/agent/skills/selection'
 import { weatherSkill } from '@/agent/skills/weather'
@@ -12,4 +13,5 @@ export const builtinSkills: readonly Skill[] = [
   reminderSkill,
   weatherSkill,
   selectionSkill,
+  imageSkill,
 ].map((skill) => markRaw(skill))

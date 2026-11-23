@@ -10,6 +10,10 @@ const EXECUTOR_CONTEXT_SIZE = 10
 // 单次执行最多进行的 LLM 调用轮数（每轮可调用若干工具），防止死循环
 const MAX_STEPS = 6
 
+function createSkillContext({ model, visionModel, abortSignal }: AgentRunOptions): SkillContext {
+  return { model, visionModel: visionModel ?? model, abortSignal }
+}
+
 /** 合并多个技能的工具，工具名重复时后者会被忽略 */
 export function collectTools(skills: Skill[]): ToolSet {
   const tools: ToolSet = {}
@@ -31,7 +35,7 @@ export async function executeSkills(options: AgentRunOptions): Promise<AgentResu
   const toolCalls: ToolCallRecord[] = []
   const displays: ToolDisplay[] = []
   const recordedIds = new Set<string>()
-  const context: SkillContext = { model, abortSignal }
+  const context = createSkillContext(options)
 
   try {
     const { text, steps } = await generateText({
@@ -78,7 +82,7 @@ export async function executeSkills(options: AgentRunOptions): Promise<AgentResu
 
 /** 直接调用指定工具（不经过 LLM 选择工具），结果同样交给角色扮演阶段润色 */
 export async function executeDirectCall(options: AgentRunOptions, call: DirectToolCall): Promise<AgentResult> {
-  const { model, messages, skills, onEvent, abortSignal } = options
+  const { messages, skills, onEvent, abortSignal } = options
 
   const skill = skills.find((s) => s.id === call.skillId)
   if (!skill) throw new Error(`技能 ${call.skillId} 未启用`)
@@ -91,7 +95,7 @@ export async function executeDirectCall(options: AgentRunOptions, call: DirectTo
   const record: ToolCallRecord = { toolName: call.toolName, input: call.input }
   const displays: ToolDisplay[] = []
   try {
-    const context: SkillContext = { model, abortSignal }
+    const context = createSkillContext(options)
     const result = tool.execute(call.input, {
       toolCallId: `direct-${Date.now()}`,
       messages,

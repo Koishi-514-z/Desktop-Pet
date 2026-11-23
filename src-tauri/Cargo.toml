@@ -23,10 +23,22 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.12.7", features = ["tray-icon"] }
 tauri-plugin-log = "2"
-# 划词：全局快捷键、读写剪贴板、模拟按键复制选中的文字
+# 划词与截图：全局快捷键、读写剪贴板、模拟按键复制选中的文字、将剪贴板图片编码为 PNG
 tauri-plugin-global-shortcut = "2"
 arboard = "3"
 enigo = "0.6"
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse"] }
+
+# 开发构建中也优化图片编码相关的依赖，否则大尺寸截图编码 PNG 会明显变慢
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
+opt-level = 3
+
+[profile.dev.package.image]
+opt-level = 3
