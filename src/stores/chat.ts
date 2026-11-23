@@ -273,7 +273,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 用户回应授权请求
-  function respondPermission(decision: PermissionDecision) {
+  function respondPermission(decision: PermissionDecision) { 
     settlePermission?.(decision)
   }
 
