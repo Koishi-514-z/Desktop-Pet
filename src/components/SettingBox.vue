@@ -6,6 +6,7 @@ import Live2dSetting from './settings/Live2dSetting.vue'
 import PersonaSetting from './settings/PersonaSetting.vue'
 import SceneSetting from './settings/SceneSetting.vue'
 import AgentSetting from './settings/AgentSetting.vue'
+import MemorySetting from './settings/MemorySetting.vue'
 
 // 设置面板的分类标签
 const tabs = [
@@ -14,6 +15,7 @@ const tabs = [
   { id: 'persona', label: '人物设定' },
   { id: 'scene', label: '场景' },
   { id: 'agent', label: '技能' },
+  { id: 'memory', label: '记忆' },
 ] as const
 
 type SettingTabId = (typeof tabs)[number]['id']
@@ -99,6 +101,7 @@ onBeforeUnmount(() => {
         <PersonaSetting v-else-if="activeTab === 'persona'" />
         <SceneSetting v-else-if="activeTab === 'scene'" />
         <AgentSetting v-else-if="activeTab === 'agent'" />
+        <MemorySetting v-else-if="activeTab === 'memory'" />
       </section>
     </div>
   </div>

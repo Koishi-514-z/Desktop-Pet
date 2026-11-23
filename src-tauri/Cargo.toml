@@ -29,6 +29,8 @@ arboard = "3"
 enigo = "0.6"
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.23"
+# 长期记忆：SQLite（bundled 会编译内置的 SQLite，无需另外安装）
+rusqlite = { version = "0.43", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi"] }

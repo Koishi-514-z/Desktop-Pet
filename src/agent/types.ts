@@ -54,8 +54,12 @@ export interface PermissionRequest {
   title: string
   /** 为什么需要这个权限，由 LLM 给出 */
   reason: string
-  /** 操作对象，如窗口标题 */
+  /** 操作对象，如窗口标题、要忘掉的记忆 */
   target?: string
+  /** 操作对象的说明文字，如「窗口」「内容」 */
+  targetLabel?: string
+  /** 是否提供「始终允许」，默认提供 */
+  allowAlways?: boolean
   /** 补充说明，如数据会发送到哪里 */
   notice?: string
 }
@@ -135,6 +139,11 @@ export interface AgentRunOptions extends SkillHost {
   skills: Skill[]
   /** 直接调用指定工具，跳过意图识别与工具执行阶段的 LLM */
   directCall?: DirectToolCall
+  /**
+   * 提供给工具执行阶段的背景信息（如从长期记忆中检索到的用户信息）。
+   * 可以传入 Promise：工具执行阶段开始前才会等待它，因此可以与意图识别并行准备
+   */
+  background?: string | Promise<string>
   onEvent?: (event: AgentEvent) => void
   abortSignal?: AbortSignal
 }

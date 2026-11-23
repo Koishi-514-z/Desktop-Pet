@@ -3,6 +3,8 @@ import { useLocalStorage } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MAX_IMAGES } from '@/agent/skills/image'
 import { isTauri } from '@/composables/desktop'
+import type { ChatMessage } from '@/stores/chat'
+import { categoryLabel } from '@/memory/types'
 import { useAgentStore } from '@/stores/agent'
 import { useCaptureStore } from '@/stores/capture'
 import { useChatStore } from '@/stores/chat'
@@ -132,6 +134,16 @@ function toggleQuote(key: string) {
   if (set.has(key)) set.delete(key)
   else set.add(key)
   expandedQuotes.value = set
+}
+
+// 撤销某条回复后记住的事情
+async function handleUndoRemembered(message: ChatMessage) {
+  try {
+    await chatStore.undoRemembered(message)
+  }
+  catch (error) {
+    errorMessage.value = `撤销失败：${error instanceof Error ? error.message : String(error)}`
+  }
 }
 
 // 刚复制过的结果卡片，用于短暂显示「已复制」
@@ -469,14 +481,20 @@ onMounted(() => {
                     </div>
                   </div>
                   <p v-if="chatStore.pendingPermission.request.target" class="permission-target">
-                    <span>窗口</span>{{ chatStore.pendingPermission.request.target }}
+                    <span>{{ chatStore.pendingPermission.request.targetLabel ?? '对象' }}</span>{{ chatStore.pendingPermission.request.target }}
                   </p>
                   <p v-if="chatStore.pendingPermission.request.notice" class="permission-notice">
                     {{ chatStore.pendingPermission.request.notice }}
                   </p>
                   <div class="permission-actions">
                     <button class="permission-button" @click="chatStore.respondPermission('deny')">拒绝</button>
-                    <button class="permission-button" @click="chatStore.respondPermission('always')">始终允许</button>
+                    <button
+                      v-if="chatStore.pendingPermission.request.allowAlways !== false"
+                      class="permission-button"
+                      @click="chatStore.respondPermission('always')"
+                    >
+                      始终允许
+                    </button>
                     <button class="permission-button primary" @click="chatStore.respondPermission('once')">允许这一次</button>
                   </div>
                 </div>
@@ -504,14 +522,58 @@ onMounted(() => {
                   </header>
                   <div class="result-content" :class="display.format">{{ display.content }}</div>
                 </div>
-                <div v-if="message.role === 'assistant' && message.skills?.length" class="skill-tags">
-                  <span v-for="id in message.skills" :key="id" class="skill-tag">
+                <div v-if="message.role === 'assistant' && (message.skills?.length || message.memories?.length || message.remembered?.length)" class="skill-tags">
+                  <button
+                    v-if="message.memories?.length"
+                    class="skill-tag memory-tag"
+                    :class="{ active: expandedQuotes.has(`memory-${chatStore.currentSessionId}-${index}`) }"
+                    title="这次回复时想起的事情"
+                    @click="toggleQuote(`memory-${chatStore.currentSessionId}-${index}`)"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.6.6.8 1.2.8 2V17h6v-1.4c0-.8.2-1.4.8-2 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6zM10 21h4" />
+                    </svg>
+                    想起了 {{ message.memories.length }} 件事
+                  </button>
+                  <button
+                    v-if="message.remembered?.length"
+                    class="skill-tag memory-tag remembered"
+                    :class="{ active: expandedQuotes.has(`remembered-${chatStore.currentSessionId}-${index}`) }"
+                    title="这一轮对话后记住的事情"
+                    @click="toggleQuote(`remembered-${chatStore.currentSessionId}-${index}`)"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.6.6.8 1.2.8 2V17h6v-1.4c0-.8.2-1.4.8-2 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6zM10 21h4M12 7v4M10 9h4" />
+                    </svg>
+                    记住了 {{ message.remembered.length }} 件事
+                  </button>
+                  <span v-for="id in message.skills ?? []" :key="id" class="skill-tag">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
                     </svg>
                     {{ agentStore.getSkillById(id)?.name ?? id }}
                   </span>
                 </div>
+                <ul v-if="message.memories?.length && expandedQuotes.has(`memory-${chatStore.currentSessionId}-${index}`)" class="memory-list">
+                  <li v-for="memory in message.memories" :key="memory.id">
+                    <span class="memory-category">{{ categoryLabel(memory.category) }}</span>
+                    <span>{{ memory.content }}</span>
+                  </li>
+                </ul>
+                <ul v-if="message.remembered?.length && expandedQuotes.has(`remembered-${chatStore.currentSessionId}-${index}`)" class="memory-list remembered">
+                  <li v-for="(memory, memoryIndex) in message.remembered" :key="memoryIndex">
+                    <span class="memory-category">{{ memory.action === 'add' ? '新增' : '更新' }} · {{ categoryLabel(memory.category) }}</span>
+                    <span class="memory-change">
+                      <span>{{ memory.content }}</span>
+                      <s v-if="memory.previous" class="memory-previous">{{ memory.previous }}</s>
+                    </span>
+                  </li>
+                  <li v-if="message.rememberedBatch" class="memory-actions">
+                    <button class="memory-undo" type="button" title="撤销这一轮记忆的变动" @click="handleUndoRemembered(message)">
+                      撤销
+                    </button>
+                  </li>
+                </ul>
               </div>
             </div>
           </div>

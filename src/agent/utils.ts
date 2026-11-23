@@ -84,3 +84,16 @@ export function recentMessages(messages: ModelMessage[], count: number): ModelMe
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
+
+/** 从 LLM 的输出中解析 JSON 对象，兼容代码块包裹、前后夹带说明文字等情况；无法解析时返回 null */
+export function parseJsonObject(text: string): Record<string, unknown> | null {
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) return null
+  try {
+    const value: unknown = JSON.parse(match[0])
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+  }
+  catch {
+    return null
+  }
+}

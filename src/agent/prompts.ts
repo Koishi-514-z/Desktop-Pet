@@ -48,7 +48,7 @@ ${latest ? truncate(messageText(latest), 1500) : ''}`
 
 // ===== 阶段二：工具执行 =====
 
-export function buildExecutorSystemPrompt(skills: Skill[], now = new Date()): string {
+export function buildExecutorSystemPrompt(skills: Skill[], now = new Date(), background = ''): string {
   const skillSections = skills
     .map((skill) => `## ${skill.name}（${skill.id}）\n${skill.instructions.trim()}`)
     .join('\n\n')
@@ -60,10 +60,10 @@ ${formatDateTime(now)}，时区 ${describeTimezone(now)}
 
 # 已激活的技能
 ${skillSections}
-
+${background.trim() ? `\n${background.trim()}\n` : ''}
 # 执行要求
 - 根据用户的最新消息（结合对话上下文）调用合适的工具，必要时可以多次调用或调用多个工具。
-- 参数缺失且无法从上下文推断时，不要猜测，直接说明还缺少什么信息。
+- 参数缺失且无法从上下文或已知信息推断时，不要猜测，直接说明还缺少什么信息。
 - 工具调用失败时，可以修正参数后重试一次；仍然失败就如实说明。
 - 不要编造工具没有返回的数据。
 - 完成后用几句话总结：做了什么、得到了什么结果、是否有失败及原因、还需要用户补充什么。`

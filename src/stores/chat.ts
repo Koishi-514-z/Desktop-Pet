@@ -1,5 +1,6 @@
-import type { ModelMessage } from 'ai'
+import type { LanguageModel, ModelMessage } from 'ai'
 import type { AgentEvent, AgentResult, DirectToolCall, PermissionRequest, ToolDisplay } from '@/agent'
+import type { RecalledMemory, RememberedMemory } from '@/memory/types'
 import type { DueReminder } from '@/stores/reminders'
 import type { ImageRef } from '@/utils/images'
 import { useLocalStorage } from '@vueuse/core'
@@ -16,8 +17,12 @@ import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
 import { useRemindersStore } from '@/stores/reminders'
 import { useSceneStore } from '@/stores/scene'
+import { useMemoryStore } from '@/stores/memory'
 import { deleteImages } from '@/utils/images'
 import { resolveLanguageModel } from '@/utils/llm'
+import { toMemoryDialog } from '@/memory/writer'
+import { createBatchId } from '@/memory/api'
+import { MEMORY_SKILL_ID } from '@/agent/skills/memory'
 
 // 本地持久化的对话消息（结构子集，调用 AI SDK 时再断言为 ModelMessage）
 export interface ChatMessage {
@@ -25,6 +30,12 @@ export interface ChatMessage {
   content: string
   // 不在界面上展示的消息，如触发桌宠主动说话的系统事件
   hidden?: boolean
+  // assistant 消息：生成该回复时从长期记忆中想起的事情
+  memories?: RecalledMemory[]
+  // assistant 消息：这一轮对话后记住的事情（新增或更新的记忆）
+  remembered?: RememberedMemory[]
+  // assistant 消息：这一轮记忆变动的批次，用于撤销
+  rememberedBatch?: string
   // assistant 消息：生成该回复时使用的技能 id
   skills?: string[]
   // assistant 消息：技能产出的、需要完整展示的结果卡片（如译文）
@@ -114,6 +125,7 @@ export const useChatStore = defineStore('chat', () => {
   const personaStore = usePersonaStore()
   const agentStore = useAgentStore()
   const remindersStore = useRemindersStore()
+  const memoryStore = useMemoryStore()
 
   function createSession(title = '新对话'): ChatSession {
     const now = Date.now()
@@ -312,12 +324,22 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const model = resolveLanguageModel(provider)
 
+      // 记忆读取：根据最新的用户消息检索相关的长期记忆，与意图识别并行进行；检索失败不影响对话
+      const recallPromise = turn.type === 'user'
+        ? memoryStore.recall(dialog).catch((error) => {
+            console.warn('[chat] 检索记忆失败：', error)
+            return null
+          })
+        : Promise.resolve(null)
+
       // 阶段一、二：意图识别与工具执行，不需要技能时返回 null
       let agentResult: AgentResult | null = null
       if (turn.type === 'user') {
         agentResult = await runAgent({
           model,
           messages: dialog,
+          // 相关记忆也提供给工具执行阶段，便于推断用户没有明说的参数（如所在城市）
+          background: recallPromise.then((recalled) => recalled?.facts ?? ''),
           visionModel: agentStore.resolveVisionModel(),
           skills: agentStore.activeSkills,
           directCall: turn.directCall,
@@ -337,10 +359,18 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
 
-      // 阶段三：以角色口吻润色执行结果（或直接闲聊）
+      const recalled = await recallPromise
+      if (recalled) {
+        session.messages[assistantIndex]!.memories = recalled.memories.map(({ id, category, content, core }) => ({ id, category, content, core }))
+      }
+
+      // 阶段三：以角色口吻润色执行结果（或直接闲聊），系统提示词 = 人设 + 相关记忆 + 技能执行结果
+      const system = [systemPrompt, recalled?.prompt, agentResult && buildAgentContextPrompt(agentResult)]
+        .filter(Boolean)
+        .join('\n\n')
       const result = streamText({
         model,
-        system: agentResult ? `${systemPrompt}\n\n${buildAgentContextPrompt(agentResult)}` : systemPrompt,
+        system,
         messages: dialog,
       })
 
@@ -359,6 +389,14 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       onFinishHooks.value.forEach(hook => hook(fullText))
+
+      // 记忆写入：在后台从这一轮对话中提取值得记住的信息，不阻塞下一轮对话。
+      // 划词、截图工具栏上的按钮是一次性的操作，不需要整理记忆；
+      // 用户在查看或要求忘掉记忆时也不整理，避免刚忘掉的事又被记回去
+      const usedMemorySkill = agentResult?.skills.some((skill) => skill.id === MEMORY_SKILL_ID) ?? false
+      if (turn.type === 'user' && !turn.directCall && !usedMemorySkill) {
+        rememberTurn(session, assistantIndex, model)
+      }
     }
     catch (error) {
       // 未产生任何内容（文字与结果卡片）时移除空的占位回复
@@ -372,6 +410,32 @@ export const useChatStore = defineStore('chat', () => {
       agentStatus.value = ''
       isStreaming.value = false
     }
+  }
+
+  // 整理这一轮对话的记忆，完成后在回复下方显示记住了哪些事
+  function rememberTurn(session: ChatSession, assistantIndex: number, model: LanguageModel) {
+    const assistantMessage = session.messages[assistantIndex]
+    const dialog = toMemoryDialog(session.messages.slice(0, assistantIndex + 1))
+    const batch = createBatchId('turn')
+    memoryStore.memorize(dialog, { model, source: `chat:${session.id}`, batch }).then((updates) => {
+      const remembered = updates.flatMap((update): RememberedMemory[] =>
+        update.action === 'reinforce'
+          ? []
+          : [{ action: update.action, category: update.category, content: update.content, ...(update.previous ? { previous: update.previous } : {}) }],
+      )
+      if (assistantMessage && remembered.length > 0) {
+        assistantMessage.remembered = remembered
+        assistantMessage.rememberedBatch = batch
+      }
+    })
+  }
+
+  // 撤销某条回复后记住的事情
+  async function undoRemembered(message: ChatMessage) {
+    if (!message.rememberedBatch) return
+    await memoryStore.undo({ batchId: message.rememberedBatch })
+    message.remembered = undefined
+    message.rememberedBatch = undefined
   }
 
   // 提醒到时，让桌宠主动提醒用户
@@ -439,6 +503,7 @@ export const useChatStore = defineStore('chat', () => {
 
     sendMessage,
     respondPermission,
+    undoRemembered,
     speakProactively,
     onStart,
     onFirstChunkArrived,

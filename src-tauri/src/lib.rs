@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod capture;
+mod memory;
 mod screen;
 
 const MAIN_WINDOW: &str = "main";
@@ -94,6 +95,26 @@ pub fn run() {
       capture::take_screenshot,
       screen::get_target_window,
       screen::capture_window,
+      memory::memory_search,
+      memory::memory_similar,
+      memory::memory_get,
+      memory::memory_list,
+      memory::memory_stats,
+      memory::memory_add,
+      memory::memory_update,
+      memory::memory_reinforce,
+      memory::memory_archive,
+      memory::memory_restore,
+      memory::memory_delete,
+      memory::memory_events,
+      memory::memory_undo,
+      memory::memory_changes_since,
+      memory::memory_forget_preview,
+      memory::memory_forget,
+      memory::memory_consolidation_groups,
+      memory::memory_pending_embeddings,
+      memory::memory_set_embeddings,
+      memory::memory_database_path,
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -106,6 +127,7 @@ pub fn run() {
 
       setup_tray(app.handle())?;
       screen::start_tracking();
+      app.manage(memory::MemoryState::open(app.handle()));
 
       // 窗口在配置中初始隐藏，定位完成后再显示，避免启动时闪烁
       if let Some(window) = app.get_webview_window(MAIN_WINDOW) {

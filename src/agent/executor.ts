@@ -39,9 +39,11 @@ export async function executeSkills(options: AgentRunOptions): Promise<AgentResu
   const context = createSkillContext(options)
 
   try {
+    // 背景信息准备失败不影响执行
+    const background = await Promise.resolve(options.background).catch(() => '')
     const { text, steps } = await generateText({
       model,
-      system: buildExecutorSystemPrompt(skills),
+      system: buildExecutorSystemPrompt(skills, new Date(), background),
       messages: recentMessages(messages, EXECUTOR_CONTEXT_SIZE),
       tools: collectTools(skills),
       stopWhen: stepCountIs(MAX_STEPS),

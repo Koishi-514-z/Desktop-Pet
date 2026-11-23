@@ -44,6 +44,7 @@ export const screenSkill: Skill = {
           title: '查看当前窗口',
           reason,
           target: windowName,
+          targetLabel: '窗口',
           notice: '截图会显示在对话中，并发送给识图模型分析',
         }) ?? false
         if (!allowed) {
