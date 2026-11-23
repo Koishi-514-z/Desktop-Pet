@@ -1,4 +1,5 @@
 import type { LanguageModel, ModelMessage, ToolSet } from 'ai'
+import type { ImageRef } from '@/utils/images'
 
 /**
  * Skill（技能）：面向同一类用户意图的一组能力，由「使用说明 + 工具」组成。
@@ -36,11 +37,39 @@ export interface RouteDecision {
  * 工具执行时可以通过 experimental_context 拿到的上下文，
  * 使用 getSkillContext(options) 获取。例如工具内部需要再调用一次 LLM 时使用其中的 model。
  */
-export interface SkillContext {
+export interface SkillContext extends SkillHost {
   model: LanguageModel
   /** 用于理解图片的模型，未单独配置时与 model 相同 */
   visionModel: LanguageModel
   abortSignal?: AbortSignal
+}
+
+/**
+ * 涉及隐私或副作用的操作（如截取屏幕）执行前向用户请求的授权
+ */
+export interface PermissionRequest {
+  /** 权限类型，如 screen-capture。用户选择「始终允许」后，同类请求不再询问 */
+  kind: string
+  /** 简短的标题，如「查看当前窗口」 */
+  title: string
+  /** 为什么需要这个权限，由 LLM 给出 */
+  reason: string
+  /** 操作对象，如窗口标题 */
+  target?: string
+  /** 补充说明，如数据会发送到哪里 */
+  notice?: string
+}
+
+/**
+ * 由界面提供给技能使用的能力。未提供时，需要授权的操作一律视为被拒绝
+ */
+export interface SkillHost {
+  /** 向用户请求授权，返回是否允许 */
+  requestPermission?: (request: PermissionRequest) => Promise<boolean>
+  /** 把工具产生的图片（如截图）附加到用户的这条消息上，便于展示与追问 */
+  attachImages?: (images: ImageRef[]) => void
+  /** 更新界面上展示的进度，如「正在查看屏幕…」 */
+  setStatus?: (status: string) => void
 }
 
 /**
@@ -96,7 +125,7 @@ export type AgentEvent =
   | { type: 'tool-call', toolName: string, input: unknown }
   | { type: 'tool-result', record: ToolCallRecord }
 
-export interface AgentRunOptions {
+export interface AgentRunOptions extends SkillHost {
   model: LanguageModel
   /** 用于理解图片的模型，省略时使用 model */
   visionModel?: LanguageModel

@@ -10,8 +10,9 @@ const EXECUTOR_CONTEXT_SIZE = 10
 // 单次执行最多进行的 LLM 调用轮数（每轮可调用若干工具），防止死循环
 const MAX_STEPS = 6
 
-function createSkillContext({ model, visionModel, abortSignal }: AgentRunOptions): SkillContext {
-  return { model, visionModel: visionModel ?? model, abortSignal }
+function createSkillContext(options: AgentRunOptions): SkillContext {
+  const { model, visionModel, abortSignal, requestPermission, attachImages, setStatus } = options
+  return { model, visionModel: visionModel ?? model, abortSignal, requestPermission, attachImages, setStatus }
 }
 
 /** 合并多个技能的工具，工具名重复时后者会被忽略 */

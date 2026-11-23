@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CaptureKind } from '@/stores/capture'
 import { computed, ref } from 'vue'
+import { SCREEN_CAPTURE_PERMISSION } from '@/agent/skills/screen'
 import { formatDateTime } from '@/agent/utils'
 import { isTauri } from '@/composables/desktop'
 import { useAgentStore } from '@/stores/agent'
@@ -96,6 +97,12 @@ const visionModelId = computed({
   set: (modelId: string) => {
     if (agentStore.visionModel) agentStore.visionModel = { ...agentStore.visionModel, modelId: modelId.trim() }
   },
+})
+
+// 查看屏幕前是否每次询问（用户在授权卡片上选择「始终允许」后为 false）
+const askBeforeScreenCapture = computed({
+  get: () => !agentStore.isAlwaysAllowed(SCREEN_CAPTURE_PERMISSION),
+  set: (ask: boolean) => agentStore.setAlwaysAllowed(SCREEN_CAPTURE_PERMISSION, !ask),
 })
 
 const visionModels = computed(() => providersStore.getProviderById(visionProviderId.value)?.models ?? [])
@@ -236,6 +243,29 @@ const visionProviderMissing = computed(() => !!agentStore.visionModel && !provid
         </div>
         <span v-if="visionProviderMissing" class="setting-desc warn">之前选择的 Provider 已被删除，当前使用对话模型</span>
       </div>
+    </section>
+
+    <section class="tile">
+      <header class="tile-head">
+        <span class="tile-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+        </span>
+        <span class="tile-title">授权</span>
+      </header>
+
+      <label class="toggle-setting">
+        <span class="setting-label">
+          <span>查看屏幕前询问</span>
+          <span class="setting-desc">「看屏幕」技能需要截取你当前使用的窗口并发送给识图模型。开启时每次都会先请求你的授权；在授权卡片上选择「始终允许」后会自动关闭</span>
+        </span>
+        <span class="switch">
+          <input v-model="askBeforeScreenCapture" type="checkbox" />
+          <span class="switch-track" />
+        </span>
+      </label>
     </section>
 
     <section class="tile">

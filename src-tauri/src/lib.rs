@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod capture;
+mod screen;
 
 const MAIN_WINDOW: &str = "main";
 
@@ -88,7 +89,12 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_global_shortcut::Builder::new().build())
     .manage(capture::CaptureState::default())
-    .invoke_handler(tauri::generate_handler![capture::set_capture_shortcut, capture::take_screenshot])
+    .invoke_handler(tauri::generate_handler![
+      capture::set_capture_shortcut,
+      capture::take_screenshot,
+      screen::get_target_window,
+      screen::capture_window,
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -99,6 +105,7 @@ pub fn run() {
       }
 
       setup_tray(app.handle())?;
+      screen::start_tracking();
 
       // 窗口在配置中初始隐藏，定位完成后再显示，避免启动时闪烁
       if let Some(window) = app.get_webview_window(MAIN_WINDOW) {

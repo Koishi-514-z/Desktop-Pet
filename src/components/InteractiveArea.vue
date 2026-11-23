@@ -101,7 +101,10 @@ function scrollToBottom() {
   el.scrollTop = el.scrollHeight
 }
 
-watch([() => chatStore.visibleMessages.length, lastMessageContent, () => chatStore.agentStatus], () => nextTick(scrollToBottom))
+watch(
+  [() => chatStore.visibleMessages.length, lastMessageContent, () => chatStore.agentStatus, () => chatStore.pendingPermission],
+  () => nextTick(scrollToBottom),
+)
 watch(() => chatStore.currentSessionId, () => nextTick(scrollToBottom))
 watch(() => state.value.visible, (visible) => visible && nextTick(scrollToBottom))
 
@@ -447,6 +450,35 @@ onMounted(() => {
                     <i></i><i></i><i></i>
                     <span v-if="chatStore.agentStatus" class="agent-status">{{ chatStore.agentStatus }}</span>
                   </span>
+                </div>
+                <div
+                  v-if="chatStore.pendingPermission && index === chatStore.visibleMessages.length - 1"
+                  :key="chatStore.pendingPermission.id"
+                  class="permission-card"
+                >
+                  <div class="permission-head">
+                    <span class="permission-icon">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="2" y="3" width="20" height="14" rx="2" />
+                        <path d="M8 21h8M12 17v4" />
+                      </svg>
+                    </span>
+                    <div class="permission-text">
+                      <p class="permission-title">{{ personaName }} 想{{ chatStore.pendingPermission.request.title }}</p>
+                      <p class="permission-reason">{{ chatStore.pendingPermission.request.reason }}</p>
+                    </div>
+                  </div>
+                  <p v-if="chatStore.pendingPermission.request.target" class="permission-target">
+                    <span>窗口</span>{{ chatStore.pendingPermission.request.target }}
+                  </p>
+                  <p v-if="chatStore.pendingPermission.request.notice" class="permission-notice">
+                    {{ chatStore.pendingPermission.request.notice }}
+                  </p>
+                  <div class="permission-actions">
+                    <button class="permission-button" @click="chatStore.respondPermission('deny')">拒绝</button>
+                    <button class="permission-button" @click="chatStore.respondPermission('always')">始终允许</button>
+                    <button class="permission-button primary" @click="chatStore.respondPermission('once')">允许这一次</button>
+                  </div>
                 </div>
                 <div
                   v-for="(display, displayIndex) in message.displays ?? []"

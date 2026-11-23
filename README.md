@@ -12,7 +12,7 @@
 - **语音合成**：回复按句切分后逐句合成并按顺序播放，播放音量可调。
 - **情绪表达**：模型在回复中输出情绪标签（如 `<happy>`），前端据此随机播放带有对应标签的表情或动作。
 - **口型同步**：实时分析播放音频的音量，驱动模型嘴部开合。
-- **Agent（技能 + 工具调用）**：先由 LLM 识别用户意图，需要时调用技能中的工具完成请求，再以角色口吻润色结果；内置日期时间、提醒、天气、划词助手、图片理解五个技能，提醒到时桌宠会主动开口。
+- **Agent（技能 + 工具调用）**：先由 LLM 识别用户意图，需要时调用技能中的工具完成请求，再以角色口吻润色结果；内置日期时间、提醒、天气、划词助手、图片理解、看屏幕六个技能，提醒到时桌宠会主动开口。
 - **划词**：在任意应用中选中文字后按下快捷键，即可翻译、解释、总结、润色或分析代码。
 - **图片理解**：发送图片或截图，即可解释图片内容、提取或翻译图中文字、分析报错。
 - **人物设定**：可自定义角色的名字、性格、背景故事与说话风格，并在多个人设之间切换。
@@ -122,6 +122,7 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 | 天气 `weather` | `get_weather` | 使用 [Open-Meteo](https://open-meteo.com/) 免费接口，无需 API Key |
 | 划词助手 `selection` | `translate_text`、`explain_text`、`summarize_text`、`polish_text`、`analyze_code` | 处理划词选中或直接发来的文字，结果以卡片形式完整展示，见下文「划词」 |
 | 图片理解 `image` | `describe_image`、`extract_image_text`、`translate_image`、`analyze_error` | 解释图片、看图答疑、提取 / 翻译图中文字、分析报错截图，见下文「图片理解」 |
+| 看屏幕 `screen` | `look_at_screen` | 由 LLM 判断是否需要看屏幕，经用户授权后截取当前窗口交给识图模型分析，见下文「看屏幕」 |
 
 ### 划词
 
@@ -153,6 +154,17 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 - 图片保存在 IndexedDB 中（`localStorage` 容量太小），删除会话或清空对话时一并删除。尺寸过大（最长边超过 2048 像素或超过 2MB）的图片会被缩小并转为 JPEG。
 - 截图在 Windows 上使用系统自带的「截图工具」（`ms-screenclip:`），需要开启截图工具的「自动复制到剪贴板」（默认开启）；macOS 使用 `screencapture`；其他系统暂不支持截图，可以直接粘贴图片。
 
+### 看屏幕
+
+用户问「我现在这个程序为什么运行不了？」这类需要看到屏幕才能回答、但又没有附上文字或截图的问题时，LLM 会自己决定调用 `look_at_screen`：
+
+1. **意图识别** 选中「看屏幕」技能，**工具执行** 阶段的 LLM 给出看屏幕的理由（`reason`）与要弄清的问题（`question`）。
+2. 找到用户 **最近使用的窗口**。用户在对话面板里打字时，前台窗口其实是桌宠自己，因此 Rust 端（[screen.rs](src-tauri/src/screen.rs)）会在后台持续记录最近一个不属于桌宠的前台窗口作为目标。
+3. 对话中弹出 **授权卡片**，显示理由与窗口标题，可以选择「拒绝 / 允许这一次 / 始终允许」。2 分钟无人回应视为拒绝；拒绝后桌宠会建议改为发送报错文字或截图。
+4. 允许后只截取 **这一个窗口**（使用 `PrintWindow`，不会截到桌宠和其他窗口），截图附加到这条用户消息上（对话中可见，之后可以继续追问），再交给识图模型分析，结果以「屏幕分析」卡片展示。
+
+「始终允许」可以在设置面板 **技能 → 授权** 中撤销。截取窗口目前支持 Windows 与 macOS（macOS 需要授予屏幕录制权限）；最小化的窗口无法截取。
+
 ### 新增技能
 
 在 [src/agent/skills/](src/agent/skills/) 下实现一个 `Skill`，并在 [skills/index.ts](src/agent/skills/index.ts) 中注册：
@@ -182,6 +194,7 @@ export const mySkill: Skill = {
 - **在工具中调用 LLM**：`getSkillContext(options)`（`execute` 的第二个参数）可以拿到当前使用的模型 `model` 与识图模型 `visionModel`，参考 [selection.ts](src/agent/skills/selection.ts)、[image.ts](src/agent/skills/image.ts)。
 - **结果卡片**：返回值中带上 `display: { title, content, format? }`，结果会以卡片形式完整展示在回复下方，角色只需简短点评，适合译文、总结这类需要原样呈现的长文本。
 - **直接调用**：`useChatStore().sendMessage(文字, { directCall: { skillId, toolName, input } })` 跳过意图识别直接执行工具，可同时用 `quote` 附带一段引用文字。
+- **请求授权**：涉及隐私或副作用的操作，在工具中调用 `getSkillContext(options).requestPermission({ kind, title, reason, target })`，对话中会弹出授权卡片，返回用户是否允许；同一 `kind` 选择「始终允许」后不再询问。另外 `attachImages` 可以把工具产生的图片附加到用户消息上，`setStatus` 可以更新界面上的进度。参考 [screen.ts](src/agent/skills/screen.ts)。
 - **主动说话**：需要让桌宠主动开口时（如定时任务完成），调用 `useChatStore().speakProactively('事件描述')`。
 
 ## 工作流程
@@ -203,6 +216,7 @@ export const mySkill: Skill = {
 src-tauri/                   # Tauri 桌面端
 ├── src/lib.rs               # 窗口定位、托盘图标与菜单
 ├── src/capture.rs           # 划词与截图：全局快捷键、模拟复制读取选中内容、调起系统截图工具
+├── src/screen.rs            # 看屏幕：记录用户最近使用的窗口、截取指定窗口
 ├── tauri.conf.json          # 窗口配置（无边框、透明、置顶等）
 └── capabilities/            # 前端可调用的窗口权限
 src/
@@ -214,13 +228,13 @@ src/
 │   ├── SettingBox.vue       # 设置面板
 │   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景 / 技能）
 ├── agent/                   # Agent：意图识别、工具执行与各技能
-│   └── skills/              # 内置技能（日期时间 / 提醒 / 天气 / 划词助手 / 图片理解）
+│   └── skills/              # 内置技能（日期时间 / 提醒 / 天气 / 划词助手 / 图片理解 / 看屏幕）
 ├── composables/
 │   ├── queues.ts            # 文本处理、语音合成、音频播放队列
 │   ├── animation.ts         # 视线跟随
 │   └── desktop.ts           # 桌面窗口：鼠标穿透与全局鼠标坐标
 ├── stores/                  # Pinia 状态（chat / agent / capture / reminders / speech / audio / live2d / persona / providers / scene）
-├── utils/                   # 网络请求、队列、数学工具等
+├── utils/                   # 网络请求、队列、图片存储（IndexedDB）、窗口截取等
 └── pages/HomePage.vue
 ```
 

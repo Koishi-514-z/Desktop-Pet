@@ -31,7 +31,11 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi"] }
+
+# 截取指定窗口（「看屏幕」技能）。Linux 上依赖 pipewire 等系统库，暂不启用
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+xcap = "0.9"
 
 # 开发构建中也优化图片编码相关的依赖，否则大尺寸截图编码 PNG 会明显变慢
 [profile.dev.package.png]

@@ -631,6 +631,134 @@ svg {
   overflow-y: auto;
 }
 
+/* ===== 授权请求 ===== */
+
+.message.assistant .message-body:has(.permission-card) {
+  width: 88%;
+  max-width: 88%;
+}
+
+.permission-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: stretch;
+  padding: 14px;
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgb(251 191 36 / 12%), transparent 60%),
+    rgb(0 0 0 / 22%);
+  border: 1px solid rgb(251 191 36 / 35%);
+  border-radius: 14px;
+  animation: message-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.permission-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.permission-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: #fbbf24;
+  background: rgb(251 191 36 / 14%);
+  border-radius: 10px;
+}
+
+.permission-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.permission-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.permission-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.permission-reason {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgb(255 255 255 / 75%);
+}
+
+.permission-target {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0;
+  padding: 7px 10px;
+  overflow: hidden;
+  font-size: 12px;
+  color: rgb(255 255 255 / 85%);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgb(255 255 255 / 6%);
+  border-radius: 8px;
+}
+
+.permission-target span {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.permission-notice {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.permission-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.permission-button {
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 80%);
+  cursor: pointer;
+  background: rgb(255 255 255 / 7%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 10px;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.permission-button:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 12%);
+}
+
+.permission-button.primary {
+  color: #fff;
+  background: var(--accent-grad);
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgb(91 120 255 / 30%);
+}
+
+.permission-button.primary:hover {
+  filter: brightness(1.08);
+}
+
 /* ===== 技能结果卡片 ===== */
 
 .message.assistant .message-body:has(.result-card) {

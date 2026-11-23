@@ -288,6 +288,11 @@ fn capture_screenshot() -> Result<Option<String>, String> {
 fn encode_png(image: ImageData<'_>) -> Result<String, String> {
   let rgba = RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes.into_owned())
     .ok_or("剪贴板中的图片数据无效")?;
+  encode_rgba_png(&rgba)
+}
+
+/// 将 RGBA 图片编码为 PNG 的 data URL
+pub(crate) fn encode_rgba_png(rgba: &RgbaImage) -> Result<String, String> {
   let mut buffer = Cursor::new(Vec::new());
   rgba
     .write_to(&mut buffer, ImageFormat::Png)

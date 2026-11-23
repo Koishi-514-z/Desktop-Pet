@@ -1,5 +1,5 @@
 import type { ModelMessage } from 'ai'
-import type { AgentEvent, AgentResult, DirectToolCall, ToolDisplay } from '@/agent'
+import type { AgentEvent, AgentResult, DirectToolCall, PermissionRequest, ToolDisplay } from '@/agent'
 import type { DueReminder } from '@/stores/reminders'
 import type { ImageRef } from '@/utils/images'
 import { useLocalStorage } from '@vueuse/core'
@@ -15,6 +15,7 @@ import { useAgentStore } from '@/stores/agent'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
 import { useRemindersStore } from '@/stores/reminders'
+import { useSceneStore } from '@/stores/scene'
 import { deleteImages } from '@/utils/images'
 import { resolveLanguageModel } from '@/utils/llm'
 
@@ -47,6 +48,18 @@ export interface SendMessageOptions {
 type Turn =
   | { type: 'user', content: string } & SendMessageOptions
   | { type: 'event', content: string }
+
+// 用户对授权请求的回应
+export type PermissionDecision = 'deny' | 'once' | 'always'
+
+// 正在等待用户回应的授权请求
+export interface PendingPermission {
+  id: string
+  request: PermissionRequest
+}
+
+// 授权请求无人回应多久后视为拒绝
+const PERMISSION_TIMEOUT = 2 * 60 * 1000
 
 // 较早的划词内容与结果卡片在请求中截断到的长度，节省上下文
 const HISTORY_ATTACHMENT_LENGTH = 1000
@@ -116,6 +129,9 @@ export const useChatStore = defineStore('chat', () => {
   const isStreaming = ref(false)
   // Agent 当前进度的描述（如「正在使用技能：天气」），为空表示没有在使用技能
   const agentStatus = ref('')
+  // 正在等待用户回应的授权请求（如截取屏幕），界面上显示为授权卡片
+  const pendingPermission = ref<PendingPermission | null>(null)
+  let settlePermission: ((decision: PermissionDecision) => void) | null = null
 
   // 发送消息时的钩子函数，用于在流式响应的不同阶段进行处理
   const onStartHooks = ref<(() => Promise<void>)[]>([])
@@ -223,6 +239,32 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // 技能请求授权：已设为「始终允许」的直接通过，否则打开对话面板等待用户选择
+  function requestPermission(request: PermissionRequest): Promise<boolean> {
+    if (agentStore.isAlwaysAllowed(request.kind)) return Promise.resolve(true)
+
+    // 同一时间只保留一个请求，之前未回应的视为拒绝
+    settlePermission?.('deny')
+    useSceneStore().interactiveAreaState.visible = true
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => settlePermission?.('deny'), PERMISSION_TIMEOUT)
+      pendingPermission.value = { id: createSessionId(), request }
+      settlePermission = (decision) => {
+        clearTimeout(timer)
+        pendingPermission.value = null
+        settlePermission = null
+        if (decision === 'always') agentStore.setAlwaysAllowed(request.kind, true)
+        resolve(decision !== 'deny')
+      }
+    })
+  }
+
+  // 用户回应授权请求
+  function respondPermission(decision: PermissionDecision) {
+    settlePermission?.(decision)
+  }
+
   // 生成一轮回复：
   // 1. 意图识别 + 工具执行（仅用户发言时，由 Agent 完成）；
   // 2. 将工具执行结果附加到人设提示词之后，由 LLM 以角色口吻流式生成最终回复
@@ -280,6 +322,13 @@ export const useChatStore = defineStore('chat', () => {
           skills: agentStore.activeSkills,
           directCall: turn.directCall,
           onEvent: (event) => { agentStatus.value = describeAgentEvent(event) },
+          requestPermission,
+          setStatus: (status) => { agentStatus.value = status },
+          // 工具产生的图片（如截图）附加到这轮的用户消息上，后续追问时图片理解技能可以继续使用
+          attachImages: (images) => {
+            const userMessage = session.messages[assistantIndex - 1]
+            if (userMessage?.role === 'user') userMessage.images = [...(userMessage.images ?? []), ...images]
+          },
         })
         if (agentResult) {
           const message = session.messages[assistantIndex]!
@@ -319,6 +368,7 @@ export const useChatStore = defineStore('chat', () => {
       onErrorHooks.value.forEach(hook => hook(error))
     }
     finally {
+      settlePermission?.('deny')
       agentStatus.value = ''
       isStreaming.value = false
     }
@@ -380,6 +430,7 @@ export const useChatStore = defineStore('chat', () => {
     visibleMessages,
     isStreaming,
     agentStatus,
+    pendingPermission,
 
     createNewSession,
     switchSession,
@@ -387,6 +438,7 @@ export const useChatStore = defineStore('chat', () => {
     renameSession,
 
     sendMessage,
+    respondPermission,
     speakProactively,
     onStart,
     onFirstChunkArrived,

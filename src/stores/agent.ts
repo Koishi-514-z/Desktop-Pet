@@ -21,6 +21,8 @@ export const useAgentStore = defineStore('agent', () => {
   const disabledSkillIds = useLocalStorage<string[]>('settings/agent/disabledSkillIds', [])
   // 图片理解使用的模型；为 null 时与对话使用同一个模型
   const visionModel = useLocalStorage<ModelChoice | null>('settings/agent/visionModel', null, { serializer: StorageSerializers.object })
+  // 用户选择了「始终允许」的权限类型（如 screen-capture），这些请求不再询问
+  const alwaysAllowedPermissions = useLocalStorage<string[]>('settings/agent/alwaysAllowedPermissions', [])
 
   const skills = builtinSkills
 
@@ -42,6 +44,15 @@ export const useAgentStore = defineStore('agent', () => {
     return skills.find((skill) => skill.id === id)
   }
 
+  function isAlwaysAllowed(kind: string) {
+    return alwaysAllowedPermissions.value.includes(kind)
+  }
+
+  function setAlwaysAllowed(kind: string, value: boolean) {
+    const rest = alwaysAllowedPermissions.value.filter((k) => k !== kind)
+    alwaysAllowedPermissions.value = value ? [...rest, kind] : rest
+  }
+
   // 解析图片理解使用的模型，未配置或配置失效时返回 undefined（即使用对话模型）
   function resolveVisionModel(): LanguageModel | undefined {
     const choice = visionModel.value
@@ -55,11 +66,14 @@ export const useAgentStore = defineStore('agent', () => {
     enabled,
     disabledSkillIds,
     visionModel,
+    alwaysAllowedPermissions,
     skills,
     activeSkills,
     isSkillEnabled,
     setSkillEnabled,
     getSkillById,
     resolveVisionModel,
+    isAlwaysAllowed,
+    setAlwaysAllowed,
   }
 })
