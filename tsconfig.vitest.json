@@ -8,8 +8,7 @@
 
   "compilerOptions": {
     // Vitest runs in a different environment than the application code.
-    // Adjust lib and types accordingly.
-    "lib": [],
+    // 测试在 jsdom 中运行，与应用使用相同的 lib（DOM 与新版 ES，如 Array.at()），只额外加上 node 与 jsdom 的类型
     "types": ["node", "jsdom"],
 
     // `vue-tsc --build` produces a .tsbuildinfo file for incremental type-checking.
