@@ -42,6 +42,9 @@ function createModelId(): string {
     : `model-${Math.random().toString(36).slice(2)}`
 }
 
+// 切换到非默认的表情后，多久自动切回默认表情（毫秒）
+export const EXPRESSION_REVERT_MS = 30_000
+
 // 预置模型列表
 export const defaultModels: Live2dModel[] = [
   {
@@ -197,8 +200,9 @@ export const useLive2dStore = defineStore('live2d', () => {
     playMotion(motion.group, motion.index)
   }
 
-  // 播放指定表情。指定 duration（毫秒）时，到时后自动切换回 defaultExpression；
-  function playExpression(name: string, duration?: number) {
+  // 播放指定表情。非默认的表情在 duration（毫秒，默认约半分钟）后自动切回 defaultExpression，
+  // 期间切换到别的表情时重新计时。每次都换成新的对象，确保界面上的模型一定会收到变化
+  function playExpression(name: string, duration = EXPRESSION_REVERT_MS) {
     if (expressionTimer) {
       clearTimeout(expressionTimer)
       expressionTimer = undefined
@@ -206,17 +210,22 @@ export const useLive2dStore = defineStore('live2d', () => {
 
     currentExpression.value = { name }
 
-    if (duration !== undefined) {
+    if (name !== defaultExpression.value.name && duration > 0) {
       expressionTimer = setTimeout(() => {
         expressionTimer = undefined
-        currentExpression.value = defaultExpression.value
+        currentExpression.value = { name: defaultExpression.value.name }
       }, duration)
     }
   }
 
+  // 随机换一个表情：尽量不选默认表情和当前的表情，否则看起来没有变化
   function playRandomExpression(duration?: number) {
-    const randomIndex = randInt(0, availableExpressions.value.length - 1)
-    playExpression(availableExpressions.value[randomIndex]?.name ?? '', duration)
+    const others = availableExpressions.value.filter(
+      (expression) => expression.name !== defaultExpression.value.name && expression.name !== currentExpression.value.name,
+    )
+    const candidates = others.length > 0 ? others : availableExpressions.value
+    if (candidates.length === 0) return
+    playExpression(candidates[randInt(0, candidates.length - 1)]!.name, duration)
   }
 
   function playExpressionByTag(tag: string, duration?: number) {

@@ -28,8 +28,6 @@ const FIRST_TICK_DELAY = 8_000
 const MAX_LOG = 50
 // 判断要不要说的超时时间
 const JUDGE_TIMEOUT = 60_000
-// 小动作（表情）持续的时间
-const ANIMATION_DURATION = 4000
 // 交给判断模块的最近对话条数
 const RECENT_DIALOG = 4
 
@@ -112,7 +110,8 @@ export const useProactiveStore = defineStore('proactive', () => {
       label: trigger.label,
       skills: availableSkills().filter((skill) => skills.includes(skill.id)),
     }),
-    animate: () => live2dStore.playRandomExpression(ANIMATION_DURATION),
+    // 换个表情，约半分钟后自动切回默认表情
+    animate: () => live2dStore.playRandomExpression(),
     log: (entry) => {
       log.value = [entry, ...log.value].slice(0, MAX_LOG)
     },

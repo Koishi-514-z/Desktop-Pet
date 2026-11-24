@@ -150,11 +150,20 @@ async function playMotion(group: string, index?: number, priority = MotionPriori
 }
 
 /**
- * 切换表情
+ * 切换表情。名称为空（模型没有设置默认表情）时，恢复模型原本的样子
  */
 async function playExpression(name: string) {
   if (!model.value) return
   console.log("playExpression", name)
+  if (!name) {
+    // expression('') 找不到对应的表情，会直接忽略，需要手动重置
+    const manager = model.value.internalModel.motionManager.expressionManager
+    if (!manager) return
+    manager.resetExpression()
+    // 同时记下当前没有表情：否则之后再切到刚才那个表情时，会被当成「已经是这个表情」而忽略
+    manager.currentExpression = manager.defaultExpression
+    return
+  }
 	await model.value.expression(name)
 }
 
