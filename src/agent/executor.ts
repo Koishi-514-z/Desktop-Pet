@@ -242,7 +242,7 @@ export async function executeSkills(
             if (display) displays.push(display)
           }
           else {
-            record.error = errorMessage(event.error)
+            record.error = errorMessage(event.error) 
           }
           recordedIds.add(event.toolCall.toolCallId)
           toolCalls.push(record)
