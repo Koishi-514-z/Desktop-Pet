@@ -2,6 +2,7 @@ import type { GeneratedAudioFile } from 'ai'
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { useSceneStore } from './scene'
+import { addHook } from '@/utils/hooks'
 
 export const useAudioStore = defineStore('audio', () => {
   const sceneStore = useSceneStore()
@@ -187,13 +188,13 @@ export const useAudioStore = defineStore('audio', () => {
     }
   }
 
-  // 添加播放结束/出错时的钩子函数
+  // 添加播放结束/出错时的钩子函数，返回取消注册的函数（组件卸载时应调用）
   function onEnd(hook: (audio: GeneratedAudioFile) => Promise<void>) {
-    onEndHooks.value.push(hook)
+    return addHook(onEndHooks, hook)
   }
-  
+
   function onError(hook: (error: unknown) => Promise<void>) {
-    onErrorHooks.value.push(hook)
+    return addHook(onErrorHooks, hook)
   }
 
   // 注册自定义播放函数，注册后自动启用自定义播放器

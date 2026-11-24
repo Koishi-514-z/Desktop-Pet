@@ -8,6 +8,21 @@ const EMOTION_TAG_REGEX = /<(\w+)\/?>/
 // 与 EMOTION_TAG_REGEX 相同，但带 g 标志，用于从文本中移除所有标记
 export const EMOTION_TAG_REGEX_GLOBAL = /<(\w+)\/?>/g
 
+// 用于显示的宽松匹配：兼容闭合标记 </happy> 与带空格的 < happy >
+const DISPLAY_TAG_REGEX = /<\s*\/?\s*\w+\s*\/?\s*>/g
+// 流式输出时文本末尾尚未接收完整的标记，如 "<hap"、"</"
+const PARTIAL_TAG_AT_END_REGEX = /<\s*\/?\s*\w*\s*\/?\s*$/
+
+/**
+ * 去掉文本中的情绪标记，供字幕等界面显示使用。
+ * streaming 为 true 时，一并去掉末尾还没接收完整的半截标记
+ */
+export function stripEmotionTags(text: string, streaming = false): string {
+  let result = text.replace(DISPLAY_TAG_REGEX, '')
+  if (streaming) result = result.replace(PARTIAL_TAG_AT_END_REGEX, '')
+  return result
+}
+
 // 标记消息回复结束的终止标记
 const END_TAG = '<END/>'
 

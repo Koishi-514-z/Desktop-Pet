@@ -337,9 +337,11 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-chatStore.onError(async (error) => {
+// 卸载时注销：chatStore 是单例，组件重新挂载后旧钩子仍会被调用
+const disposeErrorHook = chatStore.onError(async (error) => {
   errorMessage.value = error instanceof Error ? error.message : String(error)
 })
+onBeforeUnmount(disposeErrorHook)
 
 // ===== 执行中途的提问 =====
 

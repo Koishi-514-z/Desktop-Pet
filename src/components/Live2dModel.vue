@@ -141,10 +141,30 @@ function syncModelMeta() {
 }
 
 /**
- * 播放指定动作
+ * 当前是否有非 idle 的动作正在播放，或正在加载、即将播放
+ */
+function isPlayingNonIdleMotion() {
+  if (!model.value) return false
+  const { state, groups } = model.value.internalModel.motionManager
+  const playing = state.currentPriority !== MotionPriority.NONE
+    && state.currentGroup !== undefined
+    && state.currentGroup !== groups.idle
+  const reserved = state.reservePriority !== MotionPriority.NONE
+    && state.reservedGroup !== undefined
+    && state.reservedGroup !== groups.idle
+  return playing || reserved
+}
+
+/**
+ * 播放指定动作。正在播放（或加载）非 idle 的动作时，忽略新的动作，避免打断
+ * 注：motionFinish 回调中切回 idle 的请求经由 watch 异步触发，此时上一个动作的状态已被清除，不会被拦截
  */
 async function playMotion(group: string, index?: number, priority = MotionPriority.NORMAL) {
   if (!model.value) return
+  if (isPlayingNonIdleMotion()) {
+    console.log("playMotion skipped, non-idle motion is playing", group, index)
+    return
+  }
   console.log("playMotion", group, index)
   await model.value.motion(group, index, priority)
 }

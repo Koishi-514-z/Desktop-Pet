@@ -3,14 +3,19 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { usePersonaStore } from '@/stores/persona'
 import { useSceneStore } from '@/stores/scene'
+import { stripEmotionTags } from '@/composables/queues'
 
 const chatStore = useChatStore()
 const personaStore = usePersonaStore()
 const sceneStore = useSceneStore()
 
-// 字幕只在非空消息之间切换（流式回复的占位消息在收到首个字符前为空，不予显示）
+// 字幕只在非空消息之间切换（流式回复的占位消息在收到首个字符前为空，不予显示；
+// 只有情绪标记、去掉后没有正文的消息同样视为空）
 const messages = computed(() =>
-  chatStore.visibleMessages.filter((message) => message.content.trim() !== ''),
+  chatStore.visibleMessages.filter((message) => {
+    const text = message.role === 'user' ? message.content : stripEmotionTags(message.content, true)
+    return text.trim() !== ''
+  }),
 )
 
 // 用户手动选中的消息下标；为 null 时表示跟随最新一条消息
@@ -27,7 +32,6 @@ const displayIndex = computed(() => {
 })
 
 const currentMessage = computed(() => messages.value[displayIndex.value])
-const displayText = computed(() => currentMessage.value?.content.trim() ?? '')
 
 // 当前显示的是否为正在流式生成的那条消息
 const isLive = computed(
@@ -36,6 +40,14 @@ const isLive = computed(
     !!currentMessage.value &&
     currentMessage.value === chatStore.visibleMessages.at(-1),
 )
+
+// 桌宠的回复去掉情绪标记后再显示（流式生成中还会去掉末尾未接收完整的半截标记）；用户消息原样显示
+const displayText = computed(() => {
+  const message = currentMessage.value
+  if (!message) return ''
+  const text = message.role === 'user' ? message.content : stripEmotionTags(message.content, isLive.value)
+  return text.trim()
+})
 
 const speakerName = computed(() =>
   currentMessage.value?.role === 'user' ? '我' : (personaStore.currentPersona?.name ?? '桌宠'),
