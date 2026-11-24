@@ -5,14 +5,18 @@
 
 mod ops;
 mod read;
-mod office;
 mod roots;
+mod script;
 mod write;
 
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod read_tests;
+#[cfg(test)]
 mod office_tests;
+#[cfg(test)]
+mod script_tests;
 
 use std::path::PathBuf;
 
@@ -22,7 +26,8 @@ use tauri_plugin_opener::OpenerExt;
 
 use ops::{FileEntry, FileMove, MoveReport, OrganizeBy, SearchRequest, SearchResult};
 use roots::Roots;
-use write::{WritePreview, WriteRequest, WriteResult};
+use script::{CodeRequest, OfficeSupport, RunRequest, RunResult, Runtime, ScriptInfo};
+use write::{TargetChange, TargetInfo, TargetSnapshot, WritePreview, WriteRequest, WriteResult};
 
 /// 读取文件内容时默认最多返回的字数
 const DEFAULT_MAX_CHARS: usize = 12_000;
@@ -172,17 +177,79 @@ pub async fn files_write(
   blocking(move || write::apply(&Roots::new(&roots)?, &request, expected_hash.as_deref(), &dir)).await
 }
 
-/// 撤销一次写入：恢复原内容，新建的文件则删除；文件之后又被改动过时不撤销
+/// 撤销一次写入：恢复原内容，新建的文件则删除，被脚本删除的文件（after_hash 为空）从备份恢复；文件之后又被改动过时不撤销
 #[tauri::command]
 pub async fn files_undo_write(
   app: AppHandle,
   roots: Vec<String>,
   path: String,
   backup_id: Option<String>,
-  after_hash: String,
+  after_hash: Option<String>,
 ) -> Result<(), String> {
   let dir = backup_dir(&app)?;
-  blocking(move || write::undo(&Roots::new(&roots)?, &path, backup_id.as_deref(), &after_hash, &dir)).await
+  blocking(move || write::undo(&Roots::new(&roots)?, &path, backup_id.as_deref(), after_hash.as_deref(), &dir)).await
+}
+
+/// 运行脚本前检查它会新建或修改的文件：在授权的文件夹内、没有被其他程序打开（不会改动文件）
+#[tauri::command]
+pub async fn files_check_targets(roots: Vec<String>, paths: Vec<String>) -> Result<Vec<TargetInfo>, String> {
+  blocking(move || write::check_targets(&Roots::new(&roots)?, &paths)).await
+}
+
+/// 运行脚本前备份它会修改的文件
+#[tauri::command]
+pub async fn files_snapshot_targets(app: AppHandle, roots: Vec<String>, paths: Vec<String>) -> Result<Vec<TargetSnapshot>, String> {
+  let dir = backup_dir(&app)?;
+  blocking(move || write::snapshot_targets(&Roots::new(&roots)?, &paths, &dir)).await
+}
+
+/// 运行脚本后对比文件，返回改动；没有变化的文件删除备份
+#[tauri::command]
+pub async fn files_settle_targets(app: AppHandle, roots: Vec<String>, snapshots: Vec<TargetSnapshot>) -> Result<Vec<TargetChange>, String> {
+  let dir = backup_dir(&app)?;
+  blocking(move || Ok(write::settle_targets(&Roots::new(&roots)?, &snapshots, &dir))).await
+}
+
+/// 本机可以用来新建与修改 Office 文件的方式：Microsoft Office 程序与 Python 库
+#[tauri::command]
+pub async fn office_support() -> Result<OfficeSupport, String> {
+  blocking(|| Ok(script::office_support())).await
+}
+
+/// 本机可用的脚本解释器
+#[tauri::command]
+pub async fn script_runtimes() -> Result<Vec<Runtime>, String> {
+  blocking(|| Ok(script::runtimes())).await
+}
+
+/// 检查脚本能否运行，返回展示给用户确认的命令与脚本内容（不会运行脚本）
+#[tauri::command]
+pub async fn script_inspect(roots: Vec<String>, request: RunRequest) -> Result<ScriptInfo, String> {
+  blocking(move || script::inspect(&Roots::new(&roots)?, &request)).await
+}
+
+/// 运行脚本（前端在调用前已经征得用户同意），等待结束后返回输出
+#[tauri::command]
+pub async fn script_run(roots: Vec<String>, request: RunRequest) -> Result<RunResult, String> {
+  blocking(move || script::run(&Roots::new(&roots)?, &request)).await
+}
+
+/// 检查一段代码能否运行，返回展示给用户确认的命令与完整代码（不会运行）
+#[tauri::command]
+pub async fn script_inspect_code(roots: Vec<String>, request: CodeRequest) -> Result<ScriptInfo, String> {
+  blocking(move || script::inspect_code(&Roots::new(&roots)?, &request)).await
+}
+
+/// 直接运行一段代码（前端在调用前已经征得用户同意），不写入用户的文件夹
+#[tauri::command]
+pub async fn script_run_code(roots: Vec<String>, request: CodeRequest) -> Result<RunResult, String> {
+  blocking(move || script::run_code(&Roots::new(&roots)?, &request)).await
+}
+
+/// 取消正在运行的脚本，结束它启动的所有进程
+#[tauri::command]
+pub fn script_cancel(run_id: String) -> bool {
+  script::cancel(&run_id)
 }
 
 /// 在系统的文件管理器中显示文件（不会打开或运行它）

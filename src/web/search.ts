@@ -111,6 +111,6 @@ export async function webSearch(query: string, settings: SearchSettings, options
       return { results: toResults(records(data.results), { title: 'title', url: 'url', snippet: 'content', date: 'publishedDate' }).slice(0, limit) }
     }
     default:
-      throw new Error('还没有配置网页搜索服务，请在 设置 → 工具 中选择搜索服务')
+      throw new Error('还没有配置网页搜索服务，请在 设置 → Tools 中选择搜索服务')
   }
 }

@@ -21,7 +21,7 @@ impl Roots {
       .filter(|root| root.is_dir())
       .collect();
     if roots.is_empty() {
-      return Err("还没有授权任何可访问的文件夹，请在 设置 → 工具 中添加".into());
+      return Err("还没有授权任何可访问的文件夹，请在 设置 → Tools 中添加".into());
     }
     Ok(Self(roots))
   }

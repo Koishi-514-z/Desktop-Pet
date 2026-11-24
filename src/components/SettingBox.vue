@@ -12,12 +12,12 @@ import ToolSetting from './settings/ToolSetting.vue'
 // 设置面板的分类标签
 const tabs = [
   { id: 'provider', label: 'Provider' },
-  { id: 'live2d', label: 'Live2D 模型' },
-  { id: 'persona', label: '人物设定' },
-  { id: 'scene', label: '场景' },
-  { id: 'agent', label: '技能' },
-  { id: 'memory', label: '记忆' },
-  { id: 'tools', label: '工具' },
+  { id: 'live2d', label: 'Live2D' },
+  { id: 'persona', label: 'Persona' },
+  { id: 'scene', label: 'Scene' },
+  { id: 'agent', label: 'Skills' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'tools', label: 'Tools' },
 ] as const
 
 type SettingTabId = (typeof tabs)[number]['id']

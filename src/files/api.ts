@@ -66,29 +66,16 @@ export interface TextEdit {
   newText: string
 }
 
-export interface CellEdit {
-  /** 工作表名称，省略时为第一个工作表 */
-  sheet?: string
-  /** 单元格位置，如 B3 */
-  cell: string
-  /** 新的值：以 = 开头为公式 */
-  value: string
-}
-
 export interface WriteRequest {
   path: string
-  /** 文件的完整内容：新建文件，或覆盖整个文件（Word 为简单的 Markdown，Excel 为 CSV 或 Markdown 表格） */
+  /** 文件的完整内容：新建文件，或覆盖整个文件 */
   content?: string
   /** 文件已存在时是否允许覆盖 */
   overwrite?: boolean
-  /** 依次执行的查找替换（Word、PowerPoint 中不能跨段落） */
+  /** 依次执行的查找替换 */
   edits?: TextEdit[]
-  /** 追加到文件末尾的内容；Excel 中为追加到工作表末尾的行 */
+  /** 追加到文件末尾的内容 */
   append?: string
-  /** 修改 Excel 单元格 */
-  cells?: CellEdit[]
-  /** Excel 中追加行的工作表 */
-  sheet?: string
 }
 
 export interface WritePreview {
@@ -101,10 +88,8 @@ export interface WritePreview {
   summary: string
   /** 改动预览：- 开头为删除的行，+ 开头为新增的行 */
   preview: string
-  /** 写入使用的编码，Office 文件为文件类型 */
+  /** 写入使用的编码 */
   encoding: string
-  /** 需要提醒用户的注意事项 */
-  warning: string | null
 }
 
 export interface WriteResult {
@@ -174,14 +159,173 @@ export function writeFile(roots: string[], request: WriteRequest, expectedHash: 
   return call('files_write', { roots, request, expectedHash })
 }
 
-/** 撤销一次写入：恢复原内容，新建的文件则删除；文件之后又被改动过时不撤销 */
-export function undoWrite(roots: string[], path: string, backupId: string | null, afterHash: string): Promise<void> {
+/**
+ * 撤销一次写入：恢复原内容，新建的文件则删除，被脚本删除的文件（afterHash 为 null）从备份恢复；
+ * 文件之后又被改动过时不撤销
+ */
+export function undoWrite(roots: string[], path: string, backupId: string | null, afterHash: string | null): Promise<void> {
   return call('files_undo_write', { roots, path, backupId, afterHash })
 }
 
 /** 在系统的文件管理器中显示文件 */
 export function revealFile(roots: string[], path: string): Promise<void> {
   return call('files_reveal', { roots, path })
+}
+
+// ===== 运行脚本 =====
+
+export interface ScriptRuntime {
+  /** 脚本类型，如「Python 脚本」 */
+  kind: string
+  /** 解释器路径；没有找到时为 null */
+  path: string | null
+}
+
+export interface RunScriptRequest {
+  /** 运行 id，用于取消 */
+  runId: string
+  path: string
+  args?: string[]
+  /** 工作目录，省略时为脚本所在的文件夹 */
+  workingDir?: string
+  timeoutSeconds?: number
+}
+
+/** 运行前展示给用户确认的信息 */
+export interface ScriptInfo {
+  path: string
+  name: string
+  kind: string
+  /** 完整的命令 */
+  command: string
+  workingDir: string
+  timeoutSeconds: number
+  /** 脚本内容的开头 */
+  preview: string
+  lines: number
+  previewTruncated: boolean
+}
+
+export interface ScriptResult {
+  command: string
+  /** 退出码；被结束时为 null */
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  stdoutTruncated: boolean
+  stderrTruncated: boolean
+  timedOut: boolean
+  cancelled: boolean
+  durationMs: number
+  /** 补充说明，如结束了残留的 Office 后台进程 */
+  note: string | null
+}
+
+// ===== 由脚本修改的文件 =====
+
+/** 运行前对一个文件的检查结果 */
+export interface TargetInfo {
+  path: string
+  /** 文件是否已经存在（不存在表示将由脚本新建） */
+  exists: boolean
+  size: number
+}
+
+/** 运行前的快照 */
+export interface TargetSnapshot {
+  path: string
+  backupId: string | null
+  beforeHash: string | null
+}
+
+/** 运行后一个文件的改动 */
+export interface TargetChange {
+  path: string
+  /** 内容有变化（包括新建与删除） */
+  changed: boolean
+  created: boolean
+  deleted: boolean
+  /** 运行前的备份，用于撤销 */
+  backupId: string | null
+  /** 运行后的内容哈希；文件被删除时为 null */
+  afterHash: string | null
+  /** 无法确认改动时的原因（如文件仍被占用） */
+  error: string | null
+}
+
+/** 运行前检查脚本会新建或修改的文件：在授权的文件夹内、没有被其他程序打开（不会改动文件） */
+export function checkTargets(roots: string[], paths: string[]): Promise<TargetInfo[]> {
+  return call('files_check_targets', { roots, paths })
+}
+
+/** 运行前备份脚本会修改的文件 */
+export function snapshotTargets(roots: string[], paths: string[]): Promise<TargetSnapshot[]> {
+  return call('files_snapshot_targets', { roots, paths })
+}
+
+/** 运行后对比文件，返回改动 */
+export function settleTargets(roots: string[], snapshots: TargetSnapshot[]): Promise<TargetChange[]> {
+  return call('files_settle_targets', { roots, snapshots })
+}
+
+/** 本机可以用来新建与修改 Office 文件的方式 */
+export interface OfficeSupport {
+  /** 已安装的 Microsoft Office 程序 */
+  word: boolean
+  excel: boolean
+  powerpoint: boolean
+  /** 已安装的 Python 库：python-docx、openpyxl、python-pptx */
+  pythonLibraries: string[]
+}
+
+export function getOfficeSupport(): Promise<OfficeSupport> {
+  return call('office_support')
+}
+
+/** 本机可用的脚本解释器 */
+export function getScriptRuntimes(): Promise<ScriptRuntime[]> {
+  return call('script_runtimes')
+}
+
+/** 检查脚本能否运行，返回命令与脚本内容（不会运行脚本） */
+export function inspectScript(roots: string[], request: RunScriptRequest): Promise<ScriptInfo> {
+  return call('script_inspect', { roots, request })
+}
+
+/** 运行脚本，等待结束后返回输出。调用前必须已经征得用户同意 */
+export function runScript(roots: string[], request: RunScriptRequest): Promise<ScriptResult> {
+  return call('script_run', { roots, request })
+}
+
+/** 直接运行的代码的语言 */
+export type CodeLanguage = 'python' | 'javascript' | 'powershell' | 'batch' | 'shell'
+
+export interface RunCodeRequest {
+  /** 运行 id，用于取消 */
+  runId: string
+  language: CodeLanguage
+  code: string
+  args?: string[]
+  /** 工作目录，省略时为第一个授权文件夹 */
+  workingDir?: string
+  timeoutSeconds?: number
+  /** 运行结束后，结束脚本启动的、没有正常退出的 Office 后台进程（通过 COM 调用 Office 时使用） */
+  cleanupOffice?: boolean
+}
+
+/** 检查一段代码能否运行，返回命令与完整代码（不会运行） */
+export function inspectCode(roots: string[], request: RunCodeRequest): Promise<ScriptInfo> {
+  return call('script_inspect_code', { roots, request })
+}
+
+/** 直接运行一段代码，不写入用户的文件夹。调用前必须已经征得用户同意 */
+export function runCode(roots: string[], request: RunCodeRequest): Promise<ScriptResult> {
+  return call('script_run_code', { roots, request })
+}
+
+/** 取消正在运行的脚本 */
+export function cancelScript(runId: string): Promise<boolean> {
+  return call('script_cancel', { runId })
 }
 
 /** 用系统浏览器打开网址；在浏览器中运行时打开新标签页 */

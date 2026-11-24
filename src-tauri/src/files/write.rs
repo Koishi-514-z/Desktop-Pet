@@ -1,12 +1,16 @@
-//! 写入与修改文件：纯文本类文件，以及 Word、Excel、PowerPoint（见 office.rs）。
+//! 写入与修改文件。
 //!
-//! 先生成预览（不改动文件），用户确认后再写入；写入时校验文件在确认期间没有被改动过。
-//! 修改已有文件前会把原内容备份到应用数据目录，以便撤销。纯文本文件保持原来的编码与换行符。
-//! 不提供删除文件的能力——唯一的例外是撤销：撤销「新建文件」时会删除这个文件，
-//! 且只在它之后没有被改动过时才会删除。
+//! - 纯文本类文件（write_file / edit_file）：先生成预览（不改动文件），用户确认后再写入；
+//!   写入时校验文件在确认期间没有被改动过；修改时保持原来的编码与换行符
+//! - 由脚本修改的文件（如「Office 文档」技能修改 Word、Excel、PowerPoint）：运行前检查并备份，
+//!   运行后对比内容、记录改动（见本文件末尾的 snapshot_targets / settle_targets）
+//!
+//! 修改前会把原内容备份到应用数据目录，以便撤销。不提供删除文件的能力——唯一的例外是撤销：
+//! 撤销「新建文件」时会删除这个文件，且只在它之后没有被改动过时才会删除。
 
 use std::{
   borrow::Cow,
+  collections::HashSet,
   fs::{self, OpenOptions},
   io::Write,
   path::{Component, Path, PathBuf},
@@ -16,18 +20,13 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::office::{self, CellEdit};
 use super::read::TEXT_EXTENSIONS;
 use super::roots::Roots;
 
 /// 可以修改的文本文件的最大大小（与读取上限一致，超过时无法完整读取）
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
-/// 可以修改的 Office 文件的最大大小
-const MAX_OFFICE_BYTES: u64 = 30 * 1024 * 1024;
 /// 备份的总大小上限（至少保留最新的一份）
 const MAX_BACKUP_TOTAL_BYTES: u64 = 500 * 1024 * 1024;
-/// 可以直接运行的脚本，不允许写入
-const SCRIPT_EXTENSIONS: &[&str] = &["bat", "cmd", "ps1", "sh"];
 /// 预览中每段改动最多显示的行数
 const PREVIEW_LINES: usize = 12;
 /// 预览中每行最多显示的字数
@@ -53,16 +52,11 @@ pub struct WriteRequest {
   /// 文件已存在时是否允许覆盖
   #[serde(default)]
   pub overwrite: bool,
-  /// 依次执行的查找替换，原文必须在文件中只出现一次（Word、PowerPoint 中不能跨段落）
+  /// 依次执行的查找替换，原文必须在文件中只出现一次
   #[serde(default)]
   pub edits: Vec<TextEdit>,
-  /// 追加到文件末尾的内容；Excel 中为追加到工作表末尾的行
+  /// 追加到文件末尾的内容
   pub append: Option<String>,
-  /// 修改 Excel 单元格
-  #[serde(default)]
-  pub cells: Vec<CellEdit>,
-  /// Excel 中追加行的工作表，省略时为第一个工作表
-  pub sheet: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,10 +71,8 @@ pub struct WritePreview {
   pub summary: String,
   /// 改动预览：- 开头为删除的行，+ 开头为新增的行
   pub preview: String,
-  /// 写入使用的编码，Office 文件为文件类型
+  /// 写入使用的编码
   pub encoding: &'static str,
-  /// 需要提醒用户的注意事项
-  pub warning: Option<&'static str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -101,6 +93,8 @@ enum TextEncoding {
   Utf16Le,
   Utf16Be,
   Gb18030,
+  /// 系统的 ANSI 编码（如中文 Windows 上的 GBK），用于新建批处理文件
+  Ansi(&'static encoding_rs::Encoding),
 }
 
 impl TextEncoding {
@@ -111,8 +105,49 @@ impl TextEncoding {
       Self::Utf16Le => "UTF-16 LE",
       Self::Utf16Be => "UTF-16 BE",
       Self::Gb18030 => "GBK",
+      Self::Ansi(encoding) => encoding.name(),
     }
   }
+}
+
+/// 系统的 ANSI 编码：cmd 按它读取批处理文件
+#[cfg(windows)]
+fn system_encoding() -> TextEncoding {
+  // SAFETY: GetACP 没有参数，只返回当前的代码页
+  let code_page = unsafe { windows_sys::Win32::Globalization::GetACP() };
+  let encoding = match code_page {
+    936 => encoding_rs::GBK,
+    950 => encoding_rs::BIG5,
+    932 => encoding_rs::SHIFT_JIS,
+    949 => encoding_rs::EUC_KR,
+    874 | 1250..=1258 => encoding_rs::Encoding::for_label(format!("windows-{code_page}").as_bytes()).unwrap_or(encoding_rs::WINDOWS_1252),
+    // 65001（UTF-8）等
+    _ => return TextEncoding::Utf8 { bom: false },
+  };
+  TextEncoding::Ansi(encoding)
+}
+
+#[cfg(not(windows))]
+fn system_encoding() -> TextEncoding {
+  TextEncoding::Utf8 { bom: false }
+}
+
+/// 新建文本文件时使用的编码与换行符（是否 CRLF）：
+/// - 批处理（.bat / .cmd）：cmd 按系统编码读取（中文 Windows 上为 GBK），并且需要 CRLF 换行，否则跳转标签等可能出错
+/// - PowerShell（.ps1）：Windows PowerShell 5.1 会把没有 BOM 的文件当作系统编码，中文会乱码，因此使用带 BOM 的 UTF-8
+/// - Shell（.sh）与其他文件：UTF-8、LF 换行（Bash 遇到 CR 会出错）
+fn new_file_format(extension: &str) -> (TextEncoding, bool) {
+  match extension {
+    "bat" | "cmd" => (system_encoding(), true),
+    "ps1" => (TextEncoding::Utf8 { bom: true }, true),
+    _ => (TextEncoding::Utf8 { bom: false }, false),
+  }
+}
+
+/// 把批处理代码编码为 cmd 能正确读取的内容（系统编码、CRLF），用于运行一段临时的批处理代码
+pub(super) fn batch_bytes(code: &str) -> Result<Vec<u8>, String> {
+  let (encoding, crlf) = new_file_format("bat");
+  encode(&normalize_newlines(code), encoding, crlf)
 }
 
 /// 已有的文本文件
@@ -165,9 +200,9 @@ fn decode_exact(bytes: &[u8]) -> Option<(String, TextEncoding)> {
   Some((text.into_owned(), TextEncoding::Gb18030))
 }
 
-fn encode(text: &str, encoding: TextEncoding, crlf: bool) -> Vec<u8> {
+fn encode(text: &str, encoding: TextEncoding, crlf: bool) -> Result<Vec<u8>, String> {
   let text: Cow<str> = if crlf { text.replace('\n', "\r\n").into() } else { text.into() };
-  match encoding {
+  Ok(match encoding {
     TextEncoding::Utf8 { bom } => {
       let mut bytes = if bom { vec![0xEF, 0xBB, 0xBF] } else { Vec::new() };
       bytes.extend_from_slice(text.as_bytes());
@@ -176,7 +211,17 @@ fn encode(text: &str, encoding: TextEncoding, crlf: bool) -> Vec<u8> {
     TextEncoding::Utf16Le => [0xFF, 0xFE].into_iter().chain(text.encode_utf16().flat_map(u16::to_le_bytes)).collect(),
     TextEncoding::Utf16Be => [0xFE, 0xFF].into_iter().chain(text.encode_utf16().flat_map(u16::to_be_bytes)).collect(),
     TextEncoding::Gb18030 => encoding_rs::GB18030.encode(&text).0.into_owned(),
-  }
+    TextEncoding::Ansi(encoding) => {
+      let (bytes, _, unmappable) = encoding.encode(&text);
+      if unmappable {
+        return Err(format!(
+          "内容中有 {} 编码无法表示的字符（如 emoji 或生僻字）。批处理文件需要用系统编码保存，请去掉这些字符",
+          encoding.name()
+        ));
+      }
+      bytes.into_owned()
+    }
+  })
 }
 
 fn normalize_newlines(text: &str) -> String {
@@ -192,47 +237,37 @@ fn read_existing(bytes: &[u8]) -> Result<TextFile, String> {
   Ok(TextFile { text, encoding, crlf })
 }
 
-/// 文件的种类，决定如何写入
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum FileKind {
-  Text,
-  Docx,
-  Pptx,
-  Xlsx,
-}
-
-/// 检查文件能否写入并判断种类：纯文本类文件与 docx / pptx / xlsx；
-/// 不能写入脚本、带宏的 Office 文件、隐藏的文件或文件夹（如 .git 中的文件）
-fn file_kind(roots: &Roots, path: &Path) -> Result<FileKind, String> {
-  let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-  let kind = match extension.as_str() {
-    "docx" => FileKind::Docx,
-    "pptx" => FileKind::Pptx,
-    "xlsx" => FileKind::Xlsx,
-    "docm" | "pptm" | "xlsm" => return Err(format!("不能写入带宏的 .{extension} 文件")),
-    "doc" | "ppt" | "xls" => return Err(format!("不支持修改旧版的 .{extension} 文件，可以先用 Office 另存为 .{extension}x")),
-    "pdf" => return Err("不支持写入 PDF 文件，可以改为新建 Word 文档（.docx）".into()),
-    "" => return Err("只能写入带扩展名的文件（如 .txt、.md、.docx）".into()),
-    other if SCRIPT_EXTENSIONS.contains(&other) => return Err(format!("不能写入 .{extension} 脚本文件")),
-    other if TEXT_EXTENSIONS.contains(&other) => FileKind::Text,
-    _ => {
-      return Err(format!(
-        "不能写入 .{extension} 文件，只能写入纯文本类文件（如 .txt、.md、.json、代码文件）与 Word、Excel、PowerPoint 文件"
-      ))
-    }
-  };
+/// 文件是否为隐藏文件，或位于隐藏的文件夹中（如 .git 中的文件、Office 打开文档时生成的 ~$ 临时文件）
+fn is_hidden(roots: &Roots, path: &Path) -> Result<bool, String> {
   let root = roots.paths().iter().find(|root| path.starts_with(root)).ok_or("不在授权访问的文件夹内")?;
-  let hidden = path.strip_prefix(root).unwrap_or(path).components().any(|component| match component {
+  Ok(path.strip_prefix(root).unwrap_or(path).components().any(|component| match component {
     Component::Normal(name) => {
       let name = name.to_string_lossy();
       name.starts_with('.') || name.starts_with('~')
     }
     _ => false,
-  });
-  if hidden {
+  }))
+}
+
+/// 检查文件能否用 write_file / edit_file 写入：只能写入纯文本类文件（包括 .bat、.cmd、.ps1、.sh 等脚本，运行前另有确认）。
+/// Word、Excel、PowerPoint 由「Office 文档」技能通过脚本修改；不能写入隐藏的文件或文件夹
+fn check_writable(roots: &Roots, path: &Path) -> Result<(), String> {
+  let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+  match extension.as_str() {
+    "docx" | "xlsx" | "pptx" | "doc" | "xls" | "ppt" | "docm" | "xlsm" | "pptm" => {
+      return Err("Word、Excel、PowerPoint 文件请用「Office 文档」技能的 run_office_script 新建或修改".into());
+    }
+    "pdf" => return Err("不能直接写入 PDF 文件；可以先写成 Word 文档，再用「Office 文档」技能导出为 PDF".into()),
+    "" => return Err("只能写入带扩展名的文件（如 .txt、.md、.json）".into()),
+    other if !TEXT_EXTENSIONS.contains(&other) => {
+      return Err(format!("不能写入 .{extension} 文件，只能写入纯文本类文件（如 .txt、.md、.json、代码文件）"));
+    }
+    _ => {}
+  }
+  if is_hidden(roots, path)? {
     return Err("不能写入隐藏的文件或文件夹".into());
   }
-  Ok(kind)
+  Ok(())
 }
 
 fn line_count(text: &str) -> usize {
@@ -337,11 +372,10 @@ struct Change {
   summary: String,
   preview: String,
   encoding: &'static str,
-  warning: Option<&'static str>,
 }
 
-/// 纯文本文件：保持原文件的编码与换行符
-fn plan_text(before: Option<&[u8]>, request: &WriteRequest) -> Result<Change, String> {
+/// 纯文本文件：修改时保持原文件的编码与换行符，新建时按文件类型选择（见 new_file_format）
+fn plan_text(before: Option<&[u8]>, request: &WriteRequest, extension: &str) -> Result<Change, String> {
   let existing = before.map(read_existing).transpose()?;
   let (text, encoding, crlf, summary, preview) = match (&existing, &request.content) {
     (None, Some(content)) => {
@@ -349,7 +383,8 @@ fn plan_text(before: Option<&[u8]>, request: &WriteRequest) -> Result<Change, St
       let mut preview = String::new();
       push_lines(&mut preview, "+ ", &text);
       let summary = format!("新建文件，共 {} 行", line_count(&text));
-      (text, TextEncoding::Utf8 { bom: false }, false, summary, preview)
+      let (encoding, crlf) = new_file_format(extension);
+      (text, encoding, crlf, summary, preview)
     }
     (Some(file), Some(content)) => {
       let text = normalize_newlines(content);
@@ -371,56 +406,13 @@ fn plan_text(before: Option<&[u8]>, request: &WriteRequest) -> Result<Change, St
   if existing.as_ref().is_some_and(|file| file.text == text) {
     return Err("修改后的内容与原来相同".into());
   }
-  Ok(Change { bytes: encode(&text, encoding, crlf), summary, preview, encoding: encoding.label(), warning: None })
-}
-
-/// Word、PowerPoint、Excel 文件
-fn plan_office(kind: FileKind, before: Option<&[u8]>, request: &WriteRequest) -> Result<Change, String> {
-  let encoding = match kind {
-    FileKind::Docx => "Word 文档",
-    FileKind::Pptx => "PowerPoint 文稿",
-    _ => "Excel 表格",
-  };
-  if kind == FileKind::Pptx && request.content.is_some() {
-    return Err("暂不支持新建 PowerPoint 文件（也不能覆盖整个文稿），只能用 edits 修改已有幻灯片中的文字".into());
-  }
-
-  if let Some(content) = &request.content {
-    let (bytes, summary) = match kind {
-      FileKind::Docx => {
-        let paragraphs = content.lines().filter(|line| !line.trim().is_empty()).count();
-        (office::create_docx(content)?, format!("新建 Word 文档，共 {paragraphs} 段"))
-      }
-      _ => {
-        let (bytes, rows) = office::create_xlsx(content)?;
-        (bytes, format!("新建 Excel 表格，共 {rows} 行"))
-      }
-    };
-    let summary = if before.is_some() { format!("覆盖整个文件，原有的内容、格式与图片都会丢失。{summary}") } else { summary };
-    let mut preview = String::new();
-    push_lines(&mut preview, "+ ", content.trim());
-    return Ok(Change { bytes, summary, preview, encoding, warning: None });
-  }
-
-  let Some(before) = before else { return Err("没有要写入的内容".into()) };
-  let change = match kind {
-    FileKind::Docx => office::edit_docx(before, &request.edits, request.append.as_deref())?,
-    FileKind::Pptx => {
-      if request.append.is_some() {
-        return Err("PowerPoint 文稿不支持追加内容，只能用 edits 修改已有的文字".into());
-      }
-      office::edit_pptx(before, &request.edits)?
-    }
-    _ => office::edit_xlsx(before, &request.cells, request.append.as_deref(), request.sheet.as_deref())?,
-  };
-  let warning = (kind == FileKind::Xlsx).then_some(office::XLSX_WARNING);
-  Ok(Change { bytes: change.bytes, summary: change.summary, preview: change.preview, encoding, warning })
+  Ok(Change { bytes: encode(&text, encoding, crlf)?, summary, preview, encoding: encoding.label() })
 }
 
 fn plan(roots: &Roots, request: &WriteRequest) -> Result<WritePlan, String> {
-  let editing = !request.edits.is_empty() || request.append.is_some() || !request.cells.is_empty();
+  let editing = !request.edits.is_empty() || request.append.is_some();
   if request.content.is_some() && editing {
-    return Err("content 不能与 edits、append、cells 同时使用".into());
+    return Err("content 不能与 edits、append 同时使用".into());
   }
   if request.content.is_none() && !editing {
     return Err("没有要写入的内容".into());
@@ -430,19 +422,12 @@ fn plan(roots: &Roots, request: &WriteRequest) -> Result<WritePlan, String> {
   if path.is_dir() {
     return Err(format!("{} 是文件夹", path.display()));
   }
-  let kind = file_kind(roots, &path)?;
-  if !request.cells.is_empty() && kind != FileKind::Xlsx {
-    return Err("cells 只能用于 Excel（.xlsx）文件".into());
-  }
-  if !request.edits.is_empty() && kind == FileKind::Xlsx {
-    return Err("修改 Excel 请用 cells 指定单元格与新的值".into());
-  }
+  check_writable(roots, &path)?;
 
-  let limit = if kind == FileKind::Text { MAX_FILE_BYTES } else { MAX_OFFICE_BYTES };
   let before = if path.exists() {
     let size = fs::metadata(&path).map_err(|e| format!("读取文件失败：{e}"))?.len();
-    if size > limit {
-      return Err(format!("文件太大（超过 {} MB），无法修改", limit / 1024 / 1024));
+    if size > MAX_FILE_BYTES {
+      return Err("文件太大（超过 4 MB），无法修改".into());
     }
     Some(fs::read(&path).map_err(|e| format!("读取文件失败：{e}"))?)
   }
@@ -460,12 +445,10 @@ fn plan(roots: &Roots, request: &WriteRequest) -> Result<WritePlan, String> {
     _ => {}
   }
 
-  let change = match kind {
-    FileKind::Text => plan_text(before.as_deref(), request)?,
-    _ => plan_office(kind, before.as_deref(), request)?,
-  };
-  if change.bytes.len() as u64 > limit {
-    return Err(format!("写入后的文件太大（超过 {} MB）", limit / 1024 / 1024));
+  let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+  let change = plan_text(before.as_deref(), request, &extension)?;
+  if change.bytes.len() as u64 > MAX_FILE_BYTES {
+    return Err("写入后的文件太大（超过 4 MB）".into());
   }
 
   Ok(WritePlan {
@@ -477,7 +460,6 @@ fn plan(roots: &Roots, request: &WriteRequest) -> Result<WritePlan, String> {
       summary: change.summary,
       preview: limit_preview(change.preview),
       encoding: change.encoding,
-      warning: change.warning,
     },
     path,
     before,
@@ -566,9 +548,24 @@ pub fn apply(roots: &Roots, request: &WriteRequest, expected_hash: Option<&str>,
   })
 }
 
-/// 撤销一次写入：恢复原文件的内容；新建的文件则删除它。
+/// 撤销一次写入：恢复原文件的内容；新建的文件则删除它；被脚本删除的文件（after_hash 为空）从备份恢复。
 /// 文件在写入之后又被改动过时不撤销，避免丢失之后的修改
-pub fn undo(roots: &Roots, path: &str, backup_id: Option<&str>, after_hash: &str, backup_dir: &Path) -> Result<(), String> {
+pub fn undo(roots: &Roots, path: &str, backup_id: Option<&str>, after_hash: Option<&str>, backup_dir: &Path) -> Result<(), String> {
+  let Some(after_hash) = after_hash else {
+    // 文件被脚本删除了：从备份恢复，不覆盖之后新建的同名文件
+    let path = roots.resolve_new(path)?;
+    if path.exists() {
+      return Err("这个位置在之后又有了同名的文件，为了不覆盖它，没有撤销".into());
+    }
+    let backup = backup_path(backup_dir, backup_id.ok_or("没有原文件的备份，无法恢复")?)?;
+    let before = fs::read(&backup).map_err(|_| "原文件的备份已经不存在（只保留最近 50 份），无法撤销".to_string())?;
+    if let Some(parent) = path.parent() {
+      fs::create_dir_all(parent).map_err(|e| format!("无法创建文件夹：{e}"))?;
+    }
+    fs::write(&path, before).map_err(|e| format!("恢复文件失败：{e}"))?;
+    let _ = fs::remove_file(backup);
+    return Ok(());
+  };
   let path = roots.resolve(path)?;
   let current = fs::read(&path).map_err(|e| format!("读取文件失败：{e}"))?;
   if content_hash(&current) != after_hash {
@@ -584,4 +581,189 @@ pub fn undo(roots: &Roots, path: &str, backup_id: Option<&str>, after_hash: &str
     None => fs::remove_file(&path).map_err(|e| format!("无法撤销新建的文件：{e}"))?,
   }
   Ok(())
+}
+
+// ===== 由脚本修改的文件：运行前检查并备份，运行后对比内容、记录改动，以便撤销 =====
+
+/// 一次最多涉及的文件数量
+const MAX_TARGETS: usize = 20;
+/// 运行前备份的单个文件的最大大小
+const MAX_TARGET_BYTES: u64 = 100 * 1024 * 1024;
+
+/// 运行前对一个文件的检查结果
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetInfo {
+  pub path: String,
+  /// 文件是否已经存在（不存在表示将由脚本新建）
+  pub exists: bool,
+  pub size: u64,
+}
+
+/// 运行前的快照
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetSnapshot {
+  pub path: String,
+  /// 运行前文件的备份；运行前文件不存在时为空
+  pub backup_id: Option<String>,
+  /// 运行前的内容哈希；运行前文件不存在时为空
+  pub before_hash: Option<String>,
+}
+
+/// 运行后一个文件的改动
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetChange {
+  pub path: String,
+  /// 内容有变化（包括新建与删除）
+  pub changed: bool,
+  /// 运行前不存在、运行后存在
+  pub created: bool,
+  /// 运行前存在、运行后不存在
+  pub deleted: bool,
+  /// 运行前的备份，用于撤销；没有变化时已删除
+  pub backup_id: Option<String>,
+  /// 运行后的内容哈希；文件被删除时为空
+  pub after_hash: Option<String>,
+  /// 无法确认改动时的原因（如文件仍被占用）
+  pub error: Option<String>,
+}
+
+/// 文件是否正被其他程序打开着（如在 Word、Excel 中打开）：
+/// 以不共享的方式打开文件，文件已被其他程序打开时会遇到共享冲突（错误码 32）
+#[cfg(windows)]
+fn in_use(path: &Path) -> bool {
+  use std::os::windows::fs::OpenOptionsExt;
+  matches!(OpenOptions::new().read(true).write(true).share_mode(0).open(path), Err(error) if error.raw_os_error() == Some(32))
+}
+
+#[cfg(not(windows))]
+fn in_use(_path: &Path) -> bool {
+  false
+}
+
+fn file_name(path: &Path) -> String {
+  path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+fn check_target(roots: &Roots, path: &str) -> Result<(PathBuf, TargetInfo), String> {
+  let resolved = roots.resolve_new(path)?;
+  if resolved.is_dir() {
+    return Err(format!("{} 是文件夹", resolved.display()));
+  }
+  if is_hidden(roots, &resolved)? {
+    return Err(format!("不能修改隐藏的文件或文件夹：{}", resolved.display()));
+  }
+  let extension = resolved.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+  if matches!(extension.as_str(), "docm" | "xlsm" | "pptm" | "dotm" | "xltm" | "potm") {
+    return Err(format!("不能修改带宏的 Office 文件：{}", file_name(&resolved)));
+  }
+  let (exists, size) = match fs::metadata(&resolved) {
+    Ok(metadata) => (true, metadata.len()),
+    Err(_) => (false, 0),
+  };
+  if exists && size > MAX_TARGET_BYTES {
+    return Err(format!("「{}」太大（超过 100 MB），无法备份", file_name(&resolved)));
+  }
+  if exists && in_use(&resolved) {
+    return Err(format!("「{}」正在被其他程序使用（可能在 Office 中打开着），请先关闭它再试", file_name(&resolved)));
+  }
+  let info = TargetInfo { path: resolved.display().to_string(), exists, size };
+  Ok((resolved, info))
+}
+
+fn check_all(roots: &Roots, paths: &[String]) -> Result<Vec<(PathBuf, TargetInfo)>, String> {
+  if paths.is_empty() {
+    return Err("需要列出脚本会新建或修改的文件".into());
+  }
+  if paths.len() > MAX_TARGETS {
+    return Err(format!("一次最多修改 {MAX_TARGETS} 个文件"));
+  }
+  let mut seen = HashSet::new();
+  let mut targets = Vec::new();
+  for path in paths {
+    let (resolved, info) = check_target(roots, path)?;
+    if seen.insert(resolved.clone()) {
+      targets.push((resolved, info));
+    }
+  }
+  Ok(targets)
+}
+
+/// 运行前检查脚本会新建或修改的文件：在授权的文件夹内、不是隐藏文件、没有被其他程序打开（不会改动文件）
+pub fn check_targets(roots: &Roots, paths: &[String]) -> Result<Vec<TargetInfo>, String> {
+  Ok(check_all(roots, paths)?.into_iter().map(|(_, info)| info).collect())
+}
+
+/// 运行前再检查一次，并备份已有的文件
+pub fn snapshot_targets(roots: &Roots, paths: &[String], backup_dir: &Path) -> Result<Vec<TargetSnapshot>, String> {
+  let mut snapshots = Vec::new();
+  for (path, info) in check_all(roots, paths)? {
+    let snapshot = if info.exists {
+      let bytes = fs::read(&path).map_err(|e| format!("备份「{}」失败：{e}", file_name(&path)))?;
+      TargetSnapshot { path: info.path, backup_id: Some(save_backup(backup_dir, &bytes)?), before_hash: Some(content_hash(&bytes)) }
+    }
+    else {
+      TargetSnapshot { path: info.path, backup_id: None, before_hash: None }
+    };
+    snapshots.push(snapshot);
+  }
+  Ok(snapshots)
+}
+
+/// 读取运行后的文件内容。Office 退出后可能稍晚才释放文件，读取失败时重试几次；文件不存在时返回 None
+fn read_after(path: &Path) -> Result<Option<Vec<u8>>, String> {
+  for attempt in 0..10 {
+    if !path.exists() {
+      return Ok(None);
+    }
+    match fs::read(path) {
+      Ok(bytes) => return Ok(Some(bytes)),
+      Err(error) if attempt == 9 => return Err(format!("无法读取「{}」，它可能仍被占用：{error}", file_name(path))),
+      Err(_) => std::thread::sleep(std::time::Duration::from_millis(300)),
+    }
+  }
+  unreachable!()
+}
+
+/// 运行后对比文件，返回每个文件的改动；没有变化的文件删除备份
+pub fn settle_targets(roots: &Roots, snapshots: &[TargetSnapshot], backup_dir: &Path) -> Vec<TargetChange> {
+  snapshots
+    .iter()
+    .map(|snapshot| {
+      let unchanged = |error: String| TargetChange {
+        path: snapshot.path.clone(),
+        changed: false,
+        created: false,
+        deleted: false,
+        backup_id: snapshot.backup_id.clone(),
+        after_hash: None,
+        error: Some(error),
+      };
+      let path = match roots.resolve_new(&snapshot.path) {
+        Ok(path) => path,
+        Err(error) => return unchanged(error),
+      };
+      let after_hash = match read_after(&path) {
+        Ok(bytes) => bytes.map(|bytes| content_hash(&bytes)),
+        Err(error) => return unchanged(error),
+      };
+      let changed = after_hash != snapshot.before_hash;
+      if !changed {
+        if let Some(backup) = snapshot.backup_id.as_deref().and_then(|id| backup_path(backup_dir, id).ok()) {
+          let _ = fs::remove_file(backup);
+        }
+      }
+      TargetChange {
+        path: path.display().to_string(),
+        changed,
+        created: snapshot.before_hash.is_none() && after_hash.is_some(),
+        deleted: snapshot.before_hash.is_some() && after_hash.is_none(),
+        backup_id: if changed { snapshot.backup_id.clone() } else { None },
+        after_hash,
+        error: None,
+      }
+    })
+    .collect()
 }

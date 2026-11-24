@@ -2,6 +2,7 @@
 import type { NamedFolder } from '@/files/api'
 import type { FileOperation } from '@/stores/tools'
 import { computed, onMounted, ref } from 'vue'
+import { describeResult } from '@/agent/skills/scripts'
 import { formatDate } from '@/agent/utils'
 import { filesAvailable, getDefaultRoots } from '@/files/api'
 import { useToolsStore } from '@/stores/tools'
@@ -75,6 +76,46 @@ async function undo(operation: FileOperation) {
   }
   catch (error) {
     undoMessage.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+// ===== Office 文档 =====
+
+const PYTHON_LIBRARIES = [
+  { name: 'python-docx', use: 'Word' },
+  { name: 'openpyxl', use: 'Excel' },
+  { name: 'python-pptx', use: 'PowerPoint' },
+]
+
+const officeItems = computed(() => {
+  const support = toolsStore.officeSupport
+  if (!support) return []
+  const app = (name: string, available: boolean) => ({ name: `Microsoft ${name}`, available, status: available ? '已安装，优先使用' : '没有安装' })
+  return [
+    app('Word', support.word),
+    app('Excel', support.excel),
+    app('PowerPoint', support.powerpoint),
+    ...PYTHON_LIBRARIES.map((library) => {
+      const available = support.pythonLibraries.includes(library.name)
+      return { name: `Python 库 ${library.name}`, available, status: available ? `已安装（没有 ${library.use} 时使用）` : '没有安装' }
+    }),
+  ]
+})
+
+const missingLibraries = computed(() => {
+  const support = toolsStore.officeSupport
+  return support ? PYTHON_LIBRARIES.map((library) => library.name).filter((name) => !support.pythonLibraries.includes(name)) : []
+})
+
+const detecting = ref(false)
+
+async function detectOffice() {
+  detecting.value = true
+  try {
+    await toolsStore.loadScriptRuntimes()
+  }
+  finally {
+    detecting.value = false
   }
 }
 
@@ -196,6 +237,74 @@ onMounted(async () => {
       </ul>
       <span v-if="undoMessage" class="setting-desc">{{ undoMessage }}</span>
     </section>
+
+    <section class="tile">
+      <header class="tile-head">
+        <span class="tile-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v14H4z" />
+            <path d="m8 10 2 2-2 2M12 14h4" />
+          </svg>
+        </span>
+        <span class="tile-title">运行脚本</span>
+      </header>
+
+      <span class="setting-desc">
+        「运行脚本」技能可以运行上面授权文件夹中的脚本（.py、.js、.ps1、.bat、.cmd、.sh），也可以直接运行一段临时的代码（不保存到你的文件夹，工作目录在授权文件夹内）。每次运行前都会展示命令与完整代码，经你同意后才会运行；脚本以你的身份运行，产生的改动无法撤销。不需要时可以在 Skills 页禁用。
+      </span>
+      <template v-if="toolsStore.scriptRuntimes.length">
+        <span class="list-label">本机的解释器</span>
+        <ul class="roots">
+          <li v-for="runtime in toolsStore.scriptRuntimes" :key="runtime.kind" class="root">
+            <span class="root-text">
+              <span>{{ runtime.kind }}</span>
+              <span class="setting-desc" :class="{ warn: !runtime.path }">{{ runtime.path ?? '没有找到解释器，无法运行' }}</span>
+            </span>
+          </li>
+        </ul>
+      </template>
+
+      <span class="list-label">最近运行</span>
+      <p v-if="toolsStore.scriptHistory.length === 0" class="setting-desc">还没有运行过脚本</p>
+      <ul v-else class="roots">
+        <li v-for="run in toolsStore.scriptHistory" :key="run.id" class="root" :title="run.command">
+          <span class="root-text">
+            <span>{{ [run.name, ...run.args].join(' ') }}</span>
+            <span class="setting-desc" :class="{ warn: run.exitCode !== 0 }">{{ formatTime(run.createdAt) }} · {{ describeResult(run) }}</span>
+          </span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="tile">
+      <header class="tile-head">
+        <span class="tile-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+            <path d="M14 3v6h6M8 13h8M8 17h5" />
+          </svg>
+        </span>
+        <span class="tile-title">Office 文档</span>
+      </header>
+
+      <span class="setting-desc">
+        「Office 文档」技能通过运行代码新建或修改 Word、Excel、PowerPoint 文件：优先调用本机的 Microsoft Office，其次使用 Python 库。运行前会展示要改动的文件与代码，经你同意后才会运行；修改的文件会先备份，可以在上面的「文件操作记录」中撤销。
+      </span>
+      <ul v-if="toolsStore.officeSupport" class="roots">
+        <li v-for="item in officeItems" :key="item.name" class="root">
+          <span class="root-text">
+            <span>{{ item.name }}</span>
+            <span class="setting-desc" :class="{ ok: item.available, warn: !item.available }">{{ item.status }}</span>
+          </span>
+        </li>
+      </ul>
+      <span v-if="missingLibraries.length" class="setting-desc">
+        没有安装 Office 时会用到 Python 库，可以在命令行中运行：<code class="command">pip install {{ missingLibraries.join(' ') }}</code>
+      </span>
+      <div class="row">
+        <button class="reset-button" type="button" :disabled="detecting || !filesAvailable" @click="detectOffice">{{ detecting ? '检测中…' : '重新检测' }}</button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -304,6 +413,21 @@ onMounted(async () => {
 
 .setting-desc.warn {
   color: #fbbf24;
+}
+
+.command {
+  padding: 1px 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: rgb(255 255 255 / 85%);
+  background: rgb(0 0 0 / 28%);
+  border-radius: 4px;
+}
+
+.list-label {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 70%);
 }
 
 .setting-desc.ok {

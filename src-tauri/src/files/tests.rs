@@ -375,16 +375,56 @@ fn rejects_ambiguous_or_destructive_edits() {
 }
 
 #[test]
+fn writes_scripts_in_formats_their_interpreters_expect() {
+  let dir = TempDir::new("write-scripts");
+  let backups = TempDir::new("write-scripts-backups");
+  let roots = dir.roots("");
+  let write_new = |name: &str, content: &str| {
+    let path = dir.path(name);
+    write::apply(&roots, &create(&path, content), None, &backups.0).map(|_| fs::read(&path).unwrap())
+  };
+
+  // PowerShell：带 BOM 的 UTF-8（Windows PowerShell 5.1 才能正确读取中文），CRLF
+  assert_eq!(write_new("hello.ps1", "Write-Output '你好 PowerShell'\nexit 0").unwrap(), "\u{FEFF}Write-Output '你好 PowerShell'\r\nexit 0".as_bytes());
+  // Shell：UTF-8，LF（Bash 遇到 CR 会出错）
+  assert_eq!(write_new("hello.sh", "echo 你好\r\necho ok\n").unwrap(), b"echo \xE4\xBD\xA0\xE5\xA5\xBD\necho ok\n");
+
+  // 批处理：系统编码（中文 Windows 上为 GBK），CRLF
+  let content = "@echo off\necho 你好 批处理\n";
+  let encoding = write::preview(&roots, &create(&dir.path("hello.bat"), content)).unwrap().encoding;
+  let bytes = write_new("hello.bat", content).unwrap();
+  match encoding {
+    "GBK" => assert_eq!(bytes, encoding_rs::GBK.encode("@echo off\r\necho 你好 批处理\r\n").0.into_owned()),
+    "UTF-8" => assert_eq!(bytes, "@echo off\r\necho 你好 批处理\r\n".as_bytes()),
+    _ => assert!(bytes.starts_with(b"@echo off\r\n")),
+  }
+  if encoding != "UTF-8" {
+    let error = write_new("emoji.bat", "echo 😀").unwrap_err();
+    assert!(error.contains("无法表示"), "{error}");
+  }
+
+  // 用对应的解释器实际运行，中文输出不乱码
+  #[cfg(windows)]
+  if encoding == "GBK" || encoding == "UTF-8" {
+    use super::script::{run, RunRequest};
+    for (name, expected) in [("hello.bat", "你好 批处理"), ("hello.ps1", "你好 PowerShell")] {
+      let request = RunRequest { run_id: format!("write-{name}"), path: s(&dir.path(name)), args: Vec::new(), working_dir: None, timeout_seconds: None };
+      let result = run(&roots, &request).unwrap();
+      assert_eq!(result.stdout.trim(), expected, "{name}：{}", result.stderr);
+    }
+  }
+}
+
+#[test]
 fn refuses_unsafe_targets() {
   let dir = TempDir::new("write-unsafe");
   dir.write("inside/keep.txt", b"x");
   let roots = dir.roots("inside");
   let error = |relative: &str| write::preview(&roots, &create(&dir.path(relative), "内容")).unwrap_err();
 
-  assert!(error("inside/run.bat").contains("脚本"));
-  assert!(error("inside/run.ps1").contains("脚本"));
   assert!(error("inside/app.exe").contains("不能写入 .exe"));
-  assert!(error("inside/报告.doc").contains("旧版"));
+  assert!(error("inside/报告.docx").contains("Office 文档"));
+  assert!(error("inside/a.pdf").contains("PDF"));
   assert!(error("inside/Makefile").contains("带扩展名"));
   assert!(error("inside/.git/hooks.txt").contains("隐藏"));
   assert!(error("inside/~$报告.txt").contains("隐藏"));
@@ -412,25 +452,25 @@ fn verifies_hashes_and_undoes_writes() {
   let preview = write::preview(&roots, &request).unwrap();
   let result = write::apply(&roots, &request, preview.before_hash.as_deref(), &backups.0).unwrap();
   assert_eq!(fs::read(&path).unwrap(), b"v2\n");
-  write::undo(&roots, &result.path, result.backup_id.as_deref(), &result.after_hash, &backups.0).unwrap();
+  write::undo(&roots, &result.path, result.backup_id.as_deref(), Some(&result.after_hash), &backups.0).unwrap();
   assert_eq!(fs::read(&path).unwrap(), b"v1\n");
   assert_eq!(fs::read_dir(&backups.0).unwrap().count(), 0);
 
   // 之后又被改动过：不撤销
   let result = write::apply(&roots, &request, preview.before_hash.as_deref(), &backups.0).unwrap();
   fs::write(&path, b"v3\n").unwrap();
-  let error = write::undo(&roots, &result.path, result.backup_id.as_deref(), &result.after_hash, &backups.0).unwrap_err();
+  let error = write::undo(&roots, &result.path, result.backup_id.as_deref(), Some(&result.after_hash), &backups.0).unwrap_err();
   assert!(error.contains("又被修改过"), "{error}");
   assert_eq!(fs::read(&path).unwrap(), b"v3\n");
 
   // 撤销新建：删除这个文件
   let new_file = dir.path("new.txt");
   let result = write::apply(&roots, &create(&new_file, "hi"), None, &backups.0).unwrap();
-  write::undo(&roots, &result.path, None, &result.after_hash, &backups.0).unwrap();
+  write::undo(&roots, &result.path, None, Some(&result.after_hash), &backups.0).unwrap();
   assert!(!new_file.exists());
 
   // 备份 id 不能用来访问其他位置
   let result = write::apply(&roots, &create(&new_file, "hi"), None, &backups.0).unwrap();
-  assert!(write::undo(&roots, &result.path, Some("../plan"), &result.after_hash, &backups.0).is_err());
+  assert!(write::undo(&roots, &result.path, Some("../plan"), Some(&result.after_hash), &backups.0).is_err());
   assert!(new_file.exists());
 }

@@ -1,7 +1,7 @@
 import type { LanguageModel, ModelMessage } from 'ai'
 import type { RouteDecision, Skill } from '@/agent/types'
 import { generateText } from 'ai'
-import { buildRouterPrompt, buildRouterSystemPrompt } from '@/agent/prompts'
+import { buildImageRequestPrompt, buildImageRequestSystemPrompt, buildRouterPrompt, buildRouterSystemPrompt } from '@/agent/prompts'
 import { recentMessages } from '@/agent/utils'
 
 // 意图识别时参考的最近消息条数（含用户的最新消息）
@@ -40,6 +40,30 @@ export async function routeIntent(options: {
     model,
     system: buildRouterSystemPrompt(skills),
     prompt: buildRouterPrompt(recentMessages(messages, ROUTER_CONTEXT_SIZE)),
+    temperature: 0,
+    abortSignal,
+  })
+
+  return parseRouteDecision(text, skills.map((skill) => skill.id))
+}
+
+/**
+ * 读出用户发来的图片之后再识别一次意图：意图识别时看不到图片，用户把要求写在图片里时（如截图发来一段需求），
+ * 读出图片后才知道要做什么。返回完成图片中的要求需要的技能；只是想看懂图片时返回空列表
+ */
+export async function routeImageRequest(options: {
+  model: LanguageModel
+  messages: ModelMessage[]
+  skills: Skill[]
+  abortSignal?: AbortSignal
+}, imageContent: string): Promise<RouteDecision> {
+  const { model, messages, skills, abortSignal } = options
+  if (skills.length === 0) return { skillIds: [], reason: '没有可用的技能' }
+
+  const { text } = await generateText({
+    model,
+    system: buildImageRequestSystemPrompt(skills),
+    prompt: buildImageRequestPrompt(recentMessages(messages, ROUTER_CONTEXT_SIZE), imageContent),
     temperature: 0,
     abortSignal,
   })

@@ -73,7 +73,7 @@ export const memorySkill: Skill = {
           reason,
           target: memories.map((memory) => `· ${memory.content}`).join('\n'),
           targetLabel: '内容',
-          notice: '这些记忆会被移除，可以在 设置 → 记忆 → 最近的变动 中撤销',
+          notice: '这些记忆会被移除，可以在 设置 → Memory → 最近的变动 中撤销',
           allowAlways: false,
         }) ?? false
         if (!allowed) return { forgotten: 0, message: '用户拒绝了忘掉这些记忆' }

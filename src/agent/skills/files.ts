@@ -75,7 +75,7 @@ async function confirmAndMove(
     reason: request.reason,
     target: summarizeMoves(moves),
     targetLabel: '计划',
-    notice: '只会移动文件，不会删除；完成后可以在 设置 → 工具 中撤销',
+    notice: '只会移动文件，不会删除；完成后可以在 设置 → Tools 中撤销',
     allowAlways: false,
   }) ?? false
   if (!allowed) return { moved: 0, message: '用户拒绝了这次文件操作，没有移动任何文件' }
@@ -114,10 +114,7 @@ async function confirmAndWrite(options: ToolExecutionOptions, request: WriteRequ
     target: `${preview.path}\n${preview.summary}\n\n${preview.preview}`,
     targetLabel: '改动',
     targetFormat: 'code',
-    notice: [
-      preview.created ? '不会覆盖已有的文件；完成后可以在 设置 → 工具 中撤销' : '修改前会备份原文件；完成后可以在 设置 → 工具 中撤销',
-      preview.warning,
-    ].filter(Boolean).join('。'),
+    notice: preview.created ? '不会覆盖已有的文件；完成后可以在 设置 → Tools 中撤销' : '修改前会备份原文件；完成后可以在 设置 → Tools 中撤销',
     allowAlways: false,
   }) ?? false
   if (!allowed) return { written: false, message: '用户拒绝了这次文件操作，文件没有改动' }
@@ -137,24 +134,21 @@ async function confirmAndWrite(options: ToolExecutionOptions, request: WriteRequ
 export const filesSkill: Skill = {
   id: FILES_SKILL_ID,
   name: '本地文件',
-  description: '在用户电脑上授权的文件夹（如桌面、文档、下载）中查找文件、查看文件夹、阅读文件内容（文本、代码、Word、PowerPoint、PDF、Excel）、新建或修改文件（文本、Word、Excel，以及修改 PowerPoint 中的文字）、整理文件夹（按类型或月份归类）、移动或重命名文件、新建文件夹。',
-  examples: ['帮我找一下上周下载的 PDF', '桌面上那个合同说了什么', '帮我整理一下下载文件夹', '在桌面新建一个购物清单.txt', '把 config.json 里的端口改成 8080', '把销售表里二月的金额改成 250', '帮我写一份会议纪要，存成 Word 文档'],
+  description: '在用户电脑上授权的文件夹（如桌面、文档、下载）中查找文件、查看文件夹、阅读文件内容（文本、代码、Word、PowerPoint、PDF、Excel）、新建或修改文本文件（写笔记、改配置、改代码、写脚本）、整理文件夹（按类型或月份归类）、移动或重命名文件、新建文件夹。',
+  examples: ['帮我找一下上周下载的 PDF', '桌面上那个合同说了什么', '帮我整理一下下载文件夹', '在桌面新建一个购物清单.txt', '把 config.json 里的端口改成 8080'],
   instructions: () => {
     const { fileRoots } = useToolsStore()
     const roots = fileRoots.length
       ? fileRoots.map((root) => `  - ${root.name}：${root.path}`).join('\n')
-      : '  （用户还没有授权任何文件夹，请告诉用户在 设置 → 工具 中添加）'
+      : '  （用户还没有授权任何文件夹，请告诉用户在 设置 → Tools 中添加）'
     return `- 只能访问下面这些授权的文件夹及其子文件夹：
 ${roots}
 - 路径使用完整路径，也可以用授权文件夹的名称开头，如「下载/发票」。用户说「桌面」「下载」等时对应上面的文件夹。
 - 查找文件用 search_files（可按文件名关键词、类型、修改时间、文本内容查找，结果按修改时间从新到旧）；查看文件夹用 list_folder；阅读文件内容用 read_file（支持文本、代码、Word、PowerPoint、PDF、Excel；扫描件 PDF 没有文字，读不出内容；旧版 .doc / .ppt 不支持）。Excel 读出来是表格：第一行是列字母，每行开头是行号，可以据此定位单元格（如 B3）。
 - 整理文件夹用 organize_folder（只整理文件夹里直接包含的文件，按类型、月份或扩展名分到子文件夹）；移动或重命名用 move_files；新建文件夹用 create_folder。
-- 新建文件用 write_file：可以写纯文本类文件（txt、md、csv、json、yaml、html、代码等）、Word（.docx，内容用简单的 Markdown）与 Excel（.xlsx，内容用 CSV 或 Markdown 表格）。不能新建 PowerPoint 与 PDF，不能写 bat、ps1、sh 等脚本与带宏的文件（.docm、.xlsm），不能写入隐藏的文件或文件夹。用户要求写报告、纪要等「文档」时可以新建 Word，要求做表格时可以新建 Excel。
-- 修改已有文件用 edit_file，修改前先用 read_file 读取原文：
-  - 文本文件、Word、PowerPoint：用 edits 替换文字。oldText 要从原文中逐字复制（包括空格、缩进与标点），并且只出现一次，不够唯一时带上更多上下文；Word 与 PowerPoint 中 oldText 只能是同一段落内的文字，不能包含换行。替换会尽量保留原来的格式（字体、加粗等）。
-  - 在末尾添加内容用 append：文本文件追加文字，Word 追加段落（简单的 Markdown）；PowerPoint 不支持追加，只能修改已有的文字。
-  - Excel：用 cells 修改单元格（如 {"cell": "B3", "value": "250"}，以 = 开头为公式），用 append 在工作表末尾追加行（CSV），用 sheet 指定追加到哪个工作表。
-  - 修改会保持文本文件原来的编码与换行符；Excel 会被整体重新保存。
+- 新建文件用 write_file：可以写纯文本类文件（txt、md、csv、json、yaml、html、代码等），也可以写脚本（.py、.js、.ps1、.bat、.cmd、.sh），会自动使用解释器需要的编码与换行；写好后可以用「运行脚本」技能运行（运行前另需用户同意）。不能写入隐藏的文件或文件夹。
+- 修改已有文件用 edit_file，修改前先用 read_file 读取原文：用 edits 替换文字，oldText 要从原文中逐字复制（包括空格、缩进与标点），并且只出现一次，不够唯一时带上更多上下文；在末尾添加内容用 append。修改会保持文件原来的编码与换行符。
+- Word、Excel、PowerPoint 文件不能用 write_file / edit_file 新建或修改，需要用「Office 文档」技能。
 - 不要用 write_file 的 overwrite 修改文件，除非用户明确要求重写整个文件；文件内容被截断（没有读完）时绝对不要覆盖整个文件。
 - 整理、移动、新建与修改都会先给用户看计划或改动预览并请求确认，用户拒绝时不要再次调用；完成后可以在设置中撤销。写入前文件被用户改动过时会失败，此时重新读取后再修改。
 - 不能删除文件，也不要借由修改清空文件；不能打开或运行文件。用户想看某个文件时，可以用 reveal_file 在文件夹中显示它。
@@ -259,10 +253,10 @@ ${roots}
     }),
 
     write_file: tool({
-      description: '新建文件（需要用户确认）：文本类文件、Word（.docx）或 Excel（.xlsx）。文件已存在时默认不覆盖；修改已有文件请用 edit_file',
+      description: '新建文本类文件（需要用户确认）。文件已存在时默认不覆盖；修改已有文件请用 edit_file',
       inputSchema: z.object({
-        path: z.string().min(1).describe('新文件的完整路径，包含文件名与扩展名（如 .txt、.md、.docx、.xlsx）；所在文件夹不存在时会自动创建'),
-        content: z.string().min(1).describe('文件的完整内容。.docx 用简单的 Markdown：# 标题、- 列表、1. 编号、> 引用、| 表格 |、**加粗**；.xlsx 用 CSV 或 Markdown 表格，每行一行数据，以 = 开头的为公式（如 =SUM(B2:B5)）'),
+        path: z.string().min(1).describe('新文件的完整路径，包含文件名与扩展名（如 .txt、.md、.py）；所在文件夹不存在时会自动创建'),
+        content: z.string().min(1).describe('文件的完整内容'),
         overwrite: z.boolean().optional().describe('文件已存在时覆盖整个文件。只在用户明确要求重写整个文件时使用'),
         reason: z.string().min(1).describe('向用户说明为什么写这个文件，一句话'),
       }),
@@ -273,26 +267,20 @@ ${roots}
     }),
 
     edit_file: tool({
-      description: '修改已有的文件（需要用户确认）：文本类文件与 Word、PowerPoint 用 edits 把原文替换为新内容；文本类文件与 Word 可以用 append 在末尾追加；Excel 用 cells 修改单元格、用 append 追加行',
+      description: '修改已有的文本类文件（需要用户确认）：把文件中的原文替换为新内容，或在末尾追加内容',
       inputSchema: z.object({
         path: z.string().min(1).describe('文件的完整路径'),
         edits: z.array(z.object({
-          oldText: z.string().min(1).describe('要替换的原文：从文件中逐字复制，并且在文件中只出现一次；Word 与 PowerPoint 中只能是同一段落内的文字'),
+          oldText: z.string().min(1).describe('要替换的原文：从文件中逐字复制，并且在文件中只出现一次'),
           newText: z.string().describe('替换后的内容；为空表示删掉这段原文'),
-        })).max(20).optional().describe('依次执行的替换（不能用于 Excel）'),
-        append: z.string().optional().describe('追加的内容：文本文件为追加的文字；Word 为追加的段落（简单的 Markdown）；Excel 为追加到工作表末尾的行（CSV 或 Markdown 表格）'),
-        cells: z.array(z.object({
-          sheet: z.string().optional().describe('工作表名称，省略时为第一个工作表'),
-          cell: z.string().min(2).describe('单元格位置，如 B3'),
-          value: z.string().describe('新的值；以 = 开头为公式'),
-        })).max(200).optional().describe('修改 Excel 单元格（只能用于 .xlsx）'),
-        sheet: z.string().optional().describe('Excel 中追加行的工作表，省略时为第一个工作表'),
+        })).max(20).optional().describe('依次执行的替换'),
+        append: z.string().optional().describe('追加到文件末尾的内容'),
         reason: z.string().min(1).describe('向用户说明要改什么，一句话'),
       }),
-      execute: async ({ path, edits, append, cells, sheet, reason }, options) => {
-        if (!edits?.length && !append && !cells?.length) throw new Error('需要提供 edits、append 或 cells')
+      execute: async ({ path, edits, append, reason }, options) => {
+        if (!edits?.length && !append) throw new Error('需要提供 edits 或 append')
         const store = useToolsStore()
-        return confirmAndWrite(options, { path: store.resolvePath(path), edits, append, cells, sheet }, reason)
+        return confirmAndWrite(options, { path: store.resolvePath(path), edits, append }, reason)
       },
     }),
 

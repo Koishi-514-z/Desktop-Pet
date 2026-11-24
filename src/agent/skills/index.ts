@@ -4,6 +4,8 @@ import { datetimeSkill } from '@/agent/skills/datetime'
 import { filesSkill } from '@/agent/skills/files'
 import { imageSkill } from '@/agent/skills/image'
 import { memorySkill } from '@/agent/skills/memory'
+import { officeSkill } from '@/agent/skills/office'
+import { scriptsSkill } from '@/agent/skills/scripts'
 import { screenSkill } from '@/agent/skills/screen'
 import { selectionSkill } from '@/agent/skills/selection'
 import { tasksSkill } from '@/agent/skills/tasks'
@@ -21,5 +23,7 @@ export const builtinSkills: readonly Skill[] = [
   memorySkill,
   tasksSkill,
   filesSkill,
+  officeSkill,
+  scriptsSkill,
   webSkill,
 ].map((skill) => markRaw(skill))

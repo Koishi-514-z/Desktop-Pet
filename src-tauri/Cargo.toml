@@ -38,21 +38,19 @@ tauri-plugin-opener = "2"
 dunce = "1"
 encoding_rs = "0.8"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-# 本地文件：读取 PDF 与 Excel（xlsx / xls / ods），新建与修改 xlsx
+# 本地文件：读取 PDF 与表格（xlsx / xls / ods）
 pdf-extract = "0.12"
 calamine = { version = "0.38", features = ["dates"] }
-umya-spreadsheet = "3.1"
+# 把表格中的日期格式化为文字（calamine 的 dates 特性使用 chrono，格式化需要 alloc 特性）
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi"] }
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi", "Win32_Globalization", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp"] }
 
 # 截取指定窗口（「看屏幕」技能）。Linux 上依赖 pipewire 等系统库，暂不启用
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 xcap = "0.9"
 
-[dev-dependencies]
-# 测试中检查生成的 Office 文档 XML 是否合法
-quick-xml = "0.42"
 
 # 开发构建中也优化图片编码相关的依赖，否则大尺寸截图编码 PNG 会明显变慢
 [profile.dev.package.png]

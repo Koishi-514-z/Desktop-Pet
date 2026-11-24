@@ -84,7 +84,7 @@ export async function runVisionTask(
   }
   catch (error) {
     if (abortSignal?.aborted) throw error
-    throw new Error(`${errorMessage(error)}（如果当前模型不支持图片输入，请在 设置 → 技能 中为图片理解选择一个支持视觉的模型）`)
+    throw new Error(`${errorMessage(error)}（如果当前模型不支持图片输入，请在 设置 → Skills 中为图片理解选择一个支持视觉的模型）`)
   }
 
   if (!output) throw new Error('模型没有返回任何内容')

@@ -12,7 +12,6 @@ const fs = vi.hoisted(() => ({
   calls: [] as { command: string, args: unknown[] }[],
   plan: [] as { from: string, to: string }[],
   previewError: null as string | null,
-  previewWarning: null as string | null,
 }))
 
 const CONFIG = 'C:\\Users\\me\\Desktop\\config.json'
@@ -24,7 +23,6 @@ const PREVIEW: WritePreview = {
   summary: '修改了 1 处',
   preview: '第 3 行：\n-   "port": 8080\n+   "port": 9090',
   encoding: 'UTF-8',
-  warning: null,
 }
 
 vi.mock('@/files/api', async (importOriginal) => ({
@@ -41,7 +39,7 @@ vi.mock('@/files/api', async (importOriginal) => ({
   previewWrite: async (...args: unknown[]) => {
     fs.calls.push({ command: 'preview', args })
     if (fs.previewError) throw new Error(fs.previewError)
-    return { ...PREVIEW, warning: fs.previewWarning }
+    return PREVIEW
   },
   writeFile: async (...args: unknown[]) => {
     fs.calls.push({ command: 'write', args })
@@ -61,7 +59,6 @@ const DOWNLOADS = 'C:\\Users\\me\\Downloads'
 beforeEach(() => {
   fs.calls = []
   fs.previewError = null
-  fs.previewWarning = null
   fs.plan = [
     { from: `${DOWNLOADS}\\a.jpg`, to: `${DOWNLOADS}\\图片\\a.jpg` },
     { from: `${DOWNLOADS}\\b.png`, to: `${DOWNLOADS}\\图片\\b.png` },
@@ -155,19 +152,6 @@ describe('文件技能', () => {
     expect(store.fileHistory[0]!.undone).toBe(true)
   })
 
-  it('修改 Excel 单元格时传入单元格与工作表，并在授权卡片中提示注意事项', async () => {
-    fs.previewWarning = 'Excel 文件会被整体重新保存'
-    const requests: PermissionRequest[] = []
-    const cells = [{ sheet: '销售', cell: 'B3', value: '250' }]
-    await call('edit_file', { path: '桌面/销售.xlsx', cells, append: '三月,300', sheet: '销售', reason: '更新二月金额' }, async (request) => {
-      requests.push(request)
-      return false
-    })
-
-    expect(fs.calls[0]!.args[1]).toEqual({ path: 'C:\\Users\\me\\Desktop\\销售.xlsx', edits: undefined, append: '三月,300', cells, sheet: '销售' })
-    expect(requests[0]!.notice).toBe('修改前会备份原文件；完成后可以在 设置 → 工具 中撤销。Excel 文件会被整体重新保存')
-  })
-
   it('用户拒绝或预览出错时不写入文件', async () => {
     const denied = await call('write_file', { path: '桌面/config.json', content: '{}', reason: '新建配置' }, async () => false)
     expect(denied?.toolCalls[0]?.output).toMatchObject({ written: false })
@@ -179,7 +163,7 @@ describe('文件技能', () => {
     expect(requestPermission).not.toHaveBeenCalled()
 
     const empty = await call('edit_file', { path: '桌面/config.json', reason: '改端口' }, requestPermission)
-    expect(empty?.toolCalls[0]?.error).toContain('需要提供 edits、append 或 cells')
+    expect(empty?.toolCalls[0]?.error).toContain('需要提供 edits 或 append')
 
     expect(fs.calls.map((c) => c.command)).toEqual(['preview', 'preview'])
     expect(useToolsStore().fileHistory).toEqual([])

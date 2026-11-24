@@ -22,7 +22,7 @@ const MAX_SHEET_COLUMNS: usize = 50;
 pub const TEXT_EXTENSIONS: &[&str] = &[
   "txt", "md", "markdown", "csv", "tsv", "json", "jsonc", "xml", "yml", "yaml", "toml", "ini", "cfg", "conf", "log",
   "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx", "jsx", "vue", "py", "java", "c", "h", "cpp", "hpp", "cs",
-  "go", "rs", "rb", "php", "sh", "bat", "ps1", "sql", "r", "swift", "kt", "dart", "lua", "tex", "srt", "ass", "vtt",
+  "go", "rs", "rb", "php", "sh", "bat", "cmd", "ps1", "sql", "r", "swift", "kt", "dart", "lua", "tex", "srt", "ass", "vtt",
 ];
 
 pub struct FileText {
