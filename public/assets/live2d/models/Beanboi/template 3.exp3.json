@@ -1,0 +1,75 @@
+{
+    "Type": "Live2D Expression",
+    "Parameters": [
+        {
+            "Id": "PARAM_TAIL_SLIDER",
+            "Value": 13.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_EAR_SLIDER",
+            "Value": 14.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_AHOGE_SLIDER",
+            "Value": 2.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_FACE_MARK_SLIDER",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HALO_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HAT_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HEAD_WINGS_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_WINGS_SLIDER",
+            "Value": 2.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_BELL_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_COLLAR_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_SAKURA_CHEST_PIN_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HAIRFLUFF_MID_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HAIRFLUFF_BOT_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_BODY_HAIR_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        }
+    ]
+}

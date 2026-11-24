@@ -1,0 +1,10 @@
+{
+    "Type": "Live2D Expression",
+    "Parameters": [
+        {
+            "Id": "PARAM_TAIL_SLIDER",
+            "Value": 6.0,
+            "Blend": "Add"
+        }
+    ]
+}

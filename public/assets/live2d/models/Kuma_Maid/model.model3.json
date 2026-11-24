@@ -1,0 +1,248 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "kuma maid.moc3",
+		"Textures": [
+			"texture_00.png",
+			"texture_01.png",
+			"texture_02.png",
+			"texture_03.png",
+			"texture_04.png",
+			"texture_05.png"
+		],
+		"Physics": "kuma maid.physics3.json",
+		"DisplayInfo": "kuma maid.cdi3.json",
+		"Motions": {
+			"Idle": [
+				{
+					"File": "Scene1.motion3.json"
+				}
+			]
+		},
+		"Expressions": [
+			{
+				"Name": "123123.exp3",
+				"File": "123123.exp3.json"
+			},
+			{
+				"Name": "Angry.exp3",
+				"File": "Angry.exp3.json"
+			},
+			{
+				"Name": "Apron.exp3",
+				"File": "Apron.exp3.json"
+			},
+			{
+				"Name": "Bangs.exp3",
+				"File": "Bangs.exp3.json"
+			},
+			{
+				"Name": "black face.exp3",
+				"File": "black face.exp3.json"
+			},
+			{
+				"Name": "Blue bow.exp3",
+				"File": "Blue bow.exp3.json"
+			},
+			{
+				"Name": "blush.exp3",
+				"File": "blush.exp3.json"
+			},
+			{
+				"Name": "Body type.exp3",
+				"File": "Body type.exp3.json"
+			},
+			{
+				"Name": "Body type1.exp3",
+				"File": "Body type1.exp3.json"
+			},
+			{
+				"Name": "Bow size.exp3",
+				"File": "Bow size.exp3.json"
+			},
+			{
+				"Name": "bow.exp3",
+				"File": "bow.exp3.json"
+			},
+			{
+				"Name": "braided pigtail.exp3",
+				"File": "braided pigtail.exp3.json"
+			},
+			{
+				"Name": "button.exp3",
+				"File": "button.exp3.json"
+			},
+			{
+				"Name": "Cat ears.exp3",
+				"File": "Cat ears.exp3.json"
+			},
+			{
+				"Name": "Click.exp3",
+				"File": "Click.exp3.json"
+			},
+			{
+				"Name": "Cry.exp3",
+				"File": "Cry.exp3.json"
+			},
+			{
+				"Name": "dizzy.exp3",
+				"File": "dizzy.exp3.json"
+			},
+			{
+				"Name": "Dot face.exp3",
+				"File": "Dot face.exp3.json"
+			},
+			{
+				"Name": "Double bun hairstyle.exp3",
+				"File": "Double bun hairstyle.exp3.json"
+			},
+			{
+				"Name": "Eat an ice cream cone.exp3",
+				"File": "Eat an ice cream cone.exp3.json"
+			},
+			{
+				"Name": "Ellipsis.exp3",
+				"File": "Ellipsis.exp3.json"
+			},
+			{
+				"Name": "floating object.exp3",
+				"File": "floating object.exp3.json"
+			},
+			{
+				"Name": "Flower.exp3",
+				"File": "Flower.exp3.json"
+			},
+			{
+				"Name": "Flying Head.exp3",
+				"File": "Flying Head.exp3.json"
+			},
+			{
+				"Name": "Flying Head1.exp3",
+				"File": "Flying Head1.exp3.json"
+			},
+			{
+				"Name": "Form1.exp3",
+				"File": "Form1.exp3.json"
+			},
+			{
+				"Name": "Form2.exp3",
+				"File": "Form2.exp3.json"
+			},
+			{
+				"Name": "Form3.exp3",
+				"File": "Form3.exp3.json"
+			},
+			{
+				"Name": "glasses.exp3",
+				"File": "glasses.exp3.json"
+			},
+			{
+				"Name": "gourd hairstyle.exp3",
+				"File": "gourd hairstyle.exp3.json"
+			},
+			{
+				"Name": "headscarf.exp3",
+				"File": "headscarf.exp3.json"
+			},
+			{
+				"Name": "High ponytail.exp3",
+				"File": "High ponytail.exp3.json"
+			},
+			{
+				"Name": "Hug a little bear.exp3",
+				"File": "Hug a little bear.exp3.json"
+			},
+			{
+				"Name": "ice cream cone.exp3",
+				"File": "ice cream cone.exp3.json"
+			},
+			{
+				"Name": "Large floating object.exp3",
+				"File": "Large floating object.exp3.json"
+			},
+			{
+				"Name": "Leaning forward.exp3",
+				"File": "Leaning forward.exp3.json"
+			},
+			{
+				"Name": "left ponytail.exp3",
+				"File": "left ponytail.exp3.json"
+			},
+			{
+				"Name": "lick lips.exp3",
+				"File": "lick lips.exp3.json"
+			},
+			{
+				"Name": "Little Bear.exp3",
+				"File": "Little Bear.exp3.json"
+			},
+			{
+				"Name": "Microphone.exp3",
+				"File": "Microphone.exp3.json"
+			},
+			{
+				"Name": "Playing video games.exp3",
+				"File": "Playing video games.exp3.json"
+			},
+			{
+				"Name": "ponytail.exp3",
+				"File": "ponytail.exp3.json"
+			},
+			{
+				"Name": "Raise a sign V.exp3",
+				"File": "Raise a sign V.exp3.json"
+			},
+			{
+				"Name": "Raise a sign X.exp3",
+				"File": "Raise a sign X.exp3.json"
+			},
+			{
+				"Name": "ribbon.exp3",
+				"File": "ribbon.exp3.json"
+			},
+			{
+				"Name": "Right ponytail.exp3",
+				"File": "Right ponytail.exp3.json"
+			},
+			{
+				"Name": "Star mouth.exp3",
+				"File": "Star mouth.exp3.json"
+			},
+			{
+				"Name": "Star.exp3",
+				"File": "Star.exp3.json"
+			},
+			{
+				"Name": "sweating.exp3",
+				"File": "sweating.exp3.json"
+			},
+			{
+				"Name": "Watermark.exp3",
+				"File": "Watermark.exp3.json"
+			},
+			{
+				"Name": "white bow.exp3",
+				"File": "white bow.exp3.json"
+			},
+			{
+				"Name": "Writing.exp3",
+				"File": "Writing.exp3.json"
+			}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen",
+				"ParamEyeROpen"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		}
+	]
+}

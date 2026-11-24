@@ -1,0 +1,95 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "Ayane PUMK version.moc3",
+		"Textures": [
+			"texture_00.png",
+			"texture_01.png",
+			"texture_02.png",
+			"texture_03.png"
+		],
+		"Physics": "Ayane PUMK version.physics3.json",
+		"DisplayInfo": "Ayane PUMK version.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "Blush.exp3",
+				"File": "Blush.exp3.json"
+			},
+			{
+				"Name": "Chaos.exp3",
+				"File": "Chaos.exp3.json"
+			},
+			{
+				"Name": "Dark Form.exp3",
+				"File": "Dark Form.exp3.json"
+			},
+			{
+				"Name": "Glasses Toggle.exp3",
+				"File": "Glasses Toggle.exp3.json"
+			},
+			{
+				"Name": "Heart Eyes.exp3",
+				"File": "Heart Eyes.exp3.json"
+			},
+			{
+				"Name": "Holding Game Controller.exp3",
+				"File": "Holding Game Controller.exp3.json"
+			},
+			{
+				"Name": "Holding Phone.exp3",
+				"File": "Holding Phone.exp3.json"
+			},
+			{
+				"Name": "Holding Snack.exp3",
+				"File": "Holding Snack.exp3.json"
+			},
+			{
+				"Name": "Jacket Toggle.exp3",
+				"File": "Jacket Toggle.exp3.json"
+			},
+			{
+				"Name": "Making Heart Gesture.exp3",
+				"File": "Making Heart Gesture.exp3.json"
+			},
+			{
+				"Name": "Mask Toggle.exp3",
+				"File": "Mask Toggle.exp3.json"
+			},
+			{
+				"Name": "Say Yeah.exp3",
+				"File": "Say Yeah.exp3.json"
+			},
+			{
+				"Name": "Snack Toggle.exp3",
+				"File": "Snack Toggle.exp3.json"
+			},
+			{
+				"Name": "Starry Eyes.exp3",
+				"File": "Starry Eyes.exp3.json"
+			},
+			{
+				"Name": "Tears.exp3",
+				"File": "Tears.exp3.json"
+			},
+			{
+				"Name": "Watermark Hide.exp3",
+				"File": "Watermark Hide.exp3.json"
+			}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen",
+				"ParamEyeLOpen"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		}
+	]
+}

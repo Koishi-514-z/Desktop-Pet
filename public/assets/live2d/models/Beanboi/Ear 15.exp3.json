@@ -1,0 +1,10 @@
+{
+    "Type": "Live2D Expression",
+    "Parameters": [
+        {
+            "Id": "PARAM_EAR_SLIDER",
+            "Value": 15.000000953674317,
+            "Blend": "Add"
+        }
+    ]
+}

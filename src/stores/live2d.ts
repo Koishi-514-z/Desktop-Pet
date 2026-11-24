@@ -31,6 +31,9 @@ export interface Live2dModel {
   position: { x: number, y: number }
   scale: number
   defaultExpression: { name: string }
+  // 常驻表情：一直叠加在模型上、不会被其他表情替换的表情名称，
+  // 对应 VTube Studio 里可以同时开启的开关类表情（如去水印、眼镜、外套）
+  persistentExpressions?: string[]
   availableMotions: Live2dMotion[]
   availableHitAreas: Live2dHitArea[]
   availableExpressions: Live2dExpression[]
@@ -218,10 +221,13 @@ export const useLive2dStore = defineStore('live2d', () => {
     }
   }
 
-  // 随机换一个表情：尽量不选默认表情和当前的表情，否则看起来没有变化
+  // 随机换一个表情：尽量不选默认表情、当前的表情和常驻表情，否则看起来没有变化
   function playRandomExpression(duration?: number) {
+    const persistent = currentModel.value?.persistentExpressions ?? []
     const others = availableExpressions.value.filter(
-      (expression) => expression.name !== defaultExpression.value.name && expression.name !== currentExpression.value.name,
+      (expression) => expression.name !== defaultExpression.value.name
+        && expression.name !== currentExpression.value.name
+        && !persistent.includes(expression.name),
     )
     const candidates = others.length > 0 ? others : availableExpressions.value
     if (candidates.length === 0) return

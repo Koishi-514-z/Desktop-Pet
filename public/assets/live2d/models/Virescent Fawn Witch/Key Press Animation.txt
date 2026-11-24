@@ -1,0 +1,187 @@
+中文：
+1.星星眼
+2.爱心眼
+3.生气
+4.脸黑
+5.晕
+6.哭
+7.脸红
+8.钱
+9.鲜血
+0.睡觉
+
+小键盘1.豆豆眼
+小键盘2.坏笑
+小键盘3.>w<
+小键盘4.>3<
+小键盘5.拍照特效
+小键盘6.猫猫特效
+小键盘7.眼镜
+小键盘8.豆豆眉
+小键盘9.头顶小鸟
+小键盘0.身体前倾
+
+键盘Q：萝莉体
+键盘W：幼幼体
+键盘E：游戏手柄
+键盘	R：采耳小棒
+键盘	T：拍照
+键盘	Y：麦克风
+键盘	U：拿魔法书和笔
+键盘	I：拿魔法杖
+键盘	O：拿魔法书
+键盘	P：挥手
+
+键盘A：拿药剂瓶
+键盘	S：切换药剂腰包
+键盘	D：切换大鹿角
+键盘	F：短发
+键盘G：长卷发
+键盘H：长直发
+键盘J：隐藏帽子
+键盘K：隐藏小鹿角
+键盘L：隐藏耳朵
+
+键盘C：隐藏斗篷
+键盘V：隐藏腰带
+键盘B：隐藏药水挎包
+键盘N：隐藏纱裙
+键盘M：隐藏瞳孔特效
+
+F1：隐藏绿色挑染
+F2：隐藏发辫
+F3：隐藏双麻花辫
+F4：隐藏鬓发
+
+Z:飞头（不带脖子）
+X:飞头（带脖子）
+
+按键还原：TAB	
+水印：空格
+
+English：
+1. Star Eyes
+2. Heart Eyes
+3. Angry
+4. Dark-face
+5. Dizzy
+6. Crying
+7. Blushing
+8. Money Eyes
+9. Blood
+0. Sleeping
+
+Numpad Keys:
+Numpad 1. Beady Eyes
+Numpad 2. Anya laugh
+Numpad 3. >w<
+Numpad 4. >3<
+Numpad 5. Photo booth effects
+Numpad 6. Cat Effect
+Numpad 7. Glasses
+Numpad 8. Beady Eyebrows
+Numpad 9. Bird on Head
+Numpad 0. Lean forward
+
+Q: Loli body type
+W: Toddler body type
+
+E: Game Controller
+R: Ear-picking stick 
+T: Taking a Photo
+Y: Microphone
+U: Magic Book & Pen
+I: Magic Wand
+O: Magic Book
+P: Wave
+
+A: Test tube
+S: Test tube waist bag
+D: Big Antlers
+F: Short Hair
+G: Long Curly hair
+H: Straight Long Hair
+J: Hide Hat
+K: Hide Small Antlers
+L: Hide Ears
+
+C: Hide Cloak
+V: Hide Belt
+B: Hide medicine bottle pouch
+N: Hide tulle skirt
+M: Hide Eye Effects
+
+F1：Hide Green Hair Hue
+F2：Hide Braids
+F3：Hide Double Braids
+F4：Hide Sideburns
+
+Z:Flying Head (No Neck)
+X:Flying Head (With Neck)
+
+TAB: Reset All Keys  
+SPACE: Watermark
+
+
+日本語: 
+メインキー
+1. キラキラ目
+2. ハート目
+3. 怒り
+4. 黒面
+5. 眩暈
+6. 泣き
+7. 赤面
+8. お金目
+9. 血模様
+0. 眠り
+
+テンキー:
+テンキー1. 豆つぶ目
+テンキー2. アーニャ風笑い
+テンキー3. >w<
+テンキー4. >3<
+テンキー5. 写真風エフェクト
+テンキー6. ねこエフェクト
+テンキー7. メガネ
+テンキー8. 豆つぶ眉
+テンキー9. 頭の小鳥
+テンキー0. 体を前に傾ける
+
+Q: ロリ体型
+W: 幼児体型
+E: ゲームコントローラー
+R: 耳かき棒
+T: スマホで写真撮り
+Y: マイク
+U: 魔法の本とペン
+I: 魔法の杖
+O: 魔法の本
+P: 手を振る
+
+A: ポーションビアル
+S: ポーションウエストポーチ
+D: 大きな鹿の角切り替え
+F: ショートカット
+G: ウェーブロングヘア
+H: ストレートロングヘア
+J: 帽子を隠す
+K: 小さな鹿の角を隠す
+L: 耳を隠す
+
+C: マントを隠す
+V: ベルトを隠す
+B: ショルダーバッグを隠す
+N: チュールスカートを隠す
+M: 瞳のエフェクトを隠す
+
+F1：髪の緑色を隠す
+F2：三つ編みを隠す
+F3：ダブルブレイドを隠す
+F4：もみあげを隠す
+
+Z:飛び首 (首なし)
+X:飛び首 (首あり)
+
+TAB: キーリセット  
+SPACE: ウォーターマーク

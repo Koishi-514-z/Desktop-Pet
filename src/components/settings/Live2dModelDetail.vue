@@ -36,6 +36,13 @@ const form = ref<Live2dModelForm>({
   scale: 1,
 })
 const defaultExpressionName = ref('')
+const persistentNames = ref<string[]>([])
+
+function togglePersistent(name: string) {
+  const index = persistentNames.value.indexOf(name)
+  if (index === -1) persistentNames.value.push(name)
+  else persistentNames.value.splice(index, 1)
+}
 
 function resetForm() {
   const m = model.value
@@ -50,7 +57,15 @@ function resetForm() {
     scale: m.scale,
   }
   defaultExpressionName.value = m.defaultExpression.name
+  persistentNames.value = [...(m.persistentExpressions ?? [])]
 }
+
+// 常驻表情只关心选了哪些，与顺序无关
+const persistentDirty = computed(() => {
+  const saved = model.value?.persistentExpressions ?? []
+  return saved.length !== persistentNames.value.length
+    || persistentNames.value.some((name) => !saved.includes(name))
+})
 
 // 仅在切换模型时重置表单，避免模型加载后元数据更新时覆盖未保存的修改
 watch(() => props.modelId, resetForm, { immediate: true })
@@ -67,7 +82,8 @@ const dirty = computed(() => {
     f.positionX !== m.position.x ||
     f.positionY !== m.position.y ||
     f.scale !== m.scale ||
-    defaultExpressionName.value !== m.defaultExpression.name
+    defaultExpressionName.value !== m.defaultExpression.name ||
+    persistentDirty.value
   )
 })
 
@@ -82,6 +98,7 @@ function save() {
     position: { x: form.value.positionX, y: form.value.positionY },
     scale: form.value.scale,
     defaultExpression: { name: defaultExpressionName.value },
+    persistentExpressions: [...persistentNames.value],
   })
 }
 
@@ -159,6 +176,10 @@ const tabs = computed(() => [
         <!-- 表情：点击设为默认表情 -->
         <template v-if="activeTab === 'expressions'">
           <template v-if="model.availableExpressions.length > 0">
+            <div class="motion-group-head">
+              <span class="motion-group-name">默认表情</span>
+              <span class="motion-group-line" />
+            </div>
             <p class="resource-hint">点击表情将其设为默认表情</p>
             <div class="tag-list">
               <button
@@ -188,6 +209,37 @@ const tabs = computed(() => [
                 </svg>
                 {{ expr.name }}
                 <em v-if="expr.tags?.length">{{ expr.tags.join(', ') }}</em>
+              </button>
+            </div>
+
+            <!-- 常驻表情：可多选，一直叠加在模型上 -->
+            <div class="motion-group-head">
+              <span class="motion-group-name">常驻表情</span>
+              <span class="motion-group-line" />
+              <span class="motion-group-count">{{ persistentNames.length }}</span>
+            </div>
+            <p class="resource-hint">
+              选中的表情会一直叠加在模型上，不会被其他表情替换，适合去水印、眼镜、外套这类开关（可多选）
+            </p>
+            <div class="tag-list">
+              <button
+                v-for="expr in model.availableExpressions"
+                :key="expr.name"
+                type="button"
+                class="res-tag selectable"
+                :class="{ selected: persistentNames.includes(expr.name) }"
+                :title="expr.fileName"
+                @click="togglePersistent(expr.name)"
+              >
+                <svg
+                  v-if="persistentNames.includes(expr.name)"
+                  class="tag-check"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+                {{ expr.name }}
               </button>
             </div>
           </template>

@@ -1,0 +1,254 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "Fawn.moc3",
+		"Textures": [
+			"texture_00.png",
+			"texture_01.png",
+			"texture_02.png",
+			"texture_03.png",
+			"texture_04.png",
+			"texture_05.png",
+			"texture_06.png",
+			"texture_07.png"
+		],
+		"Physics": "Fawn.physics3.json",
+		"DisplayInfo": "Fawn.cdi3.json",
+		"Motions": {
+			"Idle": [
+				{
+					"File": "Scene1.motion3.json"
+				}
+			]
+		},
+		"Expressions": [
+			{
+				"Name": "angry.exp3",
+				"File": "angry.exp3.json"
+			},
+			{
+				"Name": "antler.exp3",
+				"File": "antler.exp3.json"
+			},
+			{
+				"Name": "anya laugh.exp3",
+				"File": "anya laugh.exp3.json"
+			},
+			{
+				"Name": "Arrow eyes.exp3",
+				"File": "Arrow eyes.exp3.json"
+			},
+			{
+				"Name": "belt.exp3",
+				"File": "belt.exp3.json"
+			},
+			{
+				"Name": "Big antlers .exp3",
+				"File": "Big antlers .exp3.json"
+			},
+			{
+				"Name": "bird.exp3",
+				"File": "bird.exp3.json"
+			},
+			{
+				"Name": "blood.exp3",
+				"File": "blood.exp3.json"
+			},
+			{
+				"Name": "blush.exp3",
+				"File": "blush.exp3.json"
+			},
+			{
+				"Name": "braid.exp3",
+				"File": "braid.exp3.json"
+			},
+			{
+				"Name": "Cat effects.exp3",
+				"File": "Cat effects.exp3.json"
+			},
+			{
+				"Name": "cloak.exp3",
+				"File": "cloak.exp3.json"
+			},
+			{
+				"Name": "cry.exp3",
+				"File": "cry.exp3.json"
+			},
+			{
+				"Name": "dark face.exp3",
+				"File": "dark face.exp3.json"
+			},
+			{
+				"Name": "dizzy eyes.exp3",
+				"File": "dizzy eyes.exp3.json"
+			},
+			{
+				"Name": "double braids.exp3",
+				"File": "double braids.exp3.json"
+			},
+			{
+				"Name": "dull eyes.exp3",
+				"File": "dull eyes.exp3.json"
+			},
+			{
+				"Name": "Ear-picking stick .exp3",
+				"File": "Ear-picking stick .exp3.json"
+			},
+			{
+				"Name": "ear.exp3",
+				"File": "ear.exp3.json"
+			},
+			{
+				"Name": "eyebrow.exp3",
+				"File": "eyebrow.exp3.json"
+			},
+			{
+				"Name": "game controller.exp3",
+				"File": "game controller.exp3.json"
+			},
+			{
+				"Name": "girl's body type.exp3",
+				"File": "girl's body type.exp3.json"
+			},
+			{
+				"Name": "glasses.exp3",
+				"File": "glasses.exp3.json"
+			},
+			{
+				"Name": "hat.exp3",
+				"File": "hat.exp3.json"
+			},
+			{
+				"Name": "heart eyes.exp3",
+				"File": "heart eyes.exp3.json"
+			},
+			{
+				"Name": "highlight.exp3",
+				"File": "highlight.exp3.json"
+			},
+			{
+				"Name": "idol short hair.exp3",
+				"File": "idol short hair.exp3.json"
+			},
+			{
+				"Name": "Leaning forward.exp3",
+				"File": "Leaning forward.exp3.json"
+			},
+			{
+				"Name": "Left mouse.exp3",
+				"File": "Left mouse.exp3.json"
+			},
+			{
+				"Name": "Loli body type.exp3",
+				"File": "Loli body type.exp3.json"
+			},
+			{
+				"Name": "long curly hair.exp3",
+				"File": "long curly hair.exp3.json"
+			},
+			{
+				"Name": "long straight hair.exp3",
+				"File": "long straight hair.exp3.json"
+			},
+			{
+				"Name": "Magic Book.exp3",
+				"File": "Magic Book.exp3.json"
+			},
+			{
+				"Name": "medicine bottle.exp3",
+				"File": "medicine bottle.exp3.json"
+			},
+			{
+				"Name": "microphone.exp3",
+				"File": "microphone.exp3.json"
+			},
+			{
+				"Name": "mobile phone.exp3",
+				"File": "mobile phone.exp3.json"
+			},
+			{
+				"Name": "money.exp3",
+				"File": "money.exp3.json"
+			},
+			{
+				"Name": "only the head.exp3",
+				"File": "only the head.exp3.json"
+			},
+			{
+				"Name": "only the head1.exp3",
+				"File": "only the head1.exp3.json"
+			},
+			{
+				"Name": "photo booth effects.exp3",
+				"File": "photo booth effects.exp3.json"
+			},
+			{
+				"Name": "Right mouse.exp3",
+				"File": "Right mouse.exp3.json"
+			},
+			{
+				"Name": "sideburns.exp3",
+				"File": "sideburns.exp3.json"
+			},
+			{
+				"Name": "sleep.exp3",
+				"File": "sleep.exp3.json"
+			},
+			{
+				"Name": "staff.exp3",
+				"File": "staff.exp3.json"
+			},
+			{
+				"Name": "star.exp3",
+				"File": "star.exp3.json"
+			},
+			{
+				"Name": "sulk with shut eyes.exp3",
+				"File": "sulk with shut eyes.exp3.json"
+			},
+			{
+				"Name": "Take the magic book.exp3",
+				"File": "Take the magic book.exp3.json"
+			},
+			{
+				"Name": "test tube.exp3",
+				"File": "test tube.exp3.json"
+			},
+			{
+				"Name": "tulle skirt.exp3",
+				"File": "tulle skirt.exp3.json"
+			},
+			{
+				"Name": "Turn off animations.exp3",
+				"File": "Turn off animations.exp3.json"
+			},
+			{
+				"Name": "waist bag.exp3",
+				"File": "waist bag.exp3.json"
+			},
+			{
+				"Name": "watermark.exp3",
+				"File": "watermark.exp3.json"
+			},
+			{
+				"Name": "wave.exp3",
+				"File": "wave.exp3.json"
+			}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen",
+				"ParamEyeROpen"
+			]
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		}
+	]
+}

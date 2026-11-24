@@ -1016,6 +1016,17 @@ svg {
   fill: currentcolor;
 }
 
+.tag-check {
+  width: 11px;
+  height: 11px;
+  color: var(--accent-2);
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .motion-groups {
   display: flex;
   flex-direction: column;

@@ -1,0 +1,186 @@
+中文：
+1.流汗
+2.省略号
+3.花花眼
+4.晕
+5.哭
+6.星星眼
+7.星星嘴
+8.生气
+9.脸黑
+0.脸红
+
+小键盘1.舔嘴
+小键盘2.切换眼镜
+小键盘3.切换垂耳
+小键盘4.蝴蝶结大小
+小键盘5.刘海长短
+小键盘6.切换麻花辫
+小键盘7.切换葫芦发型
+小键盘8.切换小马尾
+小键盘9.切换大马尾
+小键盘0.身体前倾
+
+键盘Q：萝莉体
+键盘W：幼幼体
+键盘E：麦克风
+键盘	R：游戏手柄
+键盘	T：点脸
+键盘	Y：拿写字板
+键盘	U：抱小熊玩偶
+键盘	I：手举牌X
+键盘	O：手举牌√
+键盘	P：拿甜筒冰淇淋
+
+键盘A：吃甜筒冰淇淋
+键盘	S：甜筒冰淇淋
+键盘	D：隐藏头巾
+键盘	F：隐藏双丸子发型
+键盘G：隐藏衣服小熊
+键盘H：隐藏衣服蝴蝶结
+键盘J：隐藏围裙
+键盘K：隐藏飘带
+键盘L：隐藏纽扣
+
+键盘C：隐藏人物
+键盘V：切换白色蝴蝶结
+键盘B：切换蓝色蝴蝶结
+键盘N：隐藏左侧丸子
+键盘M：隐藏右侧丸子
+
+左侧键盘Shift：自定义形态1
+左侧键盘Ctrl：自定义形态2
+左侧键盘Alt：自定义形态3
+
+
+Z:飞头（不带脖子）
+X:飞头（带脖子）
+
+按键还原：TAB	
+水印：空格
+
+
+English：
+1. Sweating
+2. Ellipsis
+3. Flower Eyes
+4. Dizzy
+5. Crying
+6. Star Eyes
+7. Star Mouth
+8. Angry
+9. Dark Face
+0. Blushing
+
+Numpad Keys:
+Numpad 1. Lick Lips
+Numpad 2. Wear Glasses
+Numpad 3. Switch Cat Ears
+Numpad 4. Bow Size
+Numpad 5. Bangs Length
+Numpad 6. Braided Pigtail
+Numpad 7. Gourd Hairstyle
+Numpad 8. Small Ponytail
+Numpad 9. Big Ponytail
+Numpad 0. Lean forward
+
+Q: Loli Body Type
+W: Chibi Body Type
+E: Microphone
+R: Game Controller
+T: Dot face
+Y: Hold Writing Board
+U: Hug Bear Plush
+I: Raise a sign X
+O: Raise a sign √
+P: Hold Ice Cream cone
+
+A: Eat an Ice Cream Cone
+S: Switch Ice Cream Cone
+D: Hide Headscarf
+F: Hide Double Buns
+G: Hide Bear on Outfit
+H: Hide Bow on Outfit
+J: Hide Apron
+K: Hide Streamer
+L: Hide Buttons
+
+C: Hide Character
+V: Switch White Bow
+B: Switch Blue Bow
+N: Hide Left Bun ponytail
+M: Hide Right Bun ponytail
+
+Left Shift：Form1
+Left Ctrl：Form2
+Left Alt：Form3
+
+Z:Flying Head (No Neck)
+X:Flying Head (With Neck)
+
+TAB: Reset All Keys  
+SPACE: Watermark
+
+
+日本語: 
+メインキー
+1. 汗
+2. 怒り
+3. 花目
+4. 眩暈
+5. 泣き
+6. キラキラ目
+7. 星口
+8. 怒り
+9. 黒面
+0. 赤面
+
+テンキー:
+テンキー1. 唇舐め
+テンキー2. メガネ着用
+テンキー3. 垂れ耳
+テンキー4. リボンサイズ
+テンキー5. 前髪長さ
+テンキー6. 三つ編み
+テンキー7. ひょうたんヘア
+テンキー8. 小ポニーテール
+テンキー9. 大ポニーテール
+テンキー0. 体を前に傾ける
+
+Q: ロリボディ
+W: ちびボディ
+E: マイク
+R: ゲームコントローラー
+T: 頬つつき
+Y: ライティングボード持ち
+U: くまのぬいぐるみ抱き
+I: X サイン持ち
+O: √ サイン持ち
+P: アイスコーン持ち
+
+A: アイスコーン食べ
+S: アイスコーン
+D: ヘッドスカーフを隠す
+F: ツインお団子ヘアを隠す
+G: 服のくま飾りを隠す
+H: 服のリボンを隠す
+J: エプロンを隠す
+K: ストリーマーを隠す
+L: ボタンを隠す
+
+C: キャラクターを隠す
+V: 白リボン
+B: 青リボン
+N: 左お団子を隠す
+M: 右お団子を隠す
+
+Left Shift：フォーム 1
+Left Ctrl：フォーム 2
+Left Alt：フォーム 3
+
+Z:飛び首 (首なし)
+X:飛び首 (首あり)
+
+TAB: キーリセット  
+SPACE: ウォーターマーク
+
