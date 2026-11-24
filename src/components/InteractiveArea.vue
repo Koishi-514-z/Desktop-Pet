@@ -112,7 +112,7 @@ function scrollToBottom() {
 }
 
 watch(
-  [() => chatStore.visibleMessages.length, lastMessageContent, lastTraceSize, () => chatStore.agentStatus, () => chatStore.pendingPermission],
+  [() => chatStore.visibleMessages.length, lastMessageContent, lastTraceSize, () => chatStore.agentStatus, () => chatStore.pendingPermission, () => chatStore.pendingQuestion],
   () => nextTick(scrollToBottom),
 )
 watch(() => chatStore.currentSessionId, () => nextTick(scrollToBottom))
@@ -301,13 +301,22 @@ function resizeInput() {
 
 watch(inputText, () => nextTick(resizeInput))
 
-const canSend = computed(() =>
-  (!!inputText.value.trim() || captureStore.pendingImages.length > 0) && !chatStore.isStreaming && !addingImage.value,
-)
+// 桌宠在执行中途提问时，输入框中的内容作为回答发送（只能回答文字；只能从选项中选择时不能输入）
+const canSend = computed(() => {
+  const question = chatStore.pendingQuestion?.question
+  if (question) return (!question.options?.length || question.allowCustom !== false) && !!inputText.value.trim()
+  return (!!inputText.value.trim() || captureStore.pendingImages.length > 0) && !chatStore.isStreaming && !addingImage.value
+})
 
 async function send(content: string) {
   content = content.trim()
   if (!canSend.value) return
+
+  if (chatStore.pendingQuestion) {
+    inputText.value = ''
+    chatStore.answerQuestion(content)
+    return
+  }
 
   const { quote, images } = captureStore.takePending()
   inputText.value = ''
@@ -331,6 +340,29 @@ function handleKeydown(event: KeyboardEvent) {
 chatStore.onError(async (error) => {
   errorMessage.value = error instanceof Error ? error.message : String(error)
 })
+
+// ===== 执行中途的提问 =====
+
+// 提问卡片中输入的回答
+const questionAnswer = ref('')
+const questionInputRef = ref<HTMLInputElement[]>([])
+
+// 是否显示输入框：没有选项，或者有选项但也允许自己输入
+const questionHasInput = computed(() => {
+  const question = chatStore.pendingQuestion?.question
+  return !!question && (!question.options?.length || question.allowCustom !== false)
+})
+
+// 出现新的问题时清空上次的回答；只有输入框时聚焦，直接输入就能回答
+watch(() => chatStore.pendingQuestion?.id, (id) => {
+  questionAnswer.value = ''
+  if (id && !chatStore.pendingQuestion?.question.options?.length) nextTick(() => questionInputRef.value[0]?.focus())
+})
+
+function submitQuestionAnswer() {
+  if (!questionAnswer.value.trim()) return
+  chatStore.answerQuestion(questionAnswer.value)
+}
 
 onMounted(() => {
   // 默认放在右下角悬浮按钮的左侧
@@ -516,6 +548,49 @@ onMounted(() => {
                   </div>
                 </div>
                 <div
+                  v-if="chatStore.pendingQuestion && index === chatStore.visibleMessages.length - 1"
+                  :key="chatStore.pendingQuestion.id"
+                  class="permission-card question-card"
+                >
+                  <div class="permission-head">
+                    <span class="permission-icon">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01" />
+                      </svg>
+                    </span>
+                    <div class="permission-text">
+                      <p class="permission-title">{{ personaName }} 想问你</p>
+                      <p class="permission-reason">{{ chatStore.pendingQuestion.question.question }}</p>
+                    </div>
+                  </div>
+                  <div v-if="chatStore.pendingQuestion.question.options?.length" class="question-options">
+                    <button
+                      v-for="option in chatStore.pendingQuestion.question.options"
+                      :key="option"
+                      class="permission-button question-option"
+                      type="button"
+                      @click="chatStore.answerQuestion(option)"
+                    >
+                      {{ option }}
+                    </button>
+                  </div>
+                  <form v-if="questionHasInput" class="question-input" @submit.prevent="submitQuestionAnswer">
+                    <input
+                      ref="questionInputRef"
+                      v-model="questionAnswer"
+                      class="question-field"
+                      :placeholder="chatStore.pendingQuestion.question.placeholder
+                        || (chatStore.pendingQuestion.question.options?.length ? '或者输入其他回答' : '输入你的回答')"
+                    />
+                    <button class="permission-button primary" type="submit" :disabled="!questionAnswer.trim()">回答</button>
+                  </form>
+                  <div class="permission-actions">
+                    <span v-if="questionHasInput" class="question-hint">也可以直接在下方的输入框中回答</span>
+                    <button class="permission-button" type="button" @click="chatStore.answerQuestion(null)">跳过</button>
+                  </div>
+                </div>
+                <div
                   v-for="(display, displayIndex) in message.displays ?? []"
                   :key="displayIndex"
                   class="result-card"
@@ -539,7 +614,13 @@ onMounted(() => {
                   </header>
                   <div class="result-content" :class="display.format"><LinkifiedText :text="display.content" /></div>
                 </div>
-                <div v-if="message.role === 'assistant' && (message.skills?.length || message.memories?.length || message.remembered?.length)" class="skill-tags">
+                <div v-if="message.role === 'assistant' && (message.skills?.length || message.memories?.length || message.remembered?.length || message.proactive)" class="skill-tags">
+                  <span v-if="message.proactive" class="skill-tag proactive-tag" title="桌宠主动说的话">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+                    </svg>
+                    主动 · {{ message.proactive.trigger }}
+                  </span>
                   <button
                     v-if="message.memories?.length"
                     class="skill-tag memory-tag"
@@ -651,7 +732,7 @@ onMounted(() => {
                 ref="inputRef"
                 v-model="inputText"
                 class="input"
-                :placeholder="`和 ${personaName} 说点什么…`"
+                :placeholder="!chatStore.pendingQuestion ? `和 ${personaName} 说点什么…` : questionHasInput ? `回答 ${personaName} 的问题…` : '请在上方选择一个回答'"
                 rows="1"
                 @keydown="handleKeydown"
                 @paste="handlePaste"

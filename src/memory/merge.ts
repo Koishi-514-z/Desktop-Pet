@@ -20,7 +20,7 @@ export type MergeDecision =
   /** 新增 */
   | { action: 'add' }
   /** 与已有记忆重复，不写入；target 为重复的那条（会加深印象） */
-  | { action: 'skip', target?: number }
+  | { action: 'skip', target: number }
   /** 与已有记忆合并：改写 target 的内容，并归档已被合并后的记忆完全包含的 remove */
   | { action: 'update', target: number, content: string, category: MemoryCategory, importance: number, remove: number[] }
 
@@ -36,7 +36,8 @@ const decisionSchema = z.object({
 
 /**
  * 解析 LLM 给出的决定，并逐条校验：
- * 只能引用提供给它的已有记忆；更新缺少内容、引用了未知的记忆、或漏掉了某条新记忆时，一律按新增处理。
+ * 只能引用提供给它的已有记忆；判断为重复或更新却引用了未知的记忆、更新缺少内容、或漏掉了某条新记忆时，
+ * 一律按新增处理（宁可多一条重复的记忆，也不丢掉新的信息）。
  */
 export function parseMergeDecisions(text: string, candidates: MergeCandidate[]): MergeDecision[] {
   const known = new Map<number, SimilarMemory>()
@@ -57,8 +58,8 @@ export function parseMergeDecisions(text: string, candidates: MergeCandidate[]):
     decided.add(position)
 
     const targetMemory = target == null ? undefined : known.get(target)
-    if (action === 'skip') {
-      decisions[position] = targetMemory ? { action: 'skip', target: targetMemory.id } : { action: 'skip' }
+    if (action === 'skip' && targetMemory) {
+      decisions[position] = { action: 'skip', target: targetMemory.id }
     }
     else if (action === 'update' && targetMemory && content?.trim()) {
       decisions[position] = {

@@ -1,5 +1,6 @@
 import type { ModelMessage, StepResult, ToolResultPart, ToolSet } from 'ai'
 import type { AgentResult } from '@/agent/types'
+import { describeProgress, formatPlan } from '@/agent/plan'
 import { errorMessage, stringify, summarizeInput, truncate } from '@/agent/utils'
 
 /**
@@ -175,6 +176,10 @@ export function buildToolLog(result: AgentResult): string {
 
   const skipped = result.toolCalls.length - calls.length
   if (skipped > 0) lines.unshift(`（更早的 ${skipped} 次调用已省略）`)
+  // 执行计划的最终状态：用户说「继续」时，从没有完成的步骤接着做
+  if (result.plan?.length) {
+    lines.push(`执行计划（${describeProgress(result.plan)}）：${truncate(formatPlan(result.plan, '；'), LOG_SUMMARY_LENGTH)}`)
+  }
   if (result.error !== undefined) lines.push(`执行出错：${truncate(result.error, LOG_ERROR_LENGTH)}`)
   else if (result.summary.trim()) lines.push(`执行总结：${truncate(result.summary.trim(), LOG_SUMMARY_LENGTH)}`)
   return lines.join('\n')

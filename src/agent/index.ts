@@ -1,7 +1,7 @@
 import type { AgentResult, AgentRunOptions, RouteDecision, Skill } from '@/agent/types'
 import { extractDisplay } from '@/agent/context'
 import { executeDirectCall, executeSkills, stepBudget } from '@/agent/executor'
-import { buildImageRequestBackground } from '@/agent/prompts'
+import { buildImageRequestBackground, PROACTIVE_EXECUTOR_NOTE } from '@/agent/prompts'
 import { routeImageRequest, routeIntent } from '@/agent/router'
 import { IMAGE_SKILL_ID, parseImageIds } from '@/agent/skills/image'
 import { QUOTE_MARKER, SELECTION_SKILL_ID } from '@/agent/skills/selection'
@@ -48,13 +48,26 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult | 
   onEvent?.({ type: 'routed', decision })
   if (!decision.task) return null
 
-  // 需要哪些技能由执行模块自己加载；需要较多步骤的任务允许更多轮的工具调用
+  // 需要哪些技能由执行模块自己加载；需要较多步骤的任务允许更多轮的工具调用，并要求先制定计划
   const preloaded = preloadedSkills(options)
-  const result = await executeSkills(options, preloaded, stepBudget(decision))
+  const result = await executeSkills(options, preloaded, stepBudget(decision), decision.complex === true)
   console.debug('[agent] 工具执行：', result)
   // 执行模块没有加载技能、也没有调用工具，即判断不需要技能（如闲聊、常识问答）时，按普通对话处理
   if (result.toolCalls.length === 0 && result.error === undefined && result.skills.length === preloaded.length) return null
   return continueWithImageRequest(options, result)
+}
+
+/**
+ * 主动交互：桌宠准备主动说话前，用指定的技能获取需要的信息（如天气、待办）。
+ * 已经由主动交互模块判断过要说什么、需要哪些技能，因此不经过意图识别，技能全部预先加载；
+ * 用户没有提出请求，也不一定在看着，所以不请求授权、不向用户提问。没有获取到任何信息时返回 null
+ */
+export async function runProactiveAgent(options: AgentRunOptions): Promise<AgentResult | null> {
+  if (options.skills.length === 0) return null
+  const background = [await Promise.resolve(options.background).catch(() => ''), PROACTIVE_EXECUTOR_NOTE].filter(Boolean).join('\n\n')
+  const result = await executeSkills({ ...options, background, requestPermission: undefined, askUser: undefined }, options.skills)
+  console.debug('[agent] 主动交互获取信息：', result)
+  return result.toolCalls.length === 0 && result.error === undefined ? null : result
 }
 
 /**
@@ -110,7 +123,7 @@ async function continueWithImageRequest(options: AgentRunOptions, result: AgentR
   const background = [await Promise.resolve(options.background).catch(() => ''), buildImageRequestBackground(imageContent)]
     .filter(Boolean)
     .join('\n\n')
-  const followUp = await executeSkills({ ...options, background }, result.skills, stepBudget(decision))
+  const followUp = await executeSkills({ ...options, background }, result.skills, stepBudget(decision), decision.complex === true)
   console.debug('[agent] 按图片中的要求执行：', followUp)
   // 执行模块最后认为不需要做什么时，保留已经得到的图片理解结果
   if (followUp.toolCalls.length === 0 && followUp.error === undefined && followUp.skills.length === result.skills.length) return result
@@ -121,5 +134,6 @@ async function continueWithImageRequest(options: AgentRunOptions, result: AgentR
     summary: [result.summary, followUp.summary].filter(Boolean).join('\n\n'),
     ...(followUp.error !== undefined ? { error: followUp.error } : {}),
     ...(followUp.stepLimitReached ? { stepLimitReached: true } : {}),
+    ...((followUp.plan ?? result.plan) ? { plan: followUp.plan ?? result.plan } : {}),
   }
 }

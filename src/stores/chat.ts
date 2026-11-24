@@ -1,5 +1,5 @@
 import type { LanguageModel, ModelMessage } from 'ai'
-import type { AgentEvent, AgentResult, DirectToolCall, PermissionRequest, ToolDisplay } from '@/agent'
+import type { AgentEvent, AgentResult, DirectToolCall, PermissionRequest, Skill, ToolDisplay, UserQuestion } from '@/agent'
 import type { AgentTrace } from '@/agent/trace'
 import type { RecalledMemory, RememberedMemory } from '@/memory/types'
 import type { DueReminder } from '@/stores/reminders'
@@ -8,7 +8,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { streamText } from 'ai'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import { buildAgentContextPrompt, buildEventMessage, runAgent } from '@/agent'
+import { buildAgentContextPrompt, buildEventMessage, runAgent, runProactiveAgent } from '@/agent'
 import { buildToolLog } from '@/agent/compact'
 import { appendToolLog } from '@/agent/prompts'
 import { imageMarkers, MAX_IMAGES } from '@/agent/skills/image'
@@ -50,6 +50,8 @@ export interface ChatMessage {
   // assistant 消息：这一轮工具调用的紧凑记录（工具、关键参数与简短的结果），
   // 追问时交给意图识别与工具执行阶段，不交给角色扮演阶段
   toolLog?: string
+  // assistant 消息：桌宠主动说的话，trigger 为时机的名称（如「午饭时间」）
+  proactive?: { trigger: string }
   // user 消息：附带的划词内容
   quote?: string
   // user 消息：附带的图片（数据保存在 IndexedDB 中）
@@ -65,10 +67,18 @@ export interface SendMessageOptions {
   directCall?: DirectToolCall
 }
 
-// 一轮回复的触发方式：用户发言，或系统事件（如提醒到时）
+// 主动交互时说话的选项
+export interface ProactiveSpeakOptions {
+  // 时机的名称，显示在回复下方
+  label: string
+  // 获取信息可以使用的技能（只保留了读取信息的工具），为空时直接生成
+  skills?: Skill[]
+}
+
+// 一轮回复的触发方式：用户发言，或系统事件（如提醒到时、主动交互）
 type Turn =
   | { type: 'user', content: string } & SendMessageOptions
-  | { type: 'event', content: string }
+  | { type: 'event', content: string, proactive?: ProactiveSpeakOptions }
 
 // 用户对授权请求的回应
 export type PermissionDecision = 'deny' | 'once' | 'always'
@@ -81,6 +91,15 @@ export interface PendingPermission {
 
 // 授权请求无人回应多久后视为拒绝
 const PERMISSION_TIMEOUT = 2 * 60 * 1000
+
+// 正在等待用户回答的问题（工具执行中 LLM 用 ask_user 提问），界面上显示为提问卡片
+export interface PendingQuestion {
+  id: string
+  question: UserQuestion
+}
+
+// 问题无人回答多久后视为没有回答（想一想、查一下资料需要时间，比授权请求等得久一些）
+const QUESTION_TIMEOUT = 5 * 60 * 1000
 
 // 较早的划词内容与结果卡片在请求中截断到的长度，节省上下文
 const HISTORY_ATTACHMENT_LENGTH = 2000
@@ -163,6 +182,9 @@ export const useChatStore = defineStore('chat', () => {
   // 正在等待用户回应的授权请求（如截取屏幕），界面上显示为授权卡片
   const pendingPermission = ref<PendingPermission | null>(null)
   let settlePermission: ((decision: PermissionDecision) => void) | null = null
+  // 正在等待用户回答的问题，界面上显示为提问卡片
+  const pendingQuestion = ref<PendingQuestion | null>(null)
+  let settleQuestion: ((answer: string | null) => void) | null = null
 
   // 发送消息时的钩子函数，用于在流式响应的不同阶段进行处理
   const onStartHooks = ref<(() => Promise<void>)[]>([])
@@ -245,21 +267,26 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 同一时间只生成一条回复：用户消息与系统事件（如提醒到时）按顺序排队执行
-  let pendingReply: Promise<void> = Promise.resolve()
-  function enqueueReply(turn: Turn): Promise<void> {
+  let pendingReply: Promise<unknown> = Promise.resolve()
+  function enqueueReply(turn: Turn): Promise<string> {
     const task = pendingReply.then(() => reply(turn))
     pendingReply = task.catch(() => {})
     return task
   }
 
+  // 用户最近一次发消息的时间（主动交互据此判断是否刚聊过天、用户有没有回应）
+  const lastUserMessageAt = ref(0)
+
   // 发送一条用户消息，并以流式方式接收模型回复，期间通过 hooks 回调通知调用方
   function sendMessage(content: string, options: SendMessageOptions = {}) {
+    lastUserMessageAt.value = Date.now()
     return enqueueReply({ type: 'user', content, ...options })
   }
 
-  // 让桌宠针对一个系统事件主动开口说话，event 为对事件的描述
-  function speakProactively(event: string) {
-    return enqueueReply({ type: 'event', content: event })
+  // 让桌宠针对一个系统事件主动开口说话，event 为对事件的描述；返回说了什么（失败时为空字符串）。
+  // 主动交互时可以带上只读的技能，先获取需要的信息（如天气）再说
+  function speakProactively(event: string, proactive?: ProactiveSpeakOptions) {
+    return enqueueReply({ type: 'event', content: event, ...(proactive ? { proactive } : {}) })
   }
 
   // 将 Agent 事件转换为界面上展示的进度描述
@@ -298,21 +325,46 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 用户回应授权请求
-  function respondPermission(decision: PermissionDecision) { 
+  function respondPermission(decision: PermissionDecision) {
     settlePermission?.(decision)
   }
 
-  // 生成一轮回复：
-  // 1. 意图识别 + 工具执行（仅用户发言时，由 Agent 完成）；
+  // 工具执行中向用户提问：打开对话面板显示提问卡片，等待用户回答。
+  // 同一时间只问一个问题；用户跳过、超时没有回答，或者这一轮回复结束时得到 null
+  function askUser(question: UserQuestion): Promise<string | null> {
+    if (pendingQuestion.value) return Promise.reject(new Error('上一个问题还没有回答，一次只问一个问题'))
+    useSceneStore().interactiveAreaState.visible = true
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => settleQuestion?.(null), QUESTION_TIMEOUT)
+      pendingQuestion.value = { id: createSessionId(), question }
+      settleQuestion = (answer) => {
+        clearTimeout(timer)
+        pendingQuestion.value = null
+        settleQuestion = null
+        resolve(answer)
+      }
+    })
+  }
+
+  // 用户回答问题；answer 为 null 表示跳过
+  function answerQuestion(answer: string | null) {
+    const text = answer?.trim()
+    settleQuestion?.(text ? text : null)
+  }
+
+  // 生成一轮回复，返回回复的文字（失败时为空字符串）：
+  // 1. 意图识别 + 工具执行（用户发言时由 Agent 完成；主动交互时只用指定的只读技能获取信息）；
   // 2. 将工具执行结果附加到人设提示词之后，由 LLM 以角色口吻流式生成最终回复
-  async function reply(turn: Turn) {
+  async function reply(turn: Turn): Promise<string> {
     // 等会话加载完成，否则找不到当前的会话，会另外新建一个
     await sessionsReady
     const provider = providersStore.getCurrentLLMProvider()
     if (!provider) {
       onErrorHooks.value.forEach(hook => hook(new Error('未配置可用的 LLM Provider')))
-      return
+      return ''
     }
+    const proactive = turn.type === 'event' ? turn.proactive : undefined
     onStartHooks.value.forEach(hook => hook())
 
     const session = ensureCurrentSession()
@@ -344,8 +396,14 @@ export const useChatStore = defineStore('chat', () => {
     // 交给 Agent 的对话附上之前每轮的工具调用记录，追问时可以直接使用其中的路径等信息
     const agentDialog = toModelMessages(session.messages, { withToolLogs: true })
 
-    // 占位的 assistant 消息，随流式响应实时更新其内容；用户发言时同时记录 Agent 的执行过程
-    session.messages.push({ role: 'assistant', content: '', ...(turn.type === 'user' ? { trace: createTrace() } : {}) })
+    // 占位的 assistant 消息，随流式响应实时更新其内容；使用 Agent 时同时记录执行过程
+    const usesAgent = turn.type === 'user' || !!proactive?.skills?.length
+    session.messages.push({
+      role: 'assistant',
+      content: '',
+      ...(usesAgent ? { trace: createTrace() } : {}),
+      ...(proactive ? { proactive: { trigger: proactive.label } } : {}),
+    })
     const assistantIndex = session.messages.length - 1
     // 通过会话取出（响应式的）执行过程再修改，界面才会随之更新
     const trace = () => session.messages[assistantIndex]?.trace
@@ -355,8 +413,9 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const model = resolveLanguageModel(provider)
 
-      // 记忆读取：根据最新的用户消息检索相关的长期记忆，与意图识别并行进行；检索失败不影响对话
-      const recallPromise = turn.type === 'user'
+      // 记忆读取：根据最新的用户消息检索相关的长期记忆，与意图识别并行进行；检索失败不影响对话。
+      // 主动交互时根据事件说明检索，以便说起用户的近况、计划
+      const recallPromise = turn.type === 'user' || proactive
         ? memoryStore.recall(dialog).catch((error) => {
             console.warn('[chat] 检索记忆失败：', error)
             return null
@@ -382,6 +441,8 @@ export const useChatStore = defineStore('chat', () => {
             if (current) applyAgentEvent(current, event)
           },
           requestPermission,
+          // 参数不明确时，在执行中途向用户提问，回答后继续
+          askUser,
           setStatus: (status) => { agentStatus.value = status },
           // 工具产生的图片（如截图）附加到这轮的用户消息上，后续追问时图片理解技能可以继续使用
           attachImages: (images) => {
@@ -389,13 +450,27 @@ export const useChatStore = defineStore('chat', () => {
             if (userMessage?.role === 'user') userMessage.images = [...(userMessage.images ?? []), ...images]
           },
         })
-        if (agentResult) {
-          const message = session.messages[assistantIndex]!
-          message.skills = agentResult.skills.map((skill) => skill.id)
-          if (agentResult.displays.length) message.displays = agentResult.displays
-          const toolLog = buildToolLog(agentResult)
-          if (toolLog) message.toolLog = toolLog
-        }
+      }
+      else if (proactive?.skills?.length) {
+        agentResult = await runProactiveAgent({
+          model,
+          messages: agentDialog,
+          background: recallPromise.then((recalled) => recalled?.facts ?? ''),
+          skills: proactive.skills,
+          onEvent: (event) => {
+            agentStatus.value = describeAgentEvent(event)
+            const current = trace()
+            if (current) applyAgentEvent(current, event)
+          },
+          setStatus: (status) => { agentStatus.value = status },
+        })
+      }
+      if (agentResult) {
+        const message = session.messages[assistantIndex]!
+        message.skills = agentResult.skills.map((skill) => skill.id)
+        if (agentResult.displays.length) message.displays = agentResult.displays
+        const toolLog = buildToolLog(agentResult)
+        if (toolLog) message.toolLog = toolLog
       }
 
       const recalled = await recallPromise
@@ -446,6 +521,7 @@ export const useChatStore = defineStore('chat', () => {
       if (turn.type === 'user' && !turn.directCall && !usedMemorySkill) {
         rememberTurn(session, assistantIndex, model)
       }
+      return fullText.replace(EMOTION_TAG_REGEX_GLOBAL, '').trim()
     }
     catch (error) {
       const message = session.messages[assistantIndex]
@@ -456,9 +532,11 @@ export const useChatStore = defineStore('chat', () => {
         session.messages.splice(assistantIndex, 1)
       }
       onErrorHooks.value.forEach(hook => hook(error))
+      return ''
     }
     finally {
       settlePermission?.('deny')
+      settleQuestion?.(null)
       agentStatus.value = ''
       isStreaming.value = false
     }
@@ -551,6 +629,8 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming,
     agentStatus,
     pendingPermission,
+    pendingQuestion,
+    lastUserMessageAt,
 
     createNewSession,
     switchSession,
@@ -559,6 +639,7 @@ export const useChatStore = defineStore('chat', () => {
 
     sendMessage,
     respondPermission,
+    answerQuestion,
     undoRemembered,
     speakProactively,
     onStart,

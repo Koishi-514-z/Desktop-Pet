@@ -6,10 +6,15 @@ import Stage from '@/components/Stage.vue'
 import SubtitleBar from '@/components/SubtitleBar.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 import { onMounted } from 'vue'
+import { useProactiveStore } from '@/stores/proactive'
 import { useToolsStore } from '@/stores/tools'
 
-// 第一次运行时授权常用的文件夹（桌面、文档、下载、图片）
-onMounted(() => useToolsStore().init())
+onMounted(() => {
+  // 第一次运行时授权常用的文件夹（桌面、文档、下载、图片）
+  useToolsStore().init()
+  // 主动交互：在合适的时机主动说话或做小动作
+  useProactiveStore().start()
+})
 </script>
 
 <template>

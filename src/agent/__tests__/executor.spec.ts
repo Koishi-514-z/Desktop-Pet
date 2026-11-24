@@ -1,3 +1,4 @@
+import type { PlanStatus } from '@/agent/plan'
 import type { AgentEvent, Skill } from '@/agent/types'
 import { simulateReadableStream, tool } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
@@ -64,6 +65,11 @@ function reply(content: Content[], finish: FinishReason): GenerateResult {
 
 const text = (value: string) => reply([{ type: 'text', text: value }], 'stop')
 const call = (toolName: string, input: unknown) => reply([{ type: 'tool-call', toolCallId: `call-${toolName}`, toolName, input: JSON.stringify(input) }], 'tool-calls')
+// 同一轮中调用多个工具
+const parallel = (...items: [toolName: string, input: unknown][]) => reply(
+  items.map(([toolName, input], index) => ({ type: 'tool-call' as const, toolCallId: `call-${index}-${toolName}`, toolName, input: JSON.stringify(input) })),
+  'tool-calls',
+)
 // 输出超过长度上限：工具调用只写了一部分。OpenAI 兼容的接口会丢弃没写完的工具调用
 const truncated = (toolName: string, input: string): Scripted => ({ ...reply([], 'length'), partial: { toolName, input } })
 
@@ -113,6 +119,8 @@ function scriptedModel(replies: Scripted[]) {
 
 const systemOf = (options: CallOptions) => options.prompt.find((message) => message.role === 'system')?.content ?? ''
 const toolsOf = (options: CallOptions) => (options.tools ?? []).map((item) => item.name).sort()
+// 执行阶段可用的工具：制定计划的 update_plan 一直可用
+const executorTools = (...names: string[]) => [...names, 'update_plan'].sort()
 
 const loadedOf = (events: AgentEvent[]) => events.flatMap((event) => (event.type === 'skills-loaded' ? [event.skills.map((skill) => skill.id)] : []))
 
@@ -135,12 +143,12 @@ describe('意图识别与按需加载技能', () => {
     expect(systemOf(router!)).toContain('{"task": true, "complex": false, "reason": "一句话理由"}')
     expect(toolsOf(router!)).toEqual([])
     // 执行的第一步：还没有加载技能，只有 load_skills；技能目录在系统提示中，但没有使用说明
-    expect(toolsOf(first!)).toEqual(['load_skills'])
+    expect(toolsOf(first!)).toEqual(executorTools('load_skills'))
     expect(systemOf(first!)).toContain('还没有加载任何技能')
     expect(systemOf(first!)).toContain('- document（Office 文档）：新建或修改 Word 文档')
     expect(systemOf(first!)).not.toContain('用 write_document 写 Word 文档')
     // 加载之后：可以使用文档技能的工具，它的使用说明加入了系统提示
-    expect(toolsOf(second!)).toEqual(['load_skills', 'write_document'])
+    expect(toolsOf(second!)).toEqual(executorTools('load_skills', 'write_document'))
     expect(systemOf(second!)).toContain('## Office 文档（document）\n用 write_document 写 Word 文档')
 
     expect(writeDocument).toHaveBeenCalledWith({ title: '周报' }, expect.anything())
@@ -168,7 +176,7 @@ describe('意图识别与按需加载技能', () => {
       skills: [selectionSkill, documentSkill],
       onEvent: (event) => events.push(event),
     })
-    expect(toolsOf(calls[1]!)).toEqual(['load_skills', 'translate'])
+    expect(toolsOf(calls[1]!)).toEqual(executorTools('load_skills', 'translate'))
     expect(loadedOf(events)).toEqual([['selection']])
   })
 
@@ -179,7 +187,7 @@ describe('意图识别与按需加载技能', () => {
 
     expect(router.calls).toHaveLength(1)
     expect(main.calls).toHaveLength(3)
-    expect(toolsOf(main.calls[0]!)).toEqual(['load_skills'])
+    expect(toolsOf(main.calls[0]!)).toEqual(executorTools('load_skills'))
     expect(result?.summary).toBe('好了')
   })
 
@@ -223,8 +231,153 @@ describe('意图识别与按需加载技能', () => {
     const { model, calls } = scriptedModel([text('好了')])
     const { executeSkills } = await import('@/agent/executor')
     await executeSkills({ model, messages: [{ role: 'user', content: '你好' }], skills: [pictureSkill] }, [pictureSkill])
-    expect(toolsOf(calls[0]!)).toEqual(['read_picture'])
+    expect(toolsOf(calls[0]!)).toEqual(executorTools('read_picture'))
     expect(systemOf(calls[0]!)).not.toContain('可以加载的技能')
+  })
+})
+
+describe('先计划，做完再验证', () => {
+  const messages = [{ role: 'user' as const, content: '帮我写一份周报，写完检查一下' }]
+  const plan = (first: PlanStatus, second: PlanStatus) => ({
+    steps: [{ title: '写周报', status: first }, { title: '检查写好的文档', status: second }],
+  })
+
+  it('复杂任务先制定计划，每完成一步更新；计划显示在执行过程中，不作为工具结果交给角色扮演阶段', async () => {
+    writeDocument.mockClear()
+    const { createTrace, applyAgentEvent } = await import('@/agent/trace')
+    const { buildToolLog } = await import('@/agent/compact')
+    const { model, calls } = scriptedModel([
+      text('{"task": true, "complex": true, "reason": "要写文档并检查"}'),
+      // 第一轮：加载技能，同时制定计划
+      parallel(['load_skills', { skillIds: ['document'], reason: '要写文档' }], ['update_plan', plan('in_progress', 'pending')]),
+      // 第二轮：写文档，同时更新计划
+      parallel(['write_document', { title: '周报' }], ['update_plan', plan('done', 'in_progress')]),
+      parallel(['update_plan', plan('done', 'done')]),
+      text('写好了周报.docx，检查过内容'),
+    ])
+    const trace = createTrace()
+    const result = await runAgent({ model, messages, skills: [documentSkill], onEvent: (event) => applyAgentEvent(trace, event) })
+
+    // 复杂任务：系统提示中要求先制定计划
+    expect(systemOf(calls[1]!)).toContain('一定要先调用 update_plan 制定计划')
+    expect(toolsOf(calls[1]!)).toEqual(executorTools('load_skills'))
+    expect(writeDocument).toHaveBeenCalledWith({ title: '周报' }, expect.anything())
+    // 计划显示在执行过程中；更新计划的调用显示进度
+    expect(trace.plan).toEqual([{ title: '写周报', status: 'done' }, { title: '检查写好的文档', status: 'done' }])
+    const planCalls = trace.nodes.flatMap((node) => (node.kind === 'step' ? node.tools.filter((tool) => tool.name === 'update_plan').map((tool) => tool.summary) : []))
+    expect(planCalls).toEqual(['完成 0/2 步', '完成 1/2 步', '完成 2/2 步'])
+    // 更新计划不作为工具结果交给角色扮演阶段，计划的最终状态单独附在结果上，也写入追问时参考的记录
+    expect(result?.toolCalls.map((item) => item.toolName)).toEqual(['write_document'])
+    expect(result?.plan).toEqual(trace.plan)
+    expect(buildToolLog(result!)).toContain('执行计划（完成 2/2 步）：1. [已完成] 写周报；2. [已完成] 检查写好的文档')
+  })
+
+  it('不复杂的任务也可以制定计划但不强求；系统提示中要求做完后验证', async () => {
+    const { model, calls } = scriptedModel([
+      text('{"task": true, "reason": "写文档"}'),
+      call('load_skills', { skillIds: ['document'], reason: '要写文档' }),
+      call('write_document', { title: '周报' }),
+      text('好了'),
+    ])
+    const result = await runAgent({ model, messages, skills: [documentSkill] })
+
+    const system = systemOf(calls[1]!)
+    expect(system).not.toContain('一定要先调用 update_plan')
+    expect(system).toContain('开始前先调用 update_plan 列出 3～5 步的计划')
+    expect(system).toContain('用 read_file 读回来，检查内容是否符合要求')
+    expect(system).toContain('检查退出码与输出')
+    expect(result?.plan).toBeUndefined()
+  })
+
+  it('计划的参数有误时，错误交给模型改正，不作为工具结果', async () => {
+    const { model, calls } = scriptedModel([
+      call('update_plan', { steps: [{ title: '写周报', status: 'started' }] }),
+      call('update_plan', { steps: [{ title: '写周报', status: 'done' }] }),
+      text('好了'),
+    ])
+    const { executeSkills } = await import('@/agent/executor')
+    const result = await executeSkills({ model, messages, skills: [documentSkill] }, [documentSkill])
+
+    expect(JSON.stringify(calls[1]!.prompt)).toContain('started')
+    expect(result.toolCalls).toEqual([])
+    expect(result.plan).toEqual([{ title: '写周报', status: 'done' }])
+  })
+
+  it('轮数用完时，总结参考计划的最新状态', async () => {
+    const { model, calls } = scriptedModel([
+      parallel(['update_plan', plan('in_progress', 'pending')], ['write_document', { title: '一月' }]),
+      call('write_document', { title: '二月' }),
+      text('写好了两份，还没检查'),
+    ])
+    const { executeSkills } = await import('@/agent/executor')
+    const result = await executeSkills({ model, messages, skills: [documentSkill] }, [documentSkill], 2)
+
+    const summary = systemOf(calls[2]!)
+    expect(summary).toContain('# 执行计划（最新状态）\n1. [进行中] 写周报\n2. [未开始] 检查写好的文档')
+    expect(summary).toContain('按执行计划说明完成了哪些步骤')
+    expect(result).toMatchObject({ stepLimitReached: true, plan: [{ status: 'in_progress' }, { status: 'pending' }] })
+  })
+})
+
+describe('执行中途向用户提问', () => {
+  const messages = [{ role: 'user' as const, content: '帮我写一份周报' }]
+  const question = { question: '周报的标题用什么？', options: ['周报', '本周工作总结'] }
+
+  it('参数不明确时提问，用户回答后在同一次执行里继续完成', async () => {
+    writeDocument.mockClear()
+    const { createTrace, applyAgentEvent } = await import('@/agent/trace')
+    const askUser = vi.fn(async () => '本周工作总结')
+    const statuses: string[] = []
+    const { model, calls } = scriptedModel([
+      text('{"task": true, "reason": "要写文档"}'),
+      call('load_skills', { skillIds: ['document'], reason: '要写文档' }),
+      call('ask_user', question),
+      call('write_document', { title: '本周工作总结' }),
+      text('按用户选的标题写好了'),
+    ])
+    const trace = createTrace()
+    const result = await runAgent({
+      model,
+      messages,
+      skills: [documentSkill],
+      askUser,
+      setStatus: (status) => statuses.push(status),
+      onEvent: (event) => applyAgentEvent(trace, event),
+    })
+
+    // 界面支持提问时提供 ask_user，提示中说明什么时候问
+    expect(toolsOf(calls[1]!)).toEqual(executorTools('ask_user', 'load_skills'))
+    expect(systemOf(calls[1]!)).toContain('用 ask_user 问用户')
+    // 提问卡片显示问题与选项，等待时显示进度
+    expect(askUser).toHaveBeenCalledWith(question)
+    expect(statuses).toContain('正在等待你的回答')
+    // 回答作为工具结果交给模型，同一次执行中继续完成
+    expect(JSON.stringify(calls[3]!.prompt)).toContain('"answer":"本周工作总结"')
+    expect(writeDocument).toHaveBeenCalledWith({ title: '本周工作总结' }, expect.anything())
+    // 问答也交给角色扮演阶段，执行过程中显示问题与回答
+    expect(result?.toolCalls.map((item) => item.toolName)).toEqual(['ask_user', 'write_document'])
+    const asked = trace.nodes.flatMap((node) => (node.kind === 'step' ? node.tools.filter((tool) => tool.name === 'ask_user') : []))
+    expect(asked.map((tool) => tool.summary)).toEqual(['问：周报的标题用什么？ → 答：本周工作总结'])
+  })
+
+  it('用户没有回答时，告诉模型不要再问，按默认做法继续或说明还缺少什么', async () => {
+    const { model, calls } = scriptedModel([call('ask_user', question), text('用户没有回答，按默认标题写')])
+    const { executeSkills } = await import('@/agent/executor')
+    await executeSkills({ model, messages, skills: [documentSkill], askUser: async () => null }, [documentSkill])
+
+    const prompt = JSON.stringify(calls[1]!.prompt)
+    expect(prompt).toContain('"answered":false')
+    expect(prompt).toContain('不要再问同样的问题')
+  })
+
+  it('界面不支持提问时不提供 ask_user，提示中改为说明还缺少什么', async () => {
+    const { model, calls } = scriptedModel([text('还缺少周报的标题')])
+    const { executeSkills } = await import('@/agent/executor')
+    await executeSkills({ model, messages, skills: [documentSkill] }, [documentSkill])
+
+    expect(toolsOf(calls[0]!)).toEqual(executorTools('write_document'))
+    expect(systemOf(calls[0]!)).toContain('直接说明还缺少什么信息')
+    expect(systemOf(calls[0]!)).not.toContain('ask_user')
   })
 })
 
@@ -271,7 +424,7 @@ describe('按图片中的要求继续完成', () => {
     ], events)
     const agent = await result
 
-    expect(toolsOf(calls[1]!)).toEqual(['load_skills', 'look_image'])
+    expect(toolsOf(calls[1]!)).toEqual(executorTools('load_skills', 'look_image'))
     // 第二次判断看得到图片的内容，技能目录中不包括图片理解
     const imageRouter = calls[3]!
     expect(systemOf(imageRouter)).toContain('图片中的内容已经读出来了')
@@ -279,8 +432,8 @@ describe('按图片中的要求继续完成', () => {
     expect(JSON.stringify(imageRouter.prompt)).toContain('请帮我写一份 Word 文档，标题是「周报」')
     // 继续执行时：图片内容在系统提示中，图片理解仍然加载着，其余的技能由执行模块加载
     expect(systemOf(calls[4]!)).toContain('# 用户写在图片中的要求')
-    expect(toolsOf(calls[4]!)).toEqual(['load_skills', 'look_image'])
-    expect(toolsOf(calls[5]!)).toEqual(['load_skills', 'look_image', 'write_document'])
+    expect(toolsOf(calls[4]!)).toEqual(executorTools('load_skills', 'look_image'))
+    expect(toolsOf(calls[5]!)).toEqual(executorTools('load_skills', 'look_image', 'write_document'))
 
     expect(writeDocument).toHaveBeenCalledWith({ title: '周报' }, expect.anything())
     expect(agent?.skills.map((skill) => skill.id)).toEqual(['image', 'document'])
@@ -347,7 +500,7 @@ describe('流式执行', () => {
     // 重试时带着之前的步骤（已经加载的技能仍然可用），并提醒精简
     const retry = calls[2]!
     expect(systemOf(retry)).toContain('# 注意：上一次的输出被截断了')
-    expect(toolsOf(retry)).toEqual(['read_picture', 'write_document'])
+    expect(toolsOf(retry)).toEqual(executorTools('read_picture', 'write_document'))
     expect(JSON.stringify(retry.prompt)).toContain('load_skills')
     expect(writeDocument).toHaveBeenCalledWith({ title: '周报' }, expect.anything())
     expect(result.error).toBeUndefined()

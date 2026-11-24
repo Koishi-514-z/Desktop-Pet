@@ -597,6 +597,19 @@ svg {
   stroke: none;
 }
 
+/* 桌宠主动说的话 */
+.proactive-tag {
+  color: #f9a8d4;
+  background: rgb(244 114 182 / 10%);
+  border-color: rgb(244 114 182 / 25%);
+}
+
+.proactive-tag svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+}
+
 /* 回复时想起的记忆 */
 .memory-tag {
   font: inherit;
@@ -880,6 +893,81 @@ svg {
 
 .permission-button.primary:hover {
   filter: brightness(1.08);
+}
+
+.permission-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+  filter: none;
+}
+
+/* ===== 执行中途的提问：沿用授权卡片，换成蓝色以示区别 ===== */
+
+.message.assistant .message-body:has(.question-card) {
+  width: 88%;
+  max-width: 88%;
+}
+
+.question-card {
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgb(91 157 255 / 14%), transparent 60%),
+    rgb(0 0 0 / 22%);
+  border-color: rgb(91 157 255 / 40%);
+}
+
+.question-card .permission-icon {
+  color: #7fb2ff;
+  background: rgb(91 157 255 / 14%);
+}
+
+.question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.question-option {
+  max-width: 100%;
+  text-align: left;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.question-option:hover {
+  border-color: rgb(91 157 255 / 50%);
+}
+
+.question-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.question-field {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  background: rgb(0 0 0 / 28%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.question-field:focus {
+  border-color: rgb(91 157 255 / 60%);
+}
+
+.question-hint {
+  align-self: center;
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 /* ===== 技能结果卡片 ===== */

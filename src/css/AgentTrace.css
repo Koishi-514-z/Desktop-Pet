@@ -114,6 +114,109 @@
   }
 }
 
+/* 执行计划：清单，完成的步骤打勾 */
+.trace-plan {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line, rgb(255 255 255 / 8%));
+}
+
+.plan-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.plan-title {
+  font-weight: 600;
+  color: rgb(255 255 255 / 85%);
+}
+
+.plan-progress {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint, rgb(255 255 255 / 38%));
+}
+
+.plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.plan-step {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+
+.plan-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 50%;
+}
+
+.plan-mark svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: #0f1d17;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.plan-step.done .plan-mark {
+  background: var(--trace-done);
+  border-color: var(--trace-done);
+}
+
+.plan-step.in_progress .plan-mark {
+  background: rgb(127 178 255 / 25%);
+  border-color: var(--trace-running);
+}
+
+/* 执行中正在进行的步骤：转动的圆环 */
+.plan-step.in_progress.live .plan-mark {
+  background: transparent;
+  border-color: rgb(127 178 255 / 25%);
+  border-top-color: var(--trace-running);
+  animation: trace-spin 0.8s linear infinite;
+}
+
+.plan-step.skipped .plan-mark {
+  border-style: dashed;
+}
+
+.plan-text {
+  flex: 1;
+  min-width: 0;
+  color: rgb(255 255 255 / 70%);
+  word-break: break-word;
+}
+
+.plan-step.in_progress .plan-text {
+  color: rgb(255 255 255 / 92%);
+}
+
+.plan-step.done .plan-text {
+  color: var(--text-dim, rgb(255 255 255 / 55%));
+}
+
+.plan-step.skipped .plan-text {
+  color: var(--text-faint, rgb(255 255 255 / 38%));
+  text-decoration: line-through;
+}
+
 /* 时间线 */
 .trace-nodes {
   display: flex;

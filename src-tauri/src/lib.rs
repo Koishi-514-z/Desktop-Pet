@@ -4,6 +4,7 @@ use tauri::{
   AppHandle, Manager, WebviewWindow,
 };
 
+mod activity;
 mod capture;
 mod files;
 mod memory;
@@ -98,6 +99,7 @@ pub fn run() {
       capture::take_screenshot,
       screen::get_target_window,
       screen::capture_window,
+      activity::activity_snapshot,
       memory::memory_search,
       memory::memory_similar,
       memory::memory_get,

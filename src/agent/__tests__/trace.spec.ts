@@ -44,6 +44,18 @@ describe('执行过程', () => {
     ])
   })
 
+  it('向用户提问时显示问题，回答后补上回答，没有回答时标出', () => {
+    const trace = createTrace(0)
+    const input = { question: '用哪个端口？', options: ['8080', '9090'] }
+    applyAgentEvent(trace, { type: 'step-start' }, 0)
+    applyAgentEvent(trace, { type: 'tool-call', toolCallId: 'a', toolName: 'ask_user', input }, 0)
+    const tool = () => (trace.nodes[0]?.kind === 'step' ? trace.nodes[0].tools[0] : undefined)
+    expect(tool()?.summary).toBe('问：用哪个端口？')
+
+    applyAgentEvent(trace, { type: 'tool-result', toolCallId: 'a', record: { toolName: 'ask_user', input, output: { answered: false, note: '…' } } }, 100)
+    expect(tool()?.summary).toBe('问：用哪个端口？ → 没有回答')
+  })
+
   it('意图识别失败没有结果时，开始执行后结束识别', () => {
     const trace = createTrace(0)
     applyAgentEvent(trace, { type: 'routing' }, 0)

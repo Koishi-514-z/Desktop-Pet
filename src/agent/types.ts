@@ -1,4 +1,5 @@
 import type { LanguageModel, ModelMessage, ToolSet } from 'ai'
+import type { PlanStep } from '@/agent/plan'
 import type { ImageRef } from '@/utils/images'
 
 /**
@@ -73,11 +74,27 @@ export interface PermissionRequest {
 }
 
 /**
- * 由界面提供给技能使用的能力。未提供时，需要授权的操作一律视为被拒绝
+ * 工具执行中向用户提的问题（ask_user），界面上显示为提问卡片
+ */
+export interface UserQuestion {
+  /** 要问用户的问题 */
+  question: string
+  /** 可供选择的回答；为空时只显示输入框 */
+  options?: string[]
+  /** 有选项时是否也可以自己输入回答，默认可以 */
+  allowCustom?: boolean
+  /** 输入框中的提示文字 */
+  placeholder?: string
+}
+
+/**
+ * 由界面提供给技能使用的能力。未提供时，需要授权的操作一律视为被拒绝，也不能向用户提问
  */
 export interface SkillHost {
   /** 向用户请求授权，返回是否允许 */
   requestPermission?: (request: PermissionRequest) => Promise<boolean>
+  /** 向用户提问并等待回答，返回用户的回答；用户跳过或超时没有回答时返回 null */
+  askUser?: (question: UserQuestion) => Promise<string | null>
   /** 把工具产生的图片（如截图）附加到用户的这条消息上，便于展示与追问 */
   attachImages?: (images: ImageRef[]) => void
   /** 更新界面上展示的进度，如「正在查看屏幕…」 */
@@ -130,6 +147,8 @@ export interface AgentResult {
   error?: string
   /** 工具调用的轮数用完时任务还没完成，summary 是根据已有信息做的总结 */
   stepLimitReached?: boolean
+  /** 执行计划的最终状态（LLM 用 update_plan 制定过计划时才有） */
+  plan?: PlanStep[]
 }
 
 /**
@@ -141,6 +160,7 @@ export interface AgentResult {
  *   summary 表示轮数用完后，不带工具、根据执行记录做总结的那一次调用
  * - tool-input：模型正在编写工具的参数（如一段代码），chars 为已写的字数；只在开始时带有 toolName
  * - tool-call / tool-result：一次工具调用的开始与结束，用 toolCallId 对应
+ * - plan：LLM 制定或更新了执行计划，steps 为最新的完整计划
  */
 export type AgentEvent =
   | { type: 'routing', stage?: 'intent' | 'image' }
@@ -151,6 +171,7 @@ export type AgentEvent =
   | { type: 'tool-input', toolCallId: string, toolName: string, chars: number }
   | { type: 'tool-call', toolCallId: string, toolName: string, input: unknown }
   | { type: 'tool-result', toolCallId: string, record: ToolCallRecord }
+  | { type: 'plan', steps: PlanStep[] }
 
 export interface AgentRunOptions extends SkillHost {
   model: LanguageModel

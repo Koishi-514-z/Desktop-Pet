@@ -144,7 +144,7 @@ export async function writeFacts(facts: ExtractedMemory[], options: WriteOptions
   for (const [index, fact] of facts.entries()) {
     let decision = decisions[index]!
     // 目标已在本轮被合并到其他记忆中：重复的直接跳过（信息已在合并后的记忆里），需要更新的改为新增
-    if (decision.action === 'skip' && decision.target !== undefined && archived.has(decision.target)) continue
+    if (decision.action === 'skip' && archived.has(decision.target)) continue
     if (decision.action === 'update' && archived.has(decision.target)) {
       mergedIndex++
       decision = { action: 'add' }
@@ -163,7 +163,6 @@ export async function writeFacts(facts: ExtractedMemory[], options: WriteOptions
       updates.push({ action: 'add', memoryId: memory.id, category: memory.category, content: memory.content })
     }
     else if (decision.action === 'skip') {
-      if (decision.target === undefined) continue
       const memory = await api.reinforceMemory(decision.target, fact.importance, change)
       updates.push({ action: 'reinforce', memoryId: memory.id, category: memory.category, content: memory.content })
     }

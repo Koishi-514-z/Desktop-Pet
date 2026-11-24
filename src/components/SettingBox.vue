@@ -8,6 +8,7 @@ import SceneSetting from './settings/SceneSetting.vue'
 import AgentSetting from './settings/AgentSetting.vue'
 import MemorySetting from './settings/MemorySetting.vue'
 import ToolSetting from './settings/ToolSetting.vue'
+import ProactiveSetting from './settings/ProactiveSetting.vue'
 
 // 设置面板的分类标签
 const tabs = [
@@ -17,6 +18,7 @@ const tabs = [
   { id: 'scene', label: 'Scene' },
   { id: 'agent', label: 'Skills' },
   { id: 'memory', label: 'Memory' },
+  { id: 'proactive', label: 'Proactive' },
   { id: 'tools', label: 'Tools' },
 ] as const
 
@@ -104,6 +106,7 @@ onBeforeUnmount(() => {
         <SceneSetting v-else-if="activeTab === 'scene'" />
         <AgentSetting v-else-if="activeTab === 'agent'" />
         <MemorySetting v-else-if="activeTab === 'memory'" />
+        <ProactiveSetting v-else-if="activeTab === 'proactive'" />
         <ToolSetting v-else-if="activeTab === 'tools'" />
       </section>
     </div>

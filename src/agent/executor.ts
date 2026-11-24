@@ -1,9 +1,12 @@
 import type { StepResult, TextStreamPart, ToolSet } from 'ai'
+import type { PlanStep } from '@/agent/plan'
 import type { AgentEvent, AgentResult, AgentRunOptions, DirectToolCall, RouteDecision, Skill, SkillContext, ToolCallRecord, ToolDisplay } from '@/agent/types'
 import { stepCountIs, streamText, tool } from 'ai'
 import { z } from 'zod'
+import { ASK_USER_TOOL, createAskUserTool } from '@/agent/ask'
 import { buildStepTranscript, compactToolMessages } from '@/agent/compact'
 import { extractDisplay } from '@/agent/context'
+import { createPlanTool, PLAN_TOOL, planProgress } from '@/agent/plan'
 import { buildExecutorSystemPrompt, buildStepLimitSummaryPrompt, TRUNCATED_OUTPUT_NOTE } from '@/agent/prompts'
 import { errorMessage, recentMessages } from '@/agent/utils'
 
@@ -95,8 +98,8 @@ async function followProgress(stream: AsyncIterable<TextStreamPart<ToolSet>>, op
 }
 
 function createSkillContext(options: AgentRunOptions): SkillContext {
-  const { model, visionModel, abortSignal, requestPermission, attachImages, setStatus } = options
-  return { model, visionModel: visionModel ?? model, abortSignal, requestPermission, attachImages, setStatus }
+  const { model, visionModel, abortSignal, requestPermission, askUser, attachImages, setStatus } = options
+  return { model, visionModel: visionModel ?? model, abortSignal, requestPermission, askUser, attachImages, setStatus }
 }
 
 /** 合并多个技能的工具：多个技能共用同一个工具（如 read_file）时只保留一份；不同的工具重名时后者会被忽略 */
@@ -151,6 +154,7 @@ export async function executeSkills(
   options: AgentRunOptions,
   preloaded: Skill[] = [],
   maxSteps = DEFAULT_MAX_STEPS,
+  complex = false,
 ): Promise<AgentResult> {
   const { model, messages, skills: available, onEvent, abortSignal } = options
   const loaded = new Map(preloaded.map((skill) => [skill.id, skill]))
@@ -165,12 +169,31 @@ export async function executeSkills(
   const loadSkills = createLoadSkillsTool(available, loaded, () => {
     onEvent?.({ type: 'skills-loaded', skills: loadedSkills() })
   })
-  // 所有可用技能的工具都交给 streamText，每一步只启用已加载技能的工具
-  const tools: ToolSet = { ...collectTools(available), [LOAD_SKILLS_TOOL]: loadSkills }
+  // 执行计划：LLM 用 update_plan 制定与更新，界面上显示为执行过程中的清单
+  let plan: PlanStep[] | undefined
+  const updatePlan = createPlanTool((steps) => {
+    plan = steps
+    onEvent?.({ type: 'plan', steps })
+  })
+  // 结果附上计划的最终状态
+  const withPlan = (result: AgentResult): AgentResult => (plan ? { ...result, plan } : result)
+
+  // 所有可用技能的工具都交给 streamText，每一步只启用已加载技能的工具；加载技能与制定计划的工具一直可用，
+  // 界面支持提问时还可以向用户提问
+  const canAskUser = options.askUser !== undefined
+  const tools: ToolSet = { ...collectTools(available), [LOAD_SKILLS_TOOL]: loadSkills, [PLAN_TOOL]: updatePlan, [ASK_USER_TOOL]: createAskUserTool() }
   const activeTools = () => [
     ...Object.keys(collectTools(loadedSkills())),
     ...(otherSkills().length ? [LOAD_SKILLS_TOOL] : []),
+    PLAN_TOOL,
+    ...(canAskUser ? [ASK_USER_TOOL] : []),
   ]
+  const skillsLabel = () => {
+    const label = loaded.size ? `正在使用技能：${loadedSkills().map((skill) => skill.name).join('、')}` : '正在分析需要哪些技能'
+    if (!plan) return label
+    const { done, total } = planProgress(plan)
+    return `${label} · 计划 ${done}/${total}`
+  }
 
   try {
     // 背景信息准备失败不影响执行
@@ -178,7 +201,7 @@ export async function executeSkills(
     const now = new Date()
     // truncated：之前的输出因为超过长度上限被截断过，提醒模型精简
     const system = (truncated: boolean) => [
-      buildExecutorSystemPrompt(loadedSkills(), { now, background, others: otherSkills(), maxSteps }),
+      buildExecutorSystemPrompt(loadedSkills(), { now, background, others: otherSkills(), maxSteps, complex, canAskUser }),
       truncated ? TRUNCATED_OUTPUT_NOTE : '',
     ].filter(Boolean).join('\n\n')
 
@@ -206,9 +229,10 @@ export async function executeSkills(
         experimental_context: context,
         // 这里只记录工具调用的结果；界面上的执行过程由 followProgress 从流中按顺序发出
         experimental_onToolCallFinish: (event) => {
-          // 加载技能只是执行过程中的一步，不作为工具调用的结果交给角色扮演阶段
-          if (event.toolCall.toolName === LOAD_SKILLS_TOOL && event.success) {
-            recordedIds.add(event.toolCall.toolCallId)
+          // 加载技能、制定计划只是执行过程中的步骤，不作为工具调用的结果交给角色扮演阶段（计划单独附在结果上）
+          const { toolName, toolCallId } = event.toolCall
+          if (toolName === PLAN_TOOL || (toolName === LOAD_SKILLS_TOOL && event.success)) {
+            recordedIds.add(toolCallId)
             return
           }
           const record: ToolCallRecord = { toolName: event.toolCall.toolName, input: event.toolCall.input }
@@ -226,7 +250,7 @@ export async function executeSkills(
       })
 
       await followProgress(result.fullStream, {
-        skillsLabel: () => (loaded.size ? `正在使用技能：${loadedSkills().map((skill) => skill.name).join('、')}` : '正在分析需要哪些技能'),
+        skillsLabel,
         setStatus: options.setStatus,
         onEvent,
         stepOffset: steps.length,
@@ -244,20 +268,21 @@ export async function executeSkills(
     }
 
     // 参数校验失败、调用了不存在的工具等情况不会执行工具，也就不会触发上面的回调，这里从步骤记录中补上
+    // （制定计划的参数有误时，模型会看到错误并改正，不交给角色扮演阶段）
     for (const part of steps.flatMap((step) => step.content)) {
-      if (part.type !== 'tool-error' || recordedIds.has(part.toolCallId)) continue
+      if (part.type !== 'tool-error' || part.toolName === PLAN_TOOL || recordedIds.has(part.toolCallId)) continue
       toolCalls.push({ toolName: part.toolName, input: part.input, error: errorMessage(part.error) })
     }
 
     const last = steps.at(-1)
     if (last?.finishReason === 'length' && last.toolCalls.length === 0) {
-      return {
+      return withPlan({
         skills: loadedSkills(),
         toolCalls,
         displays,
         summary: last.text,
         error: '模型的输出超过了单次输出的长度上限，内容没有写完，精简后重试仍然不够。可以把任务拆成几部分分别完成（如先做前几页），或者换用输出上限更高的模型',
-      }
+      })
     }
 
     // 轮数用完时模型还在调用工具，最后一步没有总结：不带工具再调用一次，根据执行记录总结
@@ -267,7 +292,7 @@ export async function executeSkills(
       try {
         const result = streamText({
           model,
-          system: buildStepLimitSummaryPrompt(buildStepTranscript(steps), now, background),
+          system: buildStepLimitSummaryPrompt(buildStepTranscript(steps), now, background, plan),
           // 只带对话的文字：部分服务商不接受没有工具定义、却带着工具调用的历史消息
           messages: dialog,
           temperature: 0,
@@ -287,13 +312,13 @@ export async function executeSkills(
         // 总结失败时，角色扮演阶段仍然可以根据工具调用的结果回复
         console.warn('[agent] 轮数用完后总结失败：', errorMessage(error))
       }
-      return { skills: loadedSkills(), toolCalls, displays, summary, stepLimitReached: true }
+      return withPlan({ skills: loadedSkills(), toolCalls, displays, summary, stepLimitReached: true })
     }
-    return { skills: loadedSkills(), toolCalls, displays, summary: last?.text ?? '' }
+    return withPlan({ skills: loadedSkills(), toolCalls, displays, summary: last?.text ?? '' })
   }
   catch (error) {
     if (abortSignal?.aborted) throw error
-    return { skills: loadedSkills(), toolCalls, displays, summary: '', error: errorMessage(error) }
+    return withPlan({ skills: loadedSkills(), toolCalls, displays, summary: '', error: errorMessage(error) })
   }
 }
 

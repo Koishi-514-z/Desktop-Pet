@@ -1,4 +1,7 @@
+import type { PlanStep } from '@/agent/plan'
 import type { AgentEvent } from '@/agent/types'
+import { ASK_USER_TOOL, describeAnswer, describeQuestion } from '@/agent/ask'
+import { describeProgress, PLAN_TOOL, planFromInput } from '@/agent/plan'
 import { stringify, summarizeInput, truncate } from '@/agent/utils'
 
 /**
@@ -76,12 +79,16 @@ export interface AgentTrace {
   startedAt: number
   endedAt?: number
   nodes: TraceNode[]
+  /** 执行计划的最新状态（LLM 用 update_plan 制定过计划时） */
+  plan?: PlanStep[]
   /** 执行过程出错时的错误信息 */
   error?: string
 }
 
 // 保存的参数与结果的长度上限（会话保存在 IndexedDB 中，空间充足）
 const DETAIL_LENGTH = 2000
+// 保存的计划中每一步的长度上限
+const PLAN_TITLE_LENGTH = 200
 
 export function createTrace(now = Date.now()): AgentTrace {
   return { startedAt: now, nodes: [] }
@@ -186,10 +193,13 @@ export function applyAgentEvent(trace: AgentTrace, event: AgentEvent, now = Date
 
     case 'tool-call': {
       const tool = findTool(trace, event.toolCallId)
+      // 更新计划时，摘要显示计划的进度；向用户提问时显示问题
+      const plan = event.toolName === PLAN_TOOL ? planFromInput(event.input) : undefined
+      const question = event.toolName === ASK_USER_TOOL ? describeQuestion(event.input) : undefined
       const fields = {
         name: event.toolName,
         startedAt: now,
-        summary: summarizeInput(event.input),
+        summary: plan ? describeProgress(plan) : question ?? summarizeInput(event.input),
         input: formatDetail(event.input),
       }
       if (tool) Object.assign(tool, fields)
@@ -213,6 +223,8 @@ export function applyAgentEvent(trace: AgentTrace, event: AgentEvent, now = Date
       else {
         tool.status = 'done'
         tool.output = formatDetail(record.output)
+        // 向用户提问：摘要中补上用户的回答
+        if (record.toolName === ASK_USER_TOOL) tool.summary = describeAnswer(record.input, record.output) ?? tool.summary
       }
       // 直接调用的工具完成后，这一组也就结束了
       const step = lastRunning(trace, 'step')
@@ -222,6 +234,10 @@ export function applyAgentEvent(trace: AgentTrace, event: AgentEvent, now = Date
       }
       break
     }
+
+    case 'plan':
+      trace.plan = event.steps.map((step) => ({ title: truncate(step.title, PLAN_TITLE_LENGTH), status: step.status }))
+      break
   }
 }
 

@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import type { PlanStatus } from '@/agent/plan'
 import type { AgentTrace, TraceNode, TraceStatus, TraceStep, TraceTool } from '@/agent/trace'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ASK_USER_TOOL } from '@/agent/ask'
 import { COMPLEX_MAX_STEPS, LOAD_SKILLS_TOOL } from '@/agent/executor'
+import { PLAN_TOOL, planProgress } from '@/agent/plan'
 import { builtinSkills } from '@/agent/skills'
 import { isTraceRunning, traceStats } from '@/agent/trace'
 
@@ -83,13 +86,35 @@ function toggleTool(tool: TraceTool) {
 // 工具名对应的技能名称
 const toolSkillNames = new Map(builtinSkills.flatMap((skill) => Object.keys(skill.tools).map((name) => [name, skill.name] as const)))
 
+// 执行过程中内置的工具（不属于任何技能）
+const BUILTIN_TOOL_LABELS: Record<string, string> = {
+  [LOAD_SKILLS_TOOL]: '加载技能',
+  [PLAN_TOOL]: '更新计划',
+  [ASK_USER_TOOL]: '询问用户',
+}
+
 function toolLabel(name: string): string {
-  return name === LOAD_SKILLS_TOOL ? '加载技能' : name
+  return BUILTIN_TOOL_LABELS[name] ?? name
 }
 
 function toolSkill(name: string): string {
-  return name === LOAD_SKILLS_TOOL ? '' : toolSkillNames.get(name) ?? ''
+  return name in BUILTIN_TOOL_LABELS ? '' : toolSkillNames.get(name) ?? ''
 }
+
+// ===== 执行计划 =====
+
+const PLAN_STATUS_TITLES: Record<PlanStatus, string> = {
+  done: '已完成',
+  in_progress: '正在进行',
+  pending: '还没开始',
+  skipped: '不再需要',
+}
+
+const planText = computed(() => {
+  if (!props.trace.plan?.length) return ''
+  const { done, total } = planProgress(props.trace.plan)
+  return `计划 ${done}/${total}`
+})
 
 const FINISH_REASONS: Record<string, string> = {
   'tool-calls': '调用工具',
@@ -145,7 +170,7 @@ function stepMeta(step: TraceStep): string {
 function toolStateText(tool: TraceTool): string {
   if (tool.status !== 'running') return elapsed(tool)
   if (tool.input === undefined) return tool.chars ? `编写参数中（${tool.chars} 字）` : '编写参数中'
-  return `执行中 ${elapsed(tool)}`
+  return `${tool.name === ASK_USER_TOOL ? '等待回答' : '执行中'} ${elapsed(tool)}`
 }
 
 const stats = computed(() => traceStats(props.trace, now.value))
@@ -157,6 +182,7 @@ const activity = computed(() => {
   if (node.kind !== 'step') return `${nodeTitle(node)}中…`
   const tool = [...node.tools].reverse().find((item) => item.status === 'running')
   if (!tool) return `${nodeTitle(node)} · 思考中…`
+  if (tool.name === ASK_USER_TOOL && tool.input !== undefined) return `${nodeTitle(node)} · 正在等待你的回答`
   const label = toolLabel(tool.name)
   return `${nodeTitle(node)} · ${tool.input === undefined ? `正在编写 ${label} 的参数` : `正在调用 ${label}`}`
 })
@@ -182,10 +208,31 @@ const overallStatus = computed<TraceStatus>(() => {
     <button class="trace-head" type="button" :title="expanded ? '收起执行过程' : '展开执行过程'" @click="toggle">
       <span class="status-icon" :class="overallStatus" />
       <span class="trace-title">{{ running ? '执行中' : '执行过程' }}</span>
-      <span class="trace-summary">{{ running ? activity : summary }}<template v-if="interrupted"> · 已中断</template></span>
+      <span class="trace-summary"><template v-if="planText">{{ planText }} · </template>{{ running ? activity : summary }}<template v-if="interrupted"> · 已中断</template></span>
       <span v-if="running" class="trace-time">{{ formatDuration(stats.durationMs) }}</span>
       <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
     </button>
+
+    <section v-if="expanded && trace.plan?.length" class="trace-plan">
+      <header class="plan-head">
+        <span class="plan-title">计划</span>
+        <span class="plan-progress">{{ planText }}</span>
+      </header>
+      <ol class="plan-steps">
+        <li
+          v-for="(step, stepIndex) in trace.plan"
+          :key="stepIndex"
+          class="plan-step"
+          :class="[step.status, { live: running }]"
+          :title="PLAN_STATUS_TITLES[step.status]"
+        >
+          <span class="plan-mark">
+            <svg v-if="step.status === 'done'" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+          </span>
+          <span class="plan-text">{{ step.title }}</span>
+        </li>
+      </ol>
+    </section>
 
     <ol v-if="expanded" class="trace-nodes">
       <li v-for="(node, nodeIndex) in trace.nodes" :key="nodeIndex" class="trace-node" :class="[node.kind, node.status]">
