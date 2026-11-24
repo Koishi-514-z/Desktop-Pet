@@ -3,7 +3,7 @@ import { isTauri } from '@/composables/desktop'
 import { httpFetch } from '@/utils/http'
 
 // 网页正文默认最多保留的字数
-const DEFAULT_MAX_CHARS = 8000
+const DEFAULT_MAX_CHARS = 16_000
 // 网页的最大大小
 const MAX_BYTES = 5 * 1024 * 1024
 // 最多跟随的重定向次数

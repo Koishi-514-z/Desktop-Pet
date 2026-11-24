@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { IMAGES_STORE, withStore as withDbStore } from '@/utils/db'
 
 /**
  * 对话中的图片：数据保存在 IndexedDB 中（localStorage 容量太小，放不下截图），
@@ -27,38 +28,8 @@ const MAX_SIDE = 2048
 const MAX_ORIGINAL_BYTES = 2 * 1024 * 1024
 const SUPPORTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 
-const DB_NAME = 'desktop-pet'
-const DB_VERSION = 1
-const STORE_NAME = 'images'
-
-let dbPromise: Promise<IDBDatabase> | null = null
-
-function openDb(): Promise<IDBDatabase> {
-  dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
-        request.result.createObjectStore(STORE_NAME, { keyPath: 'id' })
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => {
-      dbPromise = null
-      reject(request.error)
-    }
-  })
-  return dbPromise
-}
-
-async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, mode)
-    const request = run(transaction.objectStore(STORE_NAME))
-    transaction.oncomplete = () => resolve(request ? request.result : undefined)
-    transaction.onerror = () => reject(transaction.error)
-    transaction.onabort = () => reject(transaction.error)
-  })
+function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
+  return withDbStore(IMAGES_STORE, mode, run)
 }
 
 export function createImageId(): string {

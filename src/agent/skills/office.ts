@@ -18,7 +18,7 @@ export const OFFICE_SKILL_ID = 'office'
 // 默认最长运行时间（秒）：启动 Office 比较慢
 const DEFAULT_TIMEOUT = 180
 // 运行后读取每个改动的文件的字数，用于确认结果
-const READ_BACK_CHARS = 2000
+const READ_BACK_CHARS = 4000
 // 运行后可以读取内容确认结果的文件类型
 const READABLE_EXTENSIONS = ['docx', 'pptx', 'xlsx', 'xls', 'xlsb', 'ods', 'pdf', 'txt', 'md', 'csv', 'json', 'html', 'htm']
 
@@ -123,7 +123,7 @@ ${examples()}`
       description: '运行一段代码来新建或修改 Word、Excel、PowerPoint 文件（优先用 PowerShell 调用 Microsoft Office，其次用 Python 库）。运行前会检查并备份 files 中的文件，并请求用户同意',
       inputSchema: z.object({
         language: z.enum(['powershell', 'python']).describe('powershell：通过 COM 调用 Microsoft Office（优先）；python：使用 python-docx、openpyxl、python-pptx'),
-        code: z.string().min(1).max(20_000).describe('完整的代码，文件路径使用完整路径'),
+        code: z.string().min(1).max(40_000).describe('完整的代码，文件路径使用完整路径'),
         files: z.array(z.string().min(1)).min(1).max(20).describe('脚本会新建或修改的所有文件的完整路径（包括导出的 PDF），运行前会备份，完成后可以撤销'),
         timeoutSeconds: z.number().int().min(10).max(600).optional().describe(`最长运行时间（秒），默认 ${DEFAULT_TIMEOUT}`),
         reason: z.string().min(1).describe('向用户说明要做什么，一句话'),

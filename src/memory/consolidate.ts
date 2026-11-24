@@ -8,8 +8,8 @@ import * as api from '@/memory/api'
 import { categoryLabel } from '@/memory/types'
 import { safeEmbed } from '@/memory/writer'
 
-// 整理后单条记忆的最大长度
-const MAX_CONTENT_LENGTH = 150
+// 整理后单条记忆的最大长度（提示中要求不超过 160 字，留出余量）
+const MAX_CONTENT_LENGTH = 300
 // 整理产生的变动来源
 export const CONSOLIDATE_SOURCE = 'consolidate'
 
@@ -126,7 +126,7 @@ ${formatDateTime(now)}
 - archive：已经失效、不再有参考价值的记忆，如早已过去且没有长期意义的计划、被后来的记忆否定的说法。
 
 要求：
-- 合并或改写后的内容以「用户」开头，不超过 80 字，不要编造记忆中没有的信息。
+- 合并或改写后的内容以「用户」开头，不超过 160 字，不要编造记忆中没有的信息。
 - 不同的具体事件（如两次不同的考试）不要合并，除非是在归纳习惯。
 - 每条记忆最多出现在一个操作中，只能使用下面列出的 id。
 - 大多数记忆都不需要整理，不需要整理的不要列出；拿不准时不要处理。

@@ -30,7 +30,7 @@ use script::{CodeRequest, OfficeSupport, RunRequest, RunResult, Runtime, ScriptI
 use write::{TargetChange, TargetInfo, TargetSnapshot, WritePreview, WriteRequest, WriteResult};
 
 /// 读取文件内容时默认最多返回的字数
-const DEFAULT_MAX_CHARS: usize = 12_000;
+const DEFAULT_MAX_CHARS: usize = 24_000;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

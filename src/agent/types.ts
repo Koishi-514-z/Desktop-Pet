@@ -26,12 +26,17 @@ export interface Skill {
   tools: ToolSet
 }
 
-/** 意图识别结果 */
+/**
+ * 意图识别结果：只区分闲聊与任务（由便宜快速的小模型判断），需要哪些技能由工具执行阶段自己加载。
+ * 读出用户发来的图片后的判断中，task 表示图中是不是要完成的任务
+ */
 export interface RouteDecision {
-  /** 需要激活的技能 id，为空表示普通闲聊，无需调用工具 */
-  skillIds: string[]
+  /** 是否需要借助技能完成（获取信息、执行操作等）；false 表示普通闲聊 */
+  task: boolean
   /** LLM 给出的判断理由，便于调试 */
   reason: string
+  /** 是否是需要查阅较多内容或较多步骤的任务（如了解一个项目），此时允许更多轮的工具调用 */
+  complex?: boolean
 }
 
 /**
@@ -123,19 +128,36 @@ export interface AgentResult {
   displays: ToolDisplay[]
   /** 执行阶段本身出错（如模型请求失败）时的错误信息 */
   error?: string
+  /** 工具调用的轮数用完时任务还没完成，summary 是根据已有信息做的总结 */
+  stepLimitReached?: boolean
 }
 
-/** Agent 运行过程中的事件，用于在界面上展示进度 */
+/**
+ * Agent 运行过程中的事件，用于在界面上展示进度与执行过程。
+ * - routing：开始意图识别（区分闲聊与任务）；stage 为 image 时是读出图片后判断图中是不是要完成的任务
+ * - routed：意图识别完成
+ * - skills-loaded：加载了技能（开始执行时预先加载的，或执行中用 load_skills 加载的），skills 为目前已加载的全部技能
+ * - step-start / step-finish：工具执行阶段的一轮 LLM 调用（每轮可以调用若干工具）；
+ *   summary 表示轮数用完后，不带工具、根据执行记录做总结的那一次调用
+ * - tool-input：模型正在编写工具的参数（如一段代码），chars 为已写的字数；只在开始时带有 toolName
+ * - tool-call / tool-result：一次工具调用的开始与结束，用 toolCallId 对应
+ */
 export type AgentEvent =
-  | { type: 'routing' }
-  | { type: 'routed', decision: RouteDecision, skills: Skill[] }
-  | { type: 'tool-call', toolName: string, input: unknown }
-  | { type: 'tool-result', record: ToolCallRecord }
+  | { type: 'routing', stage?: 'intent' | 'image' }
+  | { type: 'routed', decision: RouteDecision }
+  | { type: 'skills-loaded', skills: Skill[] }
+  | { type: 'step-start', summary?: boolean }
+  | { type: 'step-finish', finishReason: string, outputTokens?: number }
+  | { type: 'tool-input', toolCallId: string, toolName: string, chars: number }
+  | { type: 'tool-call', toolCallId: string, toolName: string, input: unknown }
+  | { type: 'tool-result', toolCallId: string, record: ToolCallRecord }
 
 export interface AgentRunOptions extends SkillHost {
   model: LanguageModel
   /** 用于理解图片的模型，省略时使用 model */
   visionModel?: LanguageModel
+  /** 意图识别（区分闲聊与任务）使用的模型，建议用便宜快速的小模型；省略时使用 model */
+  routerModel?: LanguageModel
   /** 对话上下文（不含系统提示词），最后一条应为用户的最新消息 */
   messages: ModelMessage[]
   /** 本次可用的技能 */

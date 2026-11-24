@@ -31,7 +31,9 @@ export interface WebSearchResponse {
   answer?: string
 }
 
-const SNIPPET_LENGTH = 300
+const SNIPPET_LENGTH = 600
+// 请求失败时，错误信息中附带的响应内容的长度
+const ERROR_BODY_LENGTH = 500
 
 /** 去掉摘要中的 HTML 标签与多余空白 */
 function clean(text: unknown): string {
@@ -48,7 +50,7 @@ async function readJson(response: Response, provider: string): Promise<Record<st
   if (response.status === 429) throw new Error(`${provider} 的请求次数超出限制，请稍后再试`)
   if (!response.ok) {
     const body = await response.text().catch(() => '')
-    throw new Error(`${provider} 请求失败（${response.status}）${body ? `：${body.slice(0, 200)}` : ''}`)
+    throw new Error(`${provider} 请求失败（${response.status}）${body ? `：${body.slice(0, ERROR_BODY_LENGTH)}` : ''}`)
   }
   return response.json() as Promise<Record<string, unknown>>
 }

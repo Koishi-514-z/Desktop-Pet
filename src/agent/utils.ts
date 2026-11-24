@@ -54,7 +54,7 @@ export function truncate(text: string, maxLength: number): string {
 }
 
 /** 将任意值序列化为便于 LLM 阅读的字符串 */
-export function stringify(value: unknown, maxLength = 2000): string {
+export function stringify(value: unknown, maxLength = 4000): string {
   if (value === undefined) return '（无）'
   if (typeof value === 'string') return truncate(value, maxLength)
   try {
@@ -63,6 +63,31 @@ export function stringify(value: unknown, maxLength = 2000): string {
   catch {
     return truncate(String(value), maxLength)
   }
+}
+
+function summarizeValue(value: unknown, maxLength: number): string {
+  if (typeof value === 'string') return truncate(value.replace(/\s+/g, ' ').trim(), maxLength)
+  if (Array.isArray(value)) {
+    return value.every((item) => typeof item !== 'object' || item === null)
+      ? truncate(value.join('、'), maxLength)
+      : `${value.length} 项`
+  }
+  if (value && typeof value === 'object') return '{…}'
+  return String(value)
+}
+
+/**
+ * 工具参数的一行摘要，如「path: D:\notes.txt，overwrite: true」。
+ * valueLength 为每个值保留的长度，totalLength 为整行的长度
+ */
+export function summarizeInput(input: unknown, options: { valueLength?: number, totalLength?: number } = {}): string {
+  const { valueLength = 80, totalLength = 240 } = options
+  if (input === undefined || input === null) return ''
+  if (typeof input !== 'object' || Array.isArray(input)) return summarizeValue(input, valueLength)
+  const parts = Object.entries(input as Record<string, unknown>)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}: ${summarizeValue(value, valueLength)}`)
+  return truncate(parts.join('，'), totalLength)
 }
 
 /** 取消息的纯文本内容 */

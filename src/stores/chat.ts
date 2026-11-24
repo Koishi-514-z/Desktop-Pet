@@ -1,17 +1,22 @@
 import type { LanguageModel, ModelMessage } from 'ai'
 import type { AgentEvent, AgentResult, DirectToolCall, PermissionRequest, ToolDisplay } from '@/agent'
+import type { AgentTrace } from '@/agent/trace'
 import type { RecalledMemory, RememberedMemory } from '@/memory/types'
 import type { DueReminder } from '@/stores/reminders'
 import type { ImageRef } from '@/utils/images'
 import { useLocalStorage } from '@vueuse/core'
 import { streamText } from 'ai'
 import { defineStore } from 'pinia'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { buildAgentContextPrompt, buildEventMessage, runAgent } from '@/agent'
+import { buildToolLog } from '@/agent/compact'
+import { appendToolLog } from '@/agent/prompts'
 import { imageMarkers, MAX_IMAGES } from '@/agent/skills/image'
 import { attachQuote, MAX_TEXT_LENGTH } from '@/agent/skills/selection'
-import { formatDateTime, truncate } from '@/agent/utils'
+import { applyAgentEvent, createTrace, finishTrace, hasExecution, startReply } from '@/agent/trace'
+import { errorMessage, formatDateTime, truncate } from '@/agent/utils'
 import { EMOTION_TAG_REGEX_GLOBAL } from '@/composables/queues'
+import { useIndexedDBStorage } from '@/composables/storage'
 import { useAgentStore } from '@/stores/agent'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
@@ -40,6 +45,11 @@ export interface ChatMessage {
   skills?: string[]
   // assistant 消息：技能产出的、需要完整展示的结果卡片（如译文）
   displays?: ToolDisplay[]
+  // assistant 消息：Agent 的执行过程（意图识别、每一轮的工具调用、生成回复），普通闲聊时没有
+  trace?: AgentTrace
+  // assistant 消息：这一轮工具调用的紧凑记录（工具、关键参数与简短的结果），
+  // 追问时交给意图识别与工具执行阶段，不交给角色扮演阶段
+  toolLog?: string
   // user 消息：附带的划词内容
   quote?: string
   // user 消息：附带的图片（数据保存在 IndexedDB 中）
@@ -73,12 +83,16 @@ export interface PendingPermission {
 const PERMISSION_TIMEOUT = 2 * 60 * 1000
 
 // 较早的划词内容与结果卡片在请求中截断到的长度，节省上下文
-const HISTORY_ATTACHMENT_LENGTH = 1000
+const HISTORY_ATTACHMENT_LENGTH = 2000
+// 用第一条消息自动生成的会话标题的长度
+const SESSION_TITLE_LENGTH = 40
 
 // 转换为请求 LLM 的消息：把划词内容、图片标记与已展示的结果卡片拼接到消息正文中。
 // 最近一次划词保留全文（追问时工具会从中读取原文），更早的则截断。
-// 图片本身不发给对话模型（它不一定支持图片），由图片理解技能根据标记读取
-function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
+// 图片本身不发给对话模型（它不一定支持图片），由图片理解技能根据标记读取。
+// withToolLogs：附上每轮的工具调用记录，交给 Agent（意图识别与工具执行）。角色扮演阶段不附上，
+// 以免模型模仿这种格式，把记录写进回复里
+function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: boolean } = {}): ModelMessage[] {
   let latestQuoteIndex = -1
   messages.forEach((message, index) => {
     if (message.quote) latestQuoteIndex = index
@@ -101,7 +115,9 @@ function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
 
     const cards = (message.displays ?? [])
       .map((display) => `【已展示给用户的「${display.title}」】\n${truncate(display.content, HISTORY_ATTACHMENT_LENGTH)}`)
-    return [{ role: 'assistant', content: [message.content, ...cards].filter(Boolean).join('\n\n') }]
+    // 回复失败、只保留了执行过程的消息没有内容，部分服务商不接受空的 assistant 消息
+    const content = [message.content, ...cards].filter(Boolean).join('\n\n') || '（这次回复失败了，没有内容）'
+    return [{ role: 'assistant', content: options.withToolLogs ? appendToolLog(content, message.toolLog) : content }]
   })
 }
 
@@ -132,8 +148,11 @@ export const useChatStore = defineStore('chat', () => {
     return { id: createSessionId(), title, messages: [{ role: 'system', content: personaStore.systemPrompt }], createdAt: now, updatedAt: now }
   }
 
-  // 所有会话
-  const sessions = useLocalStorage<ChatSession[]>('chat/sessions', [])
+  // 所有会话：数据较大（消息、结果卡片、执行过程），以 JSON 字符串整体保存在 IndexedDB 中，启动后异步加载。
+  // 加载完成前新建的会话（如启动后立刻发了消息）放在保存的会话前面
+  const { data: sessions, ready: sessionsReady } = useIndexedDBStorage<ChatSession[]>('chat/sessions', [], {
+    merge: (stored, current) => [...current.filter((session) => !stored.some((s) => s.id === session.id)), ...stored],
+  })
   // 当前选中的会话 id
   const currentSessionId = useLocalStorage<string>('chat/currentSessionId', '')
 
@@ -152,8 +171,12 @@ export const useChatStore = defineStore('chat', () => {
   const onFinishHooks = ref<((text: string) => Promise<void>)[]>([])
   const onErrorHooks = ref<((error: unknown) => Promise<void>)[]>([])
 
-  // 当前选中的会话
-  const currentSession = ref<ChatSession | null>(sessions.value.find((s) => s.id === currentSessionId.value) ?? null)
+  // 当前选中的会话（会话加载完成后才能找到）
+  const currentSession = ref<ChatSession | null>(null)
+  sessionsReady.then(() => {
+    sessions.value.sort((a, b) => b.updatedAt - a.updatedAt)
+    currentSession.value = sessions.value.find((s) => s.id === currentSessionId.value) ?? null
+  })
   // 当前选中会话的消息列表
   const messages = computed(() => currentSession.value?.messages ?? [])
   // 用于界面展示的消息列表，过滤掉隐藏的系统提示词
@@ -245,7 +268,9 @@ export const useChatStore = defineStore('chat', () => {
       case 'routing':
         return ''
       case 'routed':
-        return event.skills.length ? `正在使用技能：${event.skills.map((skill) => skill.name).join('、')}` : ''
+        return event.decision.task ? '正在分析需要哪些技能' : ''
+      case 'skills-loaded':
+        return `正在使用技能：${event.skills.map((skill) => skill.name).join('、')}`
       default:
         return agentStatus.value
     }
@@ -281,6 +306,8 @@ export const useChatStore = defineStore('chat', () => {
   // 1. 意图识别 + 工具执行（仅用户发言时，由 Agent 完成）；
   // 2. 将工具执行结果附加到人设提示词之后，由 LLM 以角色口吻流式生成最终回复
   async function reply(turn: Turn) {
+    // 等会话加载完成，否则找不到当前的会话，会另外新建一个
+    await sessionsReady
     const provider = providersStore.getCurrentLLMProvider()
     if (!provider) {
       onErrorHooks.value.forEach(hook => hook(new Error('未配置可用的 LLM Provider')))
@@ -300,7 +327,7 @@ export const useChatStore = defineStore('chat', () => {
         ...(images?.length ? { images } : {}),
       })
       if (session.title === '新对话' && !session.messages.some((m) => m.role === 'assistant')) {
-        session.title = (turn.content || (images?.length ? '图片' : '新对话')).slice(0, 20)
+        session.title = (turn.content || (images?.length ? '图片' : '新对话')).slice(0, SESSION_TITLE_LENGTH)
       }
     }
     else {
@@ -314,10 +341,14 @@ export const useChatStore = defineStore('chat', () => {
     // 请求消息不包含下面新增的占位回复；系统提示词单独传入，以便附加技能执行结果
     const systemPrompt = session.messages.find((m) => m.role === 'system')?.content ?? personaStore.systemPrompt
     const dialog = toModelMessages(session.messages)
+    // 交给 Agent 的对话附上之前每轮的工具调用记录，追问时可以直接使用其中的路径等信息
+    const agentDialog = toModelMessages(session.messages, { withToolLogs: true })
 
-    // 占位的 assistant 消息，随流式响应实时更新其内容
-    session.messages.push({ role: 'assistant', content: '' })
+    // 占位的 assistant 消息，随流式响应实时更新其内容；用户发言时同时记录 Agent 的执行过程
+    session.messages.push({ role: 'assistant', content: '', ...(turn.type === 'user' ? { trace: createTrace() } : {}) })
     const assistantIndex = session.messages.length - 1
+    // 通过会话取出（响应式的）执行过程再修改，界面才会随之更新
+    const trace = () => session.messages[assistantIndex]?.trace
 
     let fullText = ''
     let isFirstChunk = true
@@ -337,13 +368,19 @@ export const useChatStore = defineStore('chat', () => {
       if (turn.type === 'user') {
         agentResult = await runAgent({
           model,
-          messages: dialog,
+          messages: agentDialog,
           // 相关记忆也提供给工具执行阶段，便于推断用户没有明说的参数（如所在城市）
           background: recallPromise.then((recalled) => recalled?.facts ?? ''),
           visionModel: agentStore.resolveVisionModel(),
+          // 意图识别只区分闲聊与任务，用便宜快速的小模型
+          routerModel: agentStore.resolveRouterModel(),
           skills: agentStore.activeSkills,
           directCall: turn.directCall,
-          onEvent: (event) => { agentStatus.value = describeAgentEvent(event) },
+          onEvent: (event) => {
+            agentStatus.value = describeAgentEvent(event)
+            const current = trace()
+            if (current) applyAgentEvent(current, event)
+          },
           requestPermission,
           setStatus: (status) => { agentStatus.value = status },
           // 工具产生的图片（如截图）附加到这轮的用户消息上，后续追问时图片理解技能可以继续使用
@@ -356,6 +393,8 @@ export const useChatStore = defineStore('chat', () => {
           const message = session.messages[assistantIndex]!
           message.skills = agentResult.skills.map((skill) => skill.id)
           if (agentResult.displays.length) message.displays = agentResult.displays
+          const toolLog = buildToolLog(agentResult)
+          if (toolLog) message.toolLog = toolLog
         }
       }
 
@@ -368,13 +407,20 @@ export const useChatStore = defineStore('chat', () => {
       const system = [systemPrompt, recalled?.prompt, agentResult && buildAgentContextPrompt(agentResult)]
         .filter(Boolean)
         .join('\n\n')
+      const currentTrace = trace()
+      if (currentTrace) startReply(currentTrace, Date.now(), agentResult?.error)
       const result = streamText({
         model,
         system,
         messages: dialog,
       })
 
-      for await (const delta of result.textStream) {
+      // 用 fullStream 而不是 textStream：textStream 会丢弃流中的错误（如超出上下文长度、限流），
+      // 导致请求失败时只得到一条空回复，界面上也没有任何提示
+      for await (const part of result.fullStream) {
+        if (part.type === 'error') throw part.error
+        if (part.type !== 'text-delta') continue
+        const delta = part.text
         if (isFirstChunk) {
           isFirstChunk = false
           agentStatus.value = ''
@@ -387,6 +433,9 @@ export const useChatStore = defineStore('chat', () => {
         session.updatedAt = Date.now()
         onChunkHooks.value.forEach(hook => hook(delta))
       }
+      // 没有出错也没有任何文字（如推理模型把输出额度都用在了思考上）时同样视为失败
+      if (!fullText.trim()) throw new Error('模型没有返回任何内容，可能是输出长度不够或被服务商拦截了，可以重试或换一个模型')
+      settleTrace(session.messages[assistantIndex])
 
       onFinishHooks.value.forEach(hook => hook(fullText))
 
@@ -399,8 +448,11 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
     catch (error) {
-      // 未产生任何内容（文字与结果卡片）时移除空的占位回复
-      if (!fullText && !session.messages[assistantIndex]?.displays) {
+      const message = session.messages[assistantIndex]
+      settleTrace(message, errorMessage(error))
+      // 未产生任何内容（文字、结果卡片与执行过程）时移除空的占位回复；
+      // 执行过工具时保留，便于查看是哪一步出了问题
+      if (!fullText && !message?.displays && !message?.trace) {
         session.messages.splice(assistantIndex, 1)
       }
       onErrorHooks.value.forEach(hook => hook(error))
@@ -410,6 +462,13 @@ export const useChatStore = defineStore('chat', () => {
       agentStatus.value = ''
       isStreaming.value = false
     }
+  }
+
+  // 一轮回复结束时结束执行过程；普通闲聊只有意图识别与生成回复，不保留
+  function settleTrace(message: ChatMessage | undefined, error?: string) {
+    if (!message?.trace) return
+    finishTrace(message.trace, Date.now(), error)
+    if (!hasExecution(message.trace)) delete message.trace
   }
 
   // 整理这一轮对话的记忆，完成后在回复下方显示记住了哪些事
@@ -478,9 +537,6 @@ export const useChatStore = defineStore('chat', () => {
     onErrorHooks.value.push(hook)
   }
 
-  onMounted(() => {
-    sessions.value.sort((a, b) => b.updatedAt - a.updatedAt)
-  })
 
   watch(currentSessionId, (newId) => {
     currentSession.value = sessions.value.find((s) => s.id === newId) ?? null

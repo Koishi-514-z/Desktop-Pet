@@ -33,11 +33,11 @@ const OUTPUT_HEAD_BYTES: usize = 32 * 1024;
 const OUTPUT_TAIL_BYTES: usize = 32 * 1024;
 /// 预览脚本内容时最多读取的字节数、显示的行数与字数
 const PREVIEW_READ_BYTES: u64 = 256 * 1024;
-const PREVIEW_LINES: usize = 80;
-const PREVIEW_CHARS: usize = 6000;
+const PREVIEW_LINES: usize = 160;
+const PREVIEW_CHARS: usize = 12_000;
 /// 参数的数量与长度上限
 const MAX_ARGS: usize = 30;
-const MAX_ARG_CHARS: usize = 2000;
+const MAX_ARG_CHARS: usize = 4000;
 
 /// 正在运行的脚本：运行 id → 取消标记
 static RUNNING: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -319,9 +319,10 @@ pub fn inspect(roots: &Roots, request: &RunRequest) -> Result<ScriptInfo, String
 
 // ===== 直接运行一段代码 =====
 
-/// 直接运行的代码的最大字数：授权卡片中要展示全部代码，不能太长
-const MAX_CODE_CHARS: usize = 20_000;
-/// Windows 命令行的长度上限约为 32767 个字符，PowerShell 代码编码后作为参数传入
+/// 直接运行的代码的最大字数：授权卡片中要展示全部代码，不能太长（前端工具参数的上限与此一致）
+pub(super) const MAX_CODE_CHARS: usize = 40_000;
+/// Windows 命令行的长度上限约为 32767 个字符，PowerShell 代码编码后作为参数传入。
+/// 这是系统的限制，不能放宽：更长的 PowerShell 代码需要写成 .ps1 文件后运行
 const MAX_ENCODED_COMMAND_CHARS: usize = 30_000;
 
 #[derive(Debug, Deserialize)]

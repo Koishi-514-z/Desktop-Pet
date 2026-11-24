@@ -11,6 +11,8 @@ import { decideMerges } from '@/memory/merge'
 const SIMILAR_LIMIT = 5
 // 交给记忆整理模块的最近消息数量
 const DIALOG_SIZE = 8
+// 划词内容在交给记忆整理模块的对话中保留的开头长度
+const QUOTE_LENGTH = 160
 
 /** 生成向量；未配置向量模型时返回 null */
 export type Embedder = (texts: string[]) => Promise<{ embeddings: number[][], model: string } | null>
@@ -50,7 +52,7 @@ export function toMemoryDialog(messages: ChatLikeMessage[]): MemoryDialogMessage
       if (message.role === 'assistant') return message.content.trim() ? [{ role: 'assistant', content: message.content }] : []
 
       const notes = [
-        message.quote ? `（引用了一段文字：${truncate(message.quote, 80)}）` : '',
+        message.quote ? `（引用了一段文字：${truncate(message.quote, QUOTE_LENGTH)}）` : '',
         message.images?.length ? `（附带 ${message.images.length} 张图片）` : '',
       ].filter(Boolean)
       const content = [message.content, ...notes].filter(Boolean).join(' ')

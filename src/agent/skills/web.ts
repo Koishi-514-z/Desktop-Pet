@@ -9,7 +9,7 @@ import { webSearch } from '@/web/search'
 export const WEB_SKILL_ID = 'web'
 
 // 读取网页时保留的最大字数
-const PAGE_MAX_CHARS = 8000
+const PAGE_MAX_CHARS = 16_000
 
 export const webSkill: Skill = {
   id: WEB_SKILL_ID,

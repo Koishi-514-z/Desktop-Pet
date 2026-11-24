@@ -13,11 +13,11 @@ export const SCRIPTS_SKILL_ID = 'scripts'
 export const SCRIPT_RUN_PERMISSION = 'script-run'
 
 // 返回给 LLM 的输出：保留开头与结尾
-const OUTPUT_HEAD_CHARS = 1500
-const OUTPUT_TAIL_CHARS = 4500
-const ERROR_TAIL_CHARS = 3000
+const OUTPUT_HEAD_CHARS = 3000
+const OUTPUT_TAIL_CHARS = 9000
+const ERROR_TAIL_CHARS = 6000
 // 结果卡片中显示的输出
-const DISPLAY_TAIL_CHARS = 4000
+const DISPLAY_TAIL_CHARS = 8000
 
 /** 截取长文本：保留开头 head 个字与结尾 tail 个字 */
 export function clip(text: string, head: number, tail: number): string {
@@ -190,7 +190,7 @@ ${runtimes}
       description: '直接运行一段代码并返回输出，代码不会保存到用户的文件夹（每次都需要用户同意）',
       inputSchema: z.object({
         language: z.enum(LANGUAGES).describe('python、javascript（Node.js）、powershell、batch（Windows 批处理）、shell（Bash）'),
-        code: z.string().min(1).max(20_000).describe('完整的代码'),
+        code: z.string().min(1).max(40_000).describe('完整的代码'),
         args: z.array(z.string()).max(30).optional().describe('传给代码的参数，每个元素是一个参数'),
         workingDir: z.string().optional().describe('工作目录（必须在授权的文件夹中），省略时为第一个授权文件夹'),
         timeoutSeconds: z.number().int().min(1).max(600).optional().describe('最长运行时间（秒），默认 60'),

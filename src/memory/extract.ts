@@ -6,8 +6,11 @@ import { formatDateTime, parseJsonObject, truncate } from '@/agent/utils'
 
 // 一轮对话最多提取的记忆数量
 const MAX_MEMORIES = 8
-// 单条记忆的最大长度
-const MAX_CONTENT_LENGTH = 120
+// 单条记忆的最大长度（提示中要求不超过 120 字，留出余量）
+const MAX_CONTENT_LENGTH = 240
+// 交给记忆整理模块的上文与最新一轮对话中每条消息的长度
+const CONTEXT_MESSAGE_LENGTH = 400
+const TURN_MESSAGE_LENGTH = 2000
 // 提取时参考的上文消息数量
 const CONTEXT_SIZE = 6
 // 用户的最新消息短于该长度时（如「嗯」「好的」）不提取
@@ -98,7 +101,7 @@ ${formatDateTime(now)}
 - 不要记录：常识和知识问答的内容；没有长期价值的闲聊；只在当下有意义的状态（如「用户说好的」「用户笑了」）；${assistantName}自己说的话（用户认可的约定除外）；用户让${assistantName}翻译、解释、总结的文字内容；查询到的结果（如天气）。
 - 用户的玩笑、假设、反问不要当成事实；拿不准的信息不要记录。
 - 用户要求忘掉的事情，以及「要求忘掉某事」这个请求本身，都不要记录。
-- 每条记忆只写一件事，用简洁的中文第三人称陈述，以「用户」开头，不超过 60 字，脱离对话也能看懂（写清楚指代的对象）。
+- 每条记忆只写一件事，用简洁的中文第三人称陈述，以「用户」开头，不超过 120 字，脱离对话也能看懂（写清楚指代的对象）。
 - 相对时间要换算成具体日期：情景记忆与计划约定在 occurredAt 中给出事件发生或计划进行的时间，格式为 YYYY-MM-DD，知道具体时刻时为 YYYY-MM-DD HH:mm；正文中不必重复日期。
 - importance 表示重要程度（0 ~ 1）：
   - 0.9 ~ 1：核心身份信息，如姓名、希望被怎样称呼、生日、重大的人生经历
@@ -120,10 +123,10 @@ export function buildExtractionPrompt(dialog: MemoryDialogMessage[], assistantNa
     `${message.role === 'user' ? '用户' : assistantName}：${truncate(message.content, length)}`
 
   return `# 之前的对话（仅供理解上下文）
-${parts.context.length ? parts.context.map((message) => format(message, 200)).join('\n') : '（无）'}
+${parts.context.length ? parts.context.map((message) => format(message, CONTEXT_MESSAGE_LENGTH)).join('\n') : '（无）'}
 
 # 最新一轮对话（从这里提取）
-${parts.turn.map((message) => format(message, 1000)).join('\n')}`
+${parts.turn.map((message) => format(message, TURN_MESSAGE_LENGTH)).join('\n')}`
 }
 
 /** 第一阶段：从最新一轮对话中提取值得记住的信息 */

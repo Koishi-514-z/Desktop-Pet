@@ -11,7 +11,7 @@ export const SELECTION_SKILL_ID = 'selection'
 export const QUOTE_MARKER = '【划词内容】'
 
 // 单次处理的最大字符数，超出部分会被截断
-export const MAX_TEXT_LENGTH = 8000
+export const MAX_TEXT_LENGTH = 16_000
 
 /** 将划词内容附加到用户消息后面，供 LLM 阅读 */
 export function attachQuote(content: string, quote: string): string {
@@ -120,7 +120,7 @@ export const selectionSkill: Skill = {
       }),
       execute: async (input, options) => runTextTask(options, input, {
         title: '解释',
-        system: `用简体中文向用户解释这段文本：它在说什么，关键概念、术语或典故是什么意思，有哪些需要了解的背景。通俗易懂，控制在 400 字以内。${input.question ? `\n用户特别想知道：${input.question}，请重点回答。` : ''}\n${PLAIN_TEXT}`,
+        system: `用简体中文向用户解释这段文本：它在说什么，关键概念、术语或典故是什么意思，有哪些需要了解的背景。通俗易懂，控制在 800 字以内。${input.question ? `\n用户特别想知道：${input.question}，请重点回答。` : ''}\n${PLAIN_TEXT}`,
       }),
     }),
 

@@ -2,8 +2,10 @@
 import { useLocalStorage } from '@vueuse/core'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MAX_IMAGES } from '@/agent/skills/image'
+import { hasExecution } from '@/agent/trace'
 import { isTauri } from '@/composables/desktop'
 import type { ChatMessage } from '@/stores/chat'
+import AgentTrace from '@/components/AgentTrace.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 import { categoryLabel } from '@/memory/types'
 import { useAgentStore } from '@/stores/agent'
@@ -97,6 +99,11 @@ onBeforeUnmount(() => {
 
 // 当前会话的最后一条消息内容，流式响应时会持续变化，用于触发自动滚动
 const lastMessageContent = computed(() => chatStore.visibleMessages.at(-1)?.content)
+// 执行过程新增步骤或工具调用时也滚动到底部
+const lastTraceSize = computed(() => {
+  const nodes = chatStore.visibleMessages.at(-1)?.trace?.nodes ?? []
+  return nodes.reduce((size, node) => size + 1 + (node.kind === 'step' ? node.tools.length : 0), 0)
+})
 
 function scrollToBottom() {
   const el = messagesContainer.value
@@ -105,7 +112,7 @@ function scrollToBottom() {
 }
 
 watch(
-  [() => chatStore.visibleMessages.length, lastMessageContent, () => chatStore.agentStatus, () => chatStore.pendingPermission],
+  [() => chatStore.visibleMessages.length, lastMessageContent, lastTraceSize, () => chatStore.agentStatus, () => chatStore.pendingPermission],
   () => nextTick(scrollToBottom),
 )
 watch(() => chatStore.currentSessionId, () => nextTick(scrollToBottom))
@@ -457,6 +464,11 @@ onMounted(() => {
                     <img v-if="imageSrc(image.id)" :src="imageSrc(image.id)" alt="图片" />
                   </button>
                 </div>
+                <AgentTrace
+                  v-if="message.trace && hasExecution(message.trace)"
+                  :trace="message.trace"
+                  :live="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1"
+                />
                 <div v-if="message.content || (chatStore.isStreaming && index === chatStore.visibleMessages.length - 1)" class="bubble">
                   <span v-if="message.content">{{ message.content }}</span>
                   <span v-else-if="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1" class="typing">

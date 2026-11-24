@@ -4,16 +4,18 @@ import { formatDate, messageText, truncate } from '@/agent/utils'
 import { MEMORY_CATEGORIES } from '@/memory/types'
 
 // 查询中保留的最新用户消息与上文的长度
-const LATEST_LENGTH = 400
-const CONTEXT_LENGTH = 150
+const LATEST_LENGTH = 800
+const CONTEXT_LENGTH = 300
+// 查询中保留的划词内容的开头长度
+const QUOTE_LENGTH = 400
 // 写入 Prompt 的记忆总字数上限，超出时舍弃排名靠后的记忆（核心档案除外）
-const PROMPT_BUDGET = 1500
+const PROMPT_BUDGET = 3000
 
 /** 去掉消息中的图片标记，划词内容只保留开头 */
 function cleanText(text: string): string {
   return text
     .replace(/【附图：[\w-]+】/g, '')
-    .replace(/【划词内容】\n([\s\S]*)$/, (_, quote: string) => `（引用：${truncate(quote.trim(), 200)}）`)
+    .replace(/【划词内容】\n([\s\S]*)$/, (_, quote: string) => `（引用：${truncate(quote.trim(), QUOTE_LENGTH)}）`)
     .trim()
 }
 

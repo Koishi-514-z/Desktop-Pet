@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { Ref } from 'vue'
+import type { ModelChoice } from '@/stores/agent'
 import type { CaptureKind } from '@/stores/capture'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref, toRef } from 'vue'
 import { SCREEN_CAPTURE_PERMISSION } from '@/agent/skills/screen'
 import { isTauri } from '@/composables/desktop'
 import { useAgentStore } from '@/stores/agent'
@@ -77,35 +79,41 @@ function onRecordKeydown(kind: CaptureKind, event: KeyboardEvent) {
   stopRecording(event)
 }
 
-// ===== 图片理解使用的模型 =====
+// ===== 单独指定的模型：意图识别、图片理解 =====
 
 const llmProviders = computed(() => providersStore.getLLMProviders())
 
-const visionProviderId = computed({
-  get: () => agentStore.visionModel?.providerId ?? '',
-  set: (id: string) => {
-    const provider = id ? providersStore.getProviderById(id) : undefined
-    agentStore.visionModel = provider ? { providerId: provider.id, modelId: provider.selectedModelId } : null
-  },
-})
+/** 选择某个 provider 的某个模型（为 null 时跟随对话模型），返回供表单绑定的字段 */
+function useModelChoice(choice: Ref<ModelChoice | null>) {
+  const providerId = computed({
+    get: () => choice.value?.providerId ?? '',
+    set: (id: string) => {
+      const provider = id ? providersStore.getProviderById(id) : undefined
+      choice.value = provider ? { providerId: provider.id, modelId: provider.selectedModelId } : null
+    },
+  })
+  const modelId = computed({
+    get: () => choice.value?.modelId ?? '',
+    set: (id: string) => {
+      if (choice.value) choice.value = { ...choice.value, modelId: id.trim() }
+    },
+  })
+  // 所选 provider 的模型列表，用于输入时提示
+  const models = computed(() => providersStore.getProviderById(providerId.value)?.models ?? [])
+  // 已配置的模型对应的 provider 被删除时提示
+  const providerMissing = computed(() => !!choice.value && !providersStore.getProviderById(choice.value.providerId))
+  // reactive 会自动解开其中的 ref，模板中可以直接 v-model
+  return reactive({ selected: computed(() => !!choice.value), providerId, modelId, models, providerMissing })
+}
 
-const visionModelId = computed({
-  get: () => agentStore.visionModel?.modelId ?? '',
-  set: (modelId: string) => {
-    if (agentStore.visionModel) agentStore.visionModel = { ...agentStore.visionModel, modelId: modelId.trim() }
-  },
-})
+const routerChoice = useModelChoice(toRef(agentStore, 'routerModel'))
+const visionChoice = useModelChoice(toRef(agentStore, 'visionModel'))
 
 // 查看屏幕前是否每次询问（用户在授权卡片上选择「始终允许」后为 false）
 const askBeforeScreenCapture = computed({
   get: () => !agentStore.isAlwaysAllowed(SCREEN_CAPTURE_PERMISSION),
   set: (ask: boolean) => agentStore.setAlwaysAllowed(SCREEN_CAPTURE_PERMISSION, !ask),
 })
-
-const visionModels = computed(() => providersStore.getProviderById(visionProviderId.value)?.models ?? [])
-
-// 已配置的模型对应的 provider 被删除时提示
-const visionProviderMissing = computed(() => !!agentStore.visionModel && !providersStore.getProviderById(agentStore.visionModel.providerId))
 </script>
 
 <template>
@@ -123,13 +131,33 @@ const visionProviderMissing = computed(() => !!agentStore.visionModel && !provid
       <label class="toggle-setting">
         <span class="setting-label">
           <span>启用技能</span>
-          <span class="setting-desc">每条消息会先识别意图，需要时调用技能完成请求，再以角色口吻回复。关闭后直接闲聊，回复更快</span>
+          <span class="setting-desc">每条消息会先判断是闲聊还是任务，是任务时调用技能完成请求，再以角色口吻回复。关闭后直接闲聊，回复更快</span>
         </span>
         <span class="switch">
           <input v-model="agentStore.enabled" type="checkbox" />
           <span class="switch-track" />
         </span>
       </label>
+
+      <div class="setting" :class="{ disabled: !agentStore.enabled }">
+        <div class="setting-label">
+          <span>意图识别模型</span>
+          <span class="setting-desc">每条消息都会先用它判断是闲聊还是任务，只输出一个很短的结果，建议选择便宜快速的小模型（如各家的 mini、flash、turbo 版本）。需要哪些技能由对话模型在执行时决定</span>
+        </div>
+        <div class="model-row">
+          <select v-model="routerChoice.providerId" class="field" :disabled="!agentStore.enabled">
+            <option value="">跟随对话模型</option>
+            <option v-for="provider in llmProviders" :key="provider.id" :value="provider.id">{{ provider.name }}</option>
+          </select>
+          <template v-if="routerChoice.selected && !routerChoice.providerMissing">
+            <input v-model.lazy="routerChoice.modelId" class="field" list="router-models" placeholder="模型 ID" :disabled="!agentStore.enabled" />
+            <datalist id="router-models">
+              <option v-for="model in routerChoice.models" :key="model.id" :value="model.id">{{ model.name }}</option>
+            </datalist>
+          </template>
+        </div>
+        <span v-if="routerChoice.providerMissing" class="setting-desc warn">之前选择的 Provider 已被删除，当前使用对话模型</span>
+      </div>
     </section>
 
     <section class="tile" :class="{ disabled: !agentStore.enabled }">
@@ -227,18 +255,18 @@ const visionProviderMissing = computed(() => !!agentStore.visionModel && !provid
           <span class="setting-desc">理解图片需要支持视觉输入的模型（如 GPT-4o、Claude、Gemini）。对话模型不支持图片时（如 DeepSeek），在这里单独指定一个</span>
         </div>
         <div class="model-row">
-          <select v-model="visionProviderId" class="field">
+          <select v-model="visionChoice.providerId" class="field">
             <option value="">跟随对话模型</option>
             <option v-for="provider in llmProviders" :key="provider.id" :value="provider.id">{{ provider.name }}</option>
           </select>
-          <template v-if="agentStore.visionModel && !visionProviderMissing">
-            <input v-model.lazy="visionModelId" class="field" list="vision-models" placeholder="模型 ID" />
+          <template v-if="visionChoice.selected && !visionChoice.providerMissing">
+            <input v-model.lazy="visionChoice.modelId" class="field" list="vision-models" placeholder="模型 ID" />
             <datalist id="vision-models">
-              <option v-for="model in visionModels" :key="model.id" :value="model.id">{{ model.name }}</option>
+              <option v-for="model in visionChoice.models" :key="model.id" :value="model.id">{{ model.name }}</option>
             </datalist>
           </template>
         </div>
-        <span v-if="visionProviderMissing" class="setting-desc warn">之前选择的 Provider 已被删除，当前使用对话模型</span>
+        <span v-if="visionChoice.providerMissing" class="setting-desc warn">之前选择的 Provider 已被删除，当前使用对话模型</span>
       </div>
     </section>
 

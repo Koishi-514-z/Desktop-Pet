@@ -21,6 +21,8 @@ export const useAgentStore = defineStore('agent', () => {
   const disabledSkillIds = useLocalStorage<string[]>('settings/agent/disabledSkillIds', [])
   // 图片理解使用的模型；为 null 时与对话使用同一个模型
   const visionModel = useLocalStorage<ModelChoice | null>('settings/agent/visionModel', null, { serializer: StorageSerializers.object })
+  // 意图识别（区分闲聊与任务）使用的模型，只需要输出很短的判断结果，适合便宜快速的小模型；为 null 时与对话使用同一个模型
+  const routerModel = useLocalStorage<ModelChoice | null>('settings/agent/routerModel', null, { serializer: StorageSerializers.object })
   // 用户选择了「始终允许」的权限类型（如 screen-capture），这些请求不再询问
   const alwaysAllowedPermissions = useLocalStorage<string[]>('settings/agent/alwaysAllowedPermissions', [])
 
@@ -53,19 +55,29 @@ export const useAgentStore = defineStore('agent', () => {
     alwaysAllowedPermissions.value = value ? [...rest, kind] : rest
   }
 
-  // 解析图片理解使用的模型，未配置或配置失效时返回 undefined（即使用对话模型）
-  function resolveVisionModel(): LanguageModel | undefined {
-    const choice = visionModel.value
+  // 解析单独指定的模型，未配置或配置失效时返回 undefined（即使用对话模型）
+  function resolveModelChoice(choice: ModelChoice | null): LanguageModel | undefined {
     if (!choice) return undefined
     const provider = useProvidersStore().getProviderById(choice.providerId)
     if (!provider || provider.category !== 'llm') return undefined
     return resolveLanguageModel(provider, choice.modelId || provider.selectedModelId)
   }
 
+  // 图片理解使用的模型
+  function resolveVisionModel(): LanguageModel | undefined {
+    return resolveModelChoice(visionModel.value)
+  }
+
+  // 意图识别使用的模型
+  function resolveRouterModel(): LanguageModel | undefined {
+    return resolveModelChoice(routerModel.value)
+  }
+
   return {
     enabled,
     disabledSkillIds,
     visionModel,
+    routerModel,
     alwaysAllowedPermissions,
     skills,
     activeSkills,
@@ -73,6 +85,7 @@ export const useAgentStore = defineStore('agent', () => {
     setSkillEnabled,
     getSkillById,
     resolveVisionModel,
+    resolveRouterModel,
     isAlwaysAllowed,
     setAlwaysAllowed,
   }

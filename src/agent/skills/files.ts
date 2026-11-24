@@ -18,6 +18,22 @@ const MAX_MOVES = 500
 // 授权卡片中最多列出的文件数量
 const PREVIEW_LIMIT = 4
 
+// 阅读文件时默认读取的字数；长文件可以用 offset 分段读取
+const READ_DEFAULT_CHARS = 24_000
+const READ_MIN_CHARS = 500
+const READ_MAX_CHARS = 50_000
+
+// 目录结构：默认与最多展开的层数、每个文件夹最多列出的项数、最多输出的行数
+const TREE_DEFAULT_DEPTH = 3
+const TREE_MAX_DEPTH = 6
+const TREE_FOLDER_LIMIT = 100
+const TREE_MAX_LINES = 800
+// 目录结构中列出但不展开的文件夹（依赖、构建产物、缓存等），小写
+const TREE_SKIP_DIRS = new Set([
+  'node_modules', 'bower_components', 'vendor', '__pycache__', 'venv', 'target', 'dist', 'build', 'out',
+  'coverage', 'obj', '$recycle.bin', 'system volume information', 'appdata',
+])
+
 const DAY = 24 * 60 * 60 * 1000
 
 const ORGANIZE_LABELS: Record<OrganizeBy, string> = {
@@ -58,6 +74,67 @@ export function summarizeMoves(moves: FileMove[]): string {
       return `→ ${fileName(folder)}/：${shown}${more}`
     })
     .join('\n')
+}
+
+/**
+ * 生成多层的目录结构文本，如：
+ * ```
+ * desktop-pet/
+ *   src/
+ *     main.ts（1.2 KB）
+ *   node_modules/（依赖或生成的文件，未展开）
+ * ```
+ * 依赖与构建产物的文件夹只列出不展开；到达层数上限的文件夹标出其中的项数
+ */
+export async function buildFolderTree(roots: string[], folder: string, depth: number) {
+  const lines = [`${fileName(folder)}/`]
+  let folders = 0
+  let fileCount = 0
+  let truncated = false
+
+  async function walk(path: string, level: number) {
+    const indent = '  '.repeat(level)
+    const { entries, total } = await files.listFolder(roots, path, TREE_FOLDER_LIMIT)
+    for (const entry of entries) {
+      if (lines.length >= TREE_MAX_LINES) {
+        truncated = true
+        return
+      }
+      if (!entry.isDir) {
+        fileCount++
+        lines.push(`${indent}${entry.name}（${files.formatSize(entry.size)}）`)
+        continue
+      }
+      folders++
+      if (TREE_SKIP_DIRS.has(entry.name.toLowerCase())) {
+        lines.push(`${indent}${entry.name}/（依赖或生成的文件，未展开）`)
+      }
+      else if (level >= depth) {
+        // 到达层数上限：只标出其中有多少项，需要时可以对它单独查看
+        const count = await files.listFolder(roots, entry.path, 0).then((result) => `${result.total} 项`, () => '无法读取')
+        lines.push(`${indent}${entry.name}/（${count}，未展开）`)
+      }
+      else {
+        lines.push(`${indent}${entry.name}/`)
+        await walk(entry.path, level + 1).catch((error) => {
+          lines.push(`${indent}  （无法读取：${error instanceof Error ? error.message : String(error)}）`)
+        })
+      }
+    }
+    if (total > entries.length) {
+      truncated = true
+      lines.push(`${indent}…还有 ${total - entries.length} 项没有列出`)
+    }
+  }
+
+  await walk(folder, 1)
+  return {
+    path: folder,
+    tree: lines.join('\n'),
+    folders,
+    files: fileCount,
+    ...(truncated ? { note: '内容太多，部分条目没有列出。可以对子文件夹单独查看，或用 list_folder 查看完整的列表' } : {}),
+  }
 }
 
 /** 请求用户确认后执行移动，并记录下来以便撤销 */
@@ -145,6 +222,8 @@ export const filesSkill: Skill = {
 ${roots}
 - 路径使用完整路径，也可以用授权文件夹的名称开头，如「下载/发票」。用户说「桌面」「下载」等时对应上面的文件夹。
 - 查找文件用 search_files（可按文件名关键词、类型、修改时间、文本内容查找，结果按修改时间从新到旧）；查看文件夹用 list_folder；阅读文件内容用 read_file（支持文本、代码、Word、PowerPoint、PDF、Excel；扫描件 PDF 没有文字，读不出内容；旧版 .doc / .ppt 不支持）。Excel 读出来是表格：第一行是列字母，每行开头是行号，可以据此定位单元格（如 B3）。
+- 想了解一个文件夹或项目的整体情况时，先用 folder_tree 查看多层的目录结构（会跳过 node_modules 等依赖文件夹），再挑关键的文件阅读（如 README、package.json、入口文件），不要逐个阅读所有文件。
+- read_file 一次默认读取前 ${READ_DEFAULT_CHARS} 字。长文件没读完时结果中会说明，需要后面的内容时用 offset 接着读取；只想了解大概时可以把 maxChars 设小一些（如 5000）。
 - 整理文件夹用 organize_folder（只整理文件夹里直接包含的文件，按类型、月份或扩展名分到子文件夹）；移动或重命名用 move_files；新建文件夹用 create_folder。
 - 新建文件用 write_file：可以写纯文本类文件（txt、md、csv、json、yaml、html、代码等），也可以写脚本（.py、.js、.ps1、.bat、.cmd、.sh），会自动使用解释器需要的编码与换行；写好后可以用「运行脚本」技能运行（运行前另需用户同意）。不能写入隐藏的文件或文件夹。
 - 修改已有文件用 edit_file，修改前先用 read_file 读取原文：用 edits 替换文字，oldText 要从原文中逐字复制（包括空格、缩进与标点），并且只出现一次，不够唯一时带上更多上下文；在末尾添加内容用 append。修改会保持文件原来的编码与换行符。
@@ -198,21 +277,48 @@ ${roots}
       },
     }),
 
+    folder_tree: tool({
+      description: '查看文件夹的多层目录结构（依赖、构建产物等文件夹只列出不展开），适合了解一个项目或文件夹的整体情况',
+      inputSchema: z.object({
+        path: z.string().min(1).describe('文件夹的完整路径，或授权文件夹的名称（如「文档」）'),
+        depth: z.number().int().min(1).max(TREE_MAX_DEPTH).optional().describe(`展开的层数，默认 ${TREE_DEFAULT_DEPTH}`),
+      }),
+      execute: async ({ path, depth = TREE_DEFAULT_DEPTH }) => {
+        const store = useToolsStore()
+        return buildFolderTree(store.rootPaths, store.resolvePath(path), depth)
+      },
+    }),
+
     read_file: tool({
-      description: '阅读文件的文字内容（文本、代码、Word、PowerPoint、PDF、Excel）',
+      description: '阅读文件的文字内容（文本、代码、Word、PowerPoint、PDF、Excel）。长文件可以用 offset 分段读取',
       inputSchema: z.object({
         path: z.string().min(1).describe('文件的完整路径'),
+        offset: z.number().int().min(0).optional().describe('从第几个字开始读取（从 0 开始），用于接着读取长文件后面的内容'),
+        maxChars: z.number().int().min(READ_MIN_CHARS).max(READ_MAX_CHARS).optional()
+          .describe(`最多读取多少字，默认 ${READ_DEFAULT_CHARS}；只想了解大概时可以设小一些`),
       }),
-      execute: async ({ path }) => {
+      execute: async ({ path, offset = 0, maxChars = READ_DEFAULT_CHARS }) => {
         const store = useToolsStore()
-        const file = await files.readFile(store.rootPaths, store.resolvePath(path), 12_000)
-        return {
-          name: file.name,
-          path: file.path,
-          size: files.formatSize(file.size),
-          content: file.content,
-          ...(file.truncated ? { note: `文件较长，只读取了前 ${file.content.length} 字（共 ${file.totalChars} 字）` } : {}),
+        // 读出前 offset + maxChars 字再截取，与 Rust 端一样按字符（而不是 UTF-16 编码单元）计数
+        const file = await files.readFile(store.rootPaths, store.resolvePath(path), offset + maxChars)
+        const chars = Array.from(file.content)
+        const base = { name: file.name, path: file.path, size: files.formatSize(file.size) }
+        if (offset > 0 && offset >= file.totalChars) {
+          return { ...base, content: '', note: `文件一共只有 ${file.totalChars} 字，offset 超出了范围` }
         }
+        const content = chars.slice(offset).join('')
+        // 读到的最后一个字的位置（不含）
+        const end = Math.max(offset, chars.length)
+        let note = ''
+        if (end < file.totalChars) {
+          note = offset > 0
+            ? `这是第 ${offset + 1}～${end} 字（共 ${file.totalChars} 字），后面还有内容，可以用 offset: ${end} 接着读取`
+            : `文件较长，只读取了前 ${end} 字（共 ${file.totalChars} 字），可以用 offset: ${end} 接着读取`
+        }
+        else if (offset > 0) {
+          note = `这是第 ${offset + 1}～${end} 字，已经读到文件末尾（共 ${file.totalChars} 字）`
+        }
+        return { ...base, content, ...(note ? { note } : {}) }
       },
     }),
 

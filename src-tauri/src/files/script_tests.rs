@@ -3,7 +3,7 @@
 use std::{fs, path::PathBuf, thread, time::Duration};
 
 use super::roots::Roots;
-use super::script::{cancel, clixml_to_text, decode_output, inspect, inspect_code, run, run_code, runtimes, CodeRequest, RunRequest};
+use super::script::{cancel, clixml_to_text, decode_output, inspect, inspect_code, run, run_code, runtimes, CodeRequest, RunRequest, MAX_CODE_CHARS};
 
 struct TempDir(PathBuf);
 
@@ -176,7 +176,8 @@ fn checks_code_before_running() {
   let error = |request: CodeRequest| inspect_code(&roots, &request).unwrap_err();
   assert!(error(code("c1", "ruby", "puts 1", &[])).contains("不支持的语言"));
   assert!(error(code("c1", "python", "  \n", &[])).contains("不能为空"));
-  assert!(error(code("c1", "python", &"x".repeat(20_001), &[])).contains("代码太长"));
+  assert!(inspect_code(&roots, &code("c1", "python", &"x".repeat(MAX_CODE_CHARS), &[])).is_ok());
+  assert!(error(code("c1", "python", &"x".repeat(MAX_CODE_CHARS + 1), &[])).contains("代码太长"));
   let outside = CodeRequest { working_dir: Some(dir.0.display().to_string()), ..code("c1", "python", "print(1)", &[]) };
   assert!(error(outside).contains("不在授权"));
 }

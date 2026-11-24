@@ -28,11 +28,11 @@ const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 /// 备份的总大小上限（至少保留最新的一份）
 const MAX_BACKUP_TOTAL_BYTES: u64 = 500 * 1024 * 1024;
 /// 预览中每段改动最多显示的行数
-const PREVIEW_LINES: usize = 12;
+const PREVIEW_LINES: usize = 24;
 /// 预览中每行最多显示的字数
-const PREVIEW_LINE_CHARS: usize = 160;
+const PREVIEW_LINE_CHARS: usize = 320;
 /// 预览的最大字数
-const PREVIEW_MAX_CHARS: usize = 4000;
+const PREVIEW_MAX_CHARS: usize = 8000;
 /// 最多保留的备份数量
 const MAX_BACKUPS: usize = 50;
 

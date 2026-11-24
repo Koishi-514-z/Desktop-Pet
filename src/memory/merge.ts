@@ -6,8 +6,8 @@ import { z } from 'zod'
 import { formatDate, formatDateTime, parseJsonObject } from '@/agent/utils'
 import { categoryLabel } from '@/memory/types'
 
-// 合并后单条记忆的最大长度
-const MAX_CONTENT_LENGTH = 150
+// 合并后单条记忆的最大长度（提示中要求不超过 160 字，留出余量）
+const MAX_CONTENT_LENGTH = 300
 
 /** 一条新记忆及与它相似的已有记忆 */
 export interface MergeCandidate {
@@ -93,7 +93,7 @@ ${formatDateTime(now)}
 对每条新记忆给出一个决定：
 - add：新记忆与已有记忆都不重复，直接新增。
 - skip：新记忆的信息已经被某条已有记忆完全包含（重复），不需要写入。target 填写那条已有记忆的 id。
-- update：新记忆补充、修正或推翻了某条已有记忆（如搬家、换工作、喜好改变、计划有变），把二者合并成一条最新、完整的记忆。target 填写被更新的已有记忆 id；content 填写合并后的完整内容，以「用户」开头，不超过 80 字，必要时保留「以前……」这样的历史信息；可以同时给出合并后的 category 与 importance。如果还有其他已有记忆的内容已被合并后的记忆完全包含，把它们的 id 填入 remove。
+- update：新记忆补充、修正或推翻了某条已有记忆（如搬家、换工作、喜好改变、计划有变），把二者合并成一条最新、完整的记忆。target 填写被更新的已有记忆 id；content 填写合并后的完整内容，以「用户」开头，不超过 160 字，必要时保留「以前……」这样的历史信息；可以同时给出合并后的 category 与 importance。如果还有其他已有记忆的内容已被合并后的记忆完全包含，把它们的 id 填入 remove。
 
 注意：
 - 不同的具体事件（如两次不同的考试）是不同的情景记忆，不要合并。
