@@ -70,6 +70,23 @@ const persistentDirty = computed(() => {
 // 仅在切换模型时重置表单，避免模型加载后元数据更新时覆盖未保存的修改
 watch(() => props.modelId, resetForm, { immediate: true })
 
+// 在桌面上拖拽、滚轮缩放模型时，store 中的位置与缩放会立即改变（并已保存），同步到表单。
+// 否则表单仍显示旧值，并被当成未保存的修改，此时点击「保存」还会把模型挪回原处
+watch(
+  [() => model.value?.position.x, () => model.value?.position.y],
+  ([x, y]) => {
+    if (x === undefined || y === undefined) return
+    form.value.positionX = x
+    form.value.positionY = y
+  },
+)
+watch(
+  () => model.value?.scale,
+  (scale) => {
+    if (scale !== undefined) form.value.scale = scale
+  },
+)
+
 const dirty = computed(() => {
   const m = model.value
   if (!m) return false

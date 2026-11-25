@@ -51,7 +51,7 @@ describe('活动追踪', () => {
     expect(tracker.state.app).toBe('Code')
 
     expect(tracker.update(snapshot(0, foreground('chrome', 'xxx_哔哩哔哩_bilibili')), T0 + 80_000)).toEqual([
-      { type: 'app-switch', from: 'coding', to: 'media', app: 'chrome' },
+      { type: 'app-switch', from: 'coding', to: 'media', app: 'chrome', fromApp: 'Code', fromMs: 10_000 },
     ])
     tracker.update(snapshot(0, foreground('desktop-pet', '', { own: true })), T0 + 200_000)
     tracker.update(snapshot(0, null), T0 + 300_000)
@@ -94,6 +94,40 @@ describe('活动追踪', () => {
 
     const unavailable = new ActivityTracker()
     unavailable.update(snapshot(null, null), T0)
-    expect(unavailable.state).toMatchObject({ available: false, present: true, app: null })
+    expect(unavailable.state).toMatchObject({ available: false, present: true, presentSince: null, app: null })
+  })
+
+  it('记下这次连续在电脑前的开始时间：离开后回来时重新算，不在电脑前时为空', () => {
+    const tracker = new ActivityTracker()
+    tracker.update(snapshot(0, foreground('Code')), T0)
+    tracker.update(snapshot(0, foreground('chrome')), T0 + 60 * MINUTE)
+    expect(tracker.state.presentSince).toBe(T0)
+
+    tracker.update(snapshot(10 * 60, foreground('chrome')), T0 + 70 * MINUTE)
+    expect(tracker.state.presentSince).toBeNull()
+    tracker.update(snapshot(2, foreground('chrome')), T0 + 75 * MINUTE)
+    expect(tracker.state.presentSince).toBe(T0 + 75 * MINUTE - 2000)
+  })
+
+  it('全屏半小时以上、退出后一分钟内没有回去，才算结束全屏；短暂切出去、全屏时间太短都不算', () => {
+    const game = () => foreground('GenshinImpact', '原神', { fullscreen: true })
+    const tracker = new ActivityTracker()
+    tracker.update(snapshot(0, game()), T0)
+    tracker.update(snapshot(0, game()), T0 + 40 * MINUTE)
+    // 切到桌面看了一眼，半分钟后回到游戏
+    expect(tracker.update(snapshot(0, null), T0 + 40 * MINUTE + 5000)).toEqual([])
+    expect(tracker.update(snapshot(0, game()), T0 + 40 * MINUTE + 30_000)).toEqual([])
+    // 真的退出了：一分钟后才算，同时也换了应用
+    expect(tracker.update(snapshot(0, foreground('Code')), T0 + 50 * MINUTE)).toEqual([])
+    expect(tracker.update(snapshot(0, foreground('Code')), T0 + 51 * MINUTE)).toEqual([
+      { type: 'fullscreen-exit', app: 'GenshinImpact', category: 'game', durationMs: 50 * MINUTE },
+      { type: 'app-switch', from: 'game', to: 'coding', app: 'Code', fromApp: 'GenshinImpact', fromMs: 50 * MINUTE },
+    ])
+    expect(tracker.update(snapshot(0, foreground('Code')), T0 + 52 * MINUTE)).toEqual([])
+
+    const short = new ActivityTracker()
+    short.update(snapshot(0, game()), T0)
+    short.update(snapshot(0, foreground('Code')), T0 + 10 * MINUTE)
+    expect(short.update(snapshot(0, foreground('Code')), T0 + 12 * MINUTE).map((event) => event.type)).toEqual(['app-switch'])
   })
 })

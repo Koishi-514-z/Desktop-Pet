@@ -12,10 +12,12 @@ import { judgeProactive } from '@/proactive/judge'
 import { proactiveSkills } from '@/proactive/skills'
 import { createState, DEFAULT_SETTINGS, DND_FOREVER, mergeSettings } from '@/proactive/types'
 import { useAgentStore } from '@/stores/agent'
+import { useAudioStore } from '@/stores/audio'
 import { useChatStore } from '@/stores/chat'
 import { useLive2dStore } from '@/stores/live2d'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
+import { useTasksStore } from '@/stores/tasks'
 import { resolveLanguageModel } from '@/utils/llm'
 
 // 检查时机的间隔
@@ -48,6 +50,8 @@ export const useProactiveStore = defineStore('proactive', () => {
   const personaStore = usePersonaStore()
   const providersStore = useProvidersStore()
   const live2dStore = useLive2dStore()
+  const tasksStore = useTasksStore()
+  const audioStore = useAudioStore()
 
   const settings = useLocalStorage<ProactiveSettings>('settings/proactive', DEFAULT_SETTINGS, {
     mergeDefaults: (stored, defaults) => mergeSettings(stored, defaults),
@@ -91,6 +95,7 @@ export const useProactiveStore = defineStore('proactive', () => {
     settings: () => settings.value,
     state: () => state.value,
     activity: () => activity.value,
+    tasks: () => tasksStore.pending,
     conversation: () => ({
       busy: chatStore.isStreaming || !!chatStore.pendingPermission || !!chatStore.pendingQuestion,
       lastUserMessageAt: chatStore.lastUserMessageAt,
@@ -110,8 +115,15 @@ export const useProactiveStore = defineStore('proactive', () => {
       label: trigger.label,
       skills: availableSkills().filter((skill) => skills.includes(skill.id)),
     }),
-    // 换个表情，约半分钟后自动切回默认表情
-    animate: () => live2dStore.playRandomExpression(),
+    animate: (trigger) => {
+      // 做个动作：随机播放模型自带的动作；正在说话时不做，免得动作自带的声音和语音叠在一起
+      if (trigger === 'random-motion') {
+        if (!audioStore.isPlaying) live2dStore.playRandomMotion()
+        return
+      }
+      // 小动作：换个表情，约半分钟后自动切回默认表情
+      live2dStore.playRandomExpression()
+    },
     log: (entry) => {
       log.value = [entry, ...log.value].slice(0, MAX_LOG)
     },

@@ -1,6 +1,7 @@
 import type { ActivityState } from '@/proactive/activity'
 import type { EngineDeps } from '@/proactive/engine'
 import type { ProactiveDecision } from '@/proactive/judge'
+import type { TaskBrief } from '@/proactive/triggers'
 import type { ProactiveLogEntry, ProactiveSettings, ProactiveState, TriggerId } from '@/proactive/types'
 import { describe, expect, it, vi } from 'vitest'
 import { ProactiveEngine, REPLY_WINDOW_MS } from '@/proactive/engine'
@@ -15,9 +16,11 @@ function setup(options: { now?: number, handled?: TriggerId[], random?: number, 
   const state: ProactiveState = { ...createState(dayKey(now)), handledToday: options.handled ?? ['daily-greeting'] }
   const settings = mergeSettings(options.settings ?? {})
   const logs: ProactiveLogEntry[] = []
+  let tasks: TaskBrief[] = []
   let activity: ActivityState | null = {
     available: true,
     present: true,
+    presentSince: now - 20 * MINUTE,
     idleSeconds: 0,
     app: 'Code',
     category: 'coding',
@@ -36,6 +39,7 @@ function setup(options: { now?: number, handled?: TriggerId[], random?: number, 
     settings: () => settings,
     state: () => state,
     activity: () => activity,
+    tasks: () => tasks,
     conversation: () => conversation,
     assistantName: () => '小桌',
     judge,
@@ -54,6 +58,7 @@ function setup(options: { now?: number, handled?: TriggerId[], random?: number, 
     conversation,
     advance: (ms: number) => { now += ms },
     setActivity: (patch: Partial<ActivityState>) => { activity = { ...activity!, ...patch } },
+    setTasks: (list: TaskBrief[]) => { tasks = list },
   }
 }
 
@@ -158,7 +163,87 @@ describe('主动交互', () => {
     advance(30_000)
     await engine.tick()
     expect(animate).toHaveBeenCalledTimes(1)
+    expect(animate).toHaveBeenCalledWith('idle-animation')
     expect(judge).not.toHaveBeenCalled()
+  })
+
+  it('做个动作默认关闭；打开后同样只在本地完成，并告诉外面是哪个时机', async () => {
+    const { engine, settings, judge, animate, advance } = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch'], random: 0 })
+    expect(settings.triggers['random-motion']).toBe(false)
+    settings.triggers['idle-animation'] = false
+    settings.triggers['random-motion'] = true
+    await engine.tick()
+    advance(30_000)
+    await engine.tick()
+    expect(animate).toHaveBeenCalledWith('random-motion')
+    expect(judge).not.toHaveBeenCalled()
+  })
+
+  it('节日当天第一次见面：节日问候和每日问候合成一句，之后都不再出现', async () => {
+    const springFestival = new Date(2026, 1, 17, 9, 0).getTime()
+    const { engine, state, judge, advance } = setup({ now: springFestival, handled: [] })
+    await engine.tick()
+    expect(judge).toHaveBeenCalledTimes(1)
+    expect(judge.mock.calls[0]![0]).toMatchObject({ trigger: { id: 'festival' }, situation: '今天是春节；今天第一次见到用户（上午 09:00）' })
+    expect(state.handledToday).toEqual(['festival', 'daily-greeting'])
+    expect(state.cooldowns['festival:2026-02-17']).toBeGreaterThan(springFestival)
+
+    advance(40 * MINUTE)
+    await engine.tick()
+    expect(judge).toHaveBeenCalledTimes(1)
+  })
+
+  it('节日问候关闭时，每日问候照常进行', async () => {
+    const { engine, settings, judge } = setup({ now: new Date(2026, 1, 17, 9, 0).getTime(), handled: [] })
+    settings.triggers.festival = false
+    await engine.tick()
+    expect(judge.mock.calls[0]![0]).toMatchObject({ trigger: { id: 'daily-greeting' } })
+  })
+
+  it('开完会：会议的时机关闭时退回成切换应用', async () => {
+    const leftMeeting = { type: 'app-switch' as const, from: 'meeting' as const, to: 'coding' as const, app: 'Code', fromApp: 'Zoom', fromMs: 40 * MINUTE }
+    const first = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch'] })
+    await first.engine.onActivityEvents([leftMeeting])
+    expect(first.judge.mock.calls[0]![0]).toMatchObject({ trigger: { id: 'meeting-end' } })
+
+    const second = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch'] })
+    second.settings.triggers['meeting-end'] = false
+    await second.engine.onActivityEvents([leftMeeting])
+    expect(second.judge.mock.calls[0]![0]).toMatchObject({ trigger: { id: 'app-switch' } })
+    expect(second.logs[0]).toMatchObject({ trigger: 'meeting-end', outcome: 'blocked', reason: '这个时机已关闭' })
+  })
+
+  it('待办快到期：提过的待办不再重复提醒', async () => {
+    const { engine, judge, state, setTasks, advance } = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch'] })
+    setTasks([{ id: 'report', title: '写周报', due: at(15, 30), dueHasTime: true, done: false }])
+    await engine.tick()
+    expect(judge.mock.calls[0]![0]).toMatchObject({ trigger: { id: 'task-due' }, situation: '有待办快到期了还没完成：「写周报」15:30 到期（还有 30 分钟）' })
+    expect(state.cooldowns['task-due:report']).toBeGreaterThan(at(15, 0))
+
+    advance(20 * MINUTE)
+    await engine.tick()
+    expect(judge).toHaveBeenCalledTimes(1)
+  })
+
+  it('长时间专注和久坐的提醒不会挨在一起', async () => {
+    // 下午茶、晚饭也算处理过，只看这两种提醒
+    const { engine, state, judge, setActivity, advance } = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch', 'afternoon-break', 'dinner'] })
+    // 连续编程 95 分钟、在电脑前坐了 130 分钟：先提醒长时间专注
+    setActivity({ focus: { category: 'coding', since: at(15, 0) - 95 * MINUTE }, presentSince: at(15, 0) - 130 * MINUTE })
+    await engine.tick()
+    expect(judge.mock.calls[0]![0]).toMatchObject({ trigger: { id: 'long-focus' } })
+    expect(state.lastRestReminderAt).toBe(at(15, 0))
+
+    // 半小时后久坐时间早就够了，但刚提醒过休息，不再提醒
+    advance(30 * MINUTE)
+    await engine.tick()
+    expect(judge).toHaveBeenCalledTimes(1)
+
+    // 两个小时后（这段专注被打断了），久坐提醒才出现
+    advance(90 * MINUTE)
+    setActivity({ focus: null })
+    await engine.tick()
+    expect(judge.mock.calls[1]![0]).toMatchObject({ trigger: { id: 'sedentary' } })
   })
 
   it('新的一天重置每日的计数，第一次见到用户时问候', async () => {

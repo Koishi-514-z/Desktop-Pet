@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useAudioStore } from '@/stores/audio'
 import { useChatStore } from '@/stores/chat'
 import { usePersonaStore } from '@/stores/persona'
 import { useSceneStore } from '@/stores/scene'
+import { useDesktopCursor } from '@/composables/desktop'
 import { stripEmotionTags } from '@/composables/queues'
 
 const chatStore = useChatStore()
 const personaStore = usePersonaStore()
 const sceneStore = useSceneStore()
+const audioStore = useAudioStore()
+const desktopCursor = useDesktopCursor()
 
 // 字幕只在非空消息之间切换（流式回复的占位消息在收到首个字符前为空，不予显示；
 // 只有情绪标记、去掉后没有正文的消息同样视为空）
@@ -110,12 +114,83 @@ function onTextEnter() {
 watch(displayText, () => {
   if (following.value) nextTick(() => scrollText(true))
 })
+
+// ===== 显示与隐藏：只在桌宠说话时显示，说完一段时间后自动隐藏 =====
+
+// 隐藏的时间到了、鼠标却还停在字幕上（在看、或者在翻之前的消息）时，隔多久再看一次
+const HOVER_RECHECK_MS = 1500
+
+// 桌宠正在说话：正在流式输出回复（已经出现文字；思考、调用工具时还没开口不算），或者正在播放语音。
+// 语音通常在文字生成完之后还会播一会儿，句子之间短暂的空档由隐藏前的等待时间盖过去
+const speaking = computed(() => {
+  if (audioStore.isPlaying) return true
+  const latest = messages.value.at(-1)
+  return chatStore.isStreaming && latest?.role === 'assistant' && latest === chatStore.visibleMessages.at(-1)
+})
+
+// 是否处于显示状态：开始说话时打开，说完并等待设定的时间后关闭
+const active = ref(false)
+let hideTimer: ReturnType<typeof setTimeout> | undefined
+
+const cardRef = ref<HTMLElement>()
+
+// 鼠标是否停在字幕上。桌面窗口平时是鼠标穿透的，移出字幕时网页不一定收得到 mouseleave，
+// 因此有全局鼠标坐标时以它为准
+function isHovering(): boolean {
+  const card = cardRef.value
+  if (!card) return false
+  const cursor = desktopCursor.value
+  if (!cursor) return card.matches(':hover')
+  const rect = card.getBoundingClientRect()
+  return cursor.x >= rect.left && cursor.x <= rect.right && cursor.y >= rect.top && cursor.y <= rect.bottom
+}
+
+function clearHideTimer() {
+  if (hideTimer === undefined) return
+  clearTimeout(hideTimer)
+  hideTimer = undefined
+}
+
+function scheduleHide(delay: number) {
+  clearHideTimer()
+  hideTimer = setTimeout(() => {
+    hideTimer = undefined
+    // 又开始说话了：等说完再重新计时
+    if (speaking.value) return
+    if (isHovering()) {
+      scheduleHide(HOVER_RECHECK_MS)
+      return
+    }
+    active.value = false
+  }, delay)
+}
+
+watch(
+  speaking,
+  (value) => {
+    if (value) {
+      clearHideTimer()
+      active.value = true
+    }
+    else if (active.value) {
+      scheduleHide(Math.max(0, sceneStore.subtitleHideDelay) * 1000)
+    }
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(clearHideTimer)
+
+// 跟随最新消息时，最新的是用户刚发出的消息：桌宠还没开口，先不显示（手动翻看之前的消息时照常显示）
+const waitingReply = computed(() => following.value && currentMessage.value?.role === 'user')
+
+const visible = computed(() => sceneStore.showSubtitle && !!currentMessage.value && active.value && !waitingReply.value)
 </script>
 
 <template>
   <Transition name="subtitle-fade">
-    <div v-if="sceneStore.showSubtitle && currentMessage" class="subtitle">
-      <div class="subtitle-card" :class="currentMessage.role">
+    <div v-if="visible && currentMessage" class="subtitle">
+      <div ref="cardRef" class="subtitle-card" :class="currentMessage.role">
         <div class="speaker">
           <span class="speaker-name">{{ speakerName }}</span>
           <span v-if="isLive" class="live-dot" title="正在回复"></span>

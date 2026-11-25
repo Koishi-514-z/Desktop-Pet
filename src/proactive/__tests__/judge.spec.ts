@@ -9,6 +9,7 @@ const NOW = new Date(2026, 10, 24, 15, 0).getTime()
 const coding: ActivityState = {
   available: true,
   present: true,
+  presentSince: NOW - 100 * MINUTE,
   idleSeconds: 3,
   app: 'Code',
   category: 'coding',

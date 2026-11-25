@@ -18,7 +18,7 @@ function context(overrides: {
 } = {}): GateContext {
   const activity: ActivityState | null = overrides.activity === null
     ? null
-    : { available: true, present: true, idleSeconds: 0, app: 'Code', category: 'coding', title: '', appSince: null, fullscreen: false, focus: null, ...overrides.activity }
+    : { available: true, present: true, presentSince: null, idleSeconds: 0, app: 'Code', category: 'coding', title: '', appSince: null, fullscreen: false, focus: null, ...overrides.activity }
   return {
     now: NOW,
     settings: mergeSettings(overrides.settings ?? {}),

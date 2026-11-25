@@ -5,7 +5,8 @@
  * 原始信号很碎（切一下窗口、几秒不动鼠标），直接拿来触发会很吵，因此：
  * - 新的应用持续使用一段时间后才算「切换」；
  * - 连续专注允许中途短暂切到别的应用；
- * - 离开一段时间后回来才算「回到电脑前」。
+ * - 离开一段时间后回来才算「回到电脑前」；
+ * - 全屏持续足够久、退出后一段时间没有再回到全屏，才算「结束全屏」。
  */
 
 /** Rust 端返回的活动状态 */
@@ -86,6 +87,8 @@ export interface ActivityState {
   available: boolean
   /** 是否在电脑前：最近一段时间内操作过键盘鼠标 */
   present: boolean
+  /** 这次连续在电脑前是从什么时候开始的（离开一段时间算中断）；无法感知或者不在电脑前时为空 */
+  presentSince: number | null
   idleSeconds: number
   /** 正在使用的应用（持续使用了一段时间才算） */
   app: string | null
@@ -101,17 +104,22 @@ export interface ActivityState {
 
 export type ActivityEvent =
   | { type: 'idle-return', awayMs: number }
-  | { type: 'app-switch', from: AppCategory, to: AppCategory, app: string }
+  /** fromApp / fromMs：之前用的是哪个应用、用了多久 */
+  | { type: 'app-switch', from: AppCategory, to: AppCategory, app: string, fromApp: string, fromMs: number }
+  /** 退出了持续 durationMs 的全屏 */
+  | { type: 'fullscreen-exit', app: string, category: AppCategory, durationMs: number }
 
 export interface TrackerOptions {
   /** 多久不操作键盘鼠标算离开 */
   awaySeconds?: number
   /** 离开多久后回来才算「回到电脑前」 */
   returnAfterMs?: number
-  /** 新的应用持续使用多久才算切换 */
+  /** 新的应用持续使用多久才算切换；退出全屏后多久没有回去才算结束全屏 */
   dwellMs?: number
   /** 专注时允许切到别的应用（或离开）多久而不打断 */
   focusGraceMs?: number
+  /** 全屏持续多久后退出才算「结束全屏」 */
+  fullscreenMinMs?: number
 }
 
 const MINUTE = 60_000
@@ -121,13 +129,17 @@ export class ActivityTracker {
   private readonly returnAfterMs: number
   private readonly dwellMs: number
   private readonly focusGraceMs: number
+  private readonly fullscreenMinMs: number
 
   private available = false
   private idleSeconds = 0
   private awaySince: number | null = null
-  /** 最近一次离开后回来的时间（专注时间从这之后算起） */
-  private presentSince = 0
+  /** 最近一次离开后回来的时间，刚开始追踪时为第一次看到用户的时间（专注、久坐的时间从这之后算起） */
+  private presentSince: number | null = null
   private fullscreen = false
+  /** 正在进行的全屏，以及退出全屏的时间（退出后一段时间没有回去才算结束） */
+  private fullscreenSession: { app: string, category: AppCategory, since: number } | null = null
+  private fullscreenEndedAt: number | null = null
   private current: { app: string, category: AppCategory, title: string, since: number } | null = null
   private pending: { app: string, category: AppCategory, title: string, since: number } | null = null
   private focus: { category: AppCategory, since: number, lastSeen: number } | null = null
@@ -137,6 +149,7 @@ export class ActivityTracker {
     this.returnAfterMs = options.returnAfterMs ?? 10 * MINUTE
     this.dwellMs = options.dwellMs ?? MINUTE
     this.focusGraceMs = options.focusGraceMs ?? 5 * MINUTE
+    this.fullscreenMinMs = options.fullscreenMinMs ?? 30 * MINUTE
   }
 
   /** 根据新的快照更新状态，返回这次产生的事件 */
@@ -150,16 +163,21 @@ export class ActivityTracker {
     if (this.idleSeconds >= this.awaySeconds) {
       this.awaySince ??= lastInput
     }
-    else if (this.awaySince !== null) {
-      const awayMs = lastInput - this.awaySince
-      this.awaySince = null
-      this.presentSince = lastInput
-      if (awayMs >= this.returnAfterMs) events.push({ type: 'idle-return', awayMs })
+    else {
+      if (this.awaySince !== null) {
+        const awayMs = lastInput - this.awaySince
+        this.awaySince = null
+        this.presentSince = lastInput
+        if (awayMs >= this.returnAfterMs) events.push({ type: 'idle-return', awayMs })
+      }
+      // 刚开始追踪时，从第一次看到用户在电脑前算起
+      this.presentSince ??= lastInput
     }
 
     // 前台应用：桌面与桌宠自己的窗口不改变「正在使用的应用」
     const foreground = snapshot.foreground
     this.fullscreen = !!foreground && !foreground.own && foreground.fullscreen
+    this.trackFullscreen(foreground, now, events)
     if (foreground && !foreground.own && foreground.app) {
       const category = categorizeApp(foreground.app, foreground.title)
       if (this.current?.app === foreground.app) {
@@ -175,7 +193,14 @@ export class ActivityTracker {
           this.current = this.pending
           this.pending = null
           if (previous && previous.category !== this.current.category) {
-            events.push({ type: 'app-switch', from: previous.category, to: this.current.category, app: this.current.app })
+            events.push({
+              type: 'app-switch',
+              from: previous.category,
+              to: this.current.category,
+              app: this.current.app,
+              fromApp: previous.app,
+              fromMs: this.current.since - previous.since,
+            })
           }
         }
       }
@@ -193,6 +218,24 @@ export class ActivityTracker {
     return events
   }
 
+  /** 全屏持续足够久、退出后一段时间没有再回到全屏，才算结束（短暂切出去又切回来不算） */
+  private trackFullscreen(foreground: ActivitySnapshot['foreground'], now: number, events: ActivityEvent[]) {
+    if (this.fullscreen && foreground) {
+      this.fullscreenSession ??= { app: foreground.app, category: categorizeApp(foreground.app, foreground.title), since: now }
+      this.fullscreenEndedAt = null
+      return
+    }
+    if (!this.fullscreenSession) return
+    this.fullscreenEndedAt ??= now
+    if (now - this.fullscreenEndedAt < this.dwellMs) return
+
+    const { app, category, since } = this.fullscreenSession
+    const durationMs = this.fullscreenEndedAt - since
+    this.fullscreenSession = null
+    this.fullscreenEndedAt = null
+    if (durationMs >= this.fullscreenMinMs) events.push({ type: 'fullscreen-exit', app, category, durationMs })
+  }
+
   private updateFocus(now: number) {
     const present = this.idleSeconds < this.awaySeconds
     if (!present || !this.current) return
@@ -203,14 +246,16 @@ export class ActivityTracker {
     }
     else if (!this.focus) {
       // 长时间做别的事、或者离开回来之后，从开始使用这个应用（或者回来）的时候重新计算
-      this.focus = { category, since: Math.max(this.current.since, this.presentSince), lastSeen: now }
+      this.focus = { category, since: Math.max(this.current.since, this.presentSince ?? 0), lastSeen: now }
     }
   }
 
   get state(): ActivityState {
+    const present = this.idleSeconds < this.awaySeconds
     return {
       available: this.available,
-      present: !this.available || this.idleSeconds < this.awaySeconds,
+      present: !this.available || present,
+      presentSince: this.available && present ? this.presentSince : null,
       idleSeconds: this.idleSeconds,
       app: this.current?.app ?? null,
       category: this.current?.category ?? null,

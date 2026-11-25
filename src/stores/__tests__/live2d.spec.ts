@@ -1,6 +1,11 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { EXPRESSION_REVERT_MS, useLive2dStore } from '@/stores/live2d'
+import { defaultModels, EXPRESSION_REVERT_MS, mergeDefaultModels, useLive2dStore } from '@/stores/live2d'
+
+// 测试在项目根目录下运行（jsdom 环境中 import.meta.url 不是 file:// 地址）
+const PUBLIC_DIR = resolve(process.cwd(), 'public')
 
 describe('表情', () => {
   beforeEach(() => {
@@ -61,5 +66,52 @@ describe('表情', () => {
     store.playExpression('smile')
     vi.advanceTimersByTime(EXPRESSION_REVERT_MS)
     expect(store.currentExpression).toEqual({ name: '' })
+  })
+})
+
+describe('预置模型', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('每个预置模型的模型文件与预览图都存在，id 不重复，第一个是 ATRI', () => {
+    expect(defaultModels[0]!.id).toBe('atri')
+    expect(new Set(defaultModels.map((model) => model.id)).size).toBe(defaultModels.length)
+    for (const model of defaultModels) {
+      expect(existsSync(PUBLIC_DIR + model.url), model.url).toBe(true)
+      expect(existsSync(PUBLIC_DIR + model.image), model.image).toBe(true)
+    }
+  })
+
+  it('保存的列表中缺少的预置模型加到末尾（同一个模型文件不重复加），已有模型的设置不变', () => {
+    const [atri, nene] = defaultModels
+    const stored = [
+      { ...structuredClone(atri!), position: { x: 1, y: 2 } },
+      // 用户自己添加的同一个模型（id 不同）
+      { ...structuredClone(nene!), id: 'my-nene', name: '绫地宁宁' },
+    ]
+    const merged = mergeDefaultModels(stored, defaultModels)
+    expect(merged.slice(0, 2)).toEqual(stored)
+    expect(merged.map((model) => model.id)).toEqual(['atri', 'my-nene', ...defaultModels.slice(2).map((model) => model.id)])
+    expect(mergeDefaultModels(merged, defaultModels)).toBe(merged)
+  })
+
+  it('启动时补上缺少的预置模型；恢复默认后回到预置的数据，之后的修改不会改到预置模型', () => {
+    localStorage.setItem('settings/live2d/models', JSON.stringify([{ ...defaultModels[0], position: { x: 1, y: 2 } }]))
+    const store = useLive2dStore()
+    expect(store.models).toHaveLength(defaultModels.length)
+    expect(store.models[0]!.position).toEqual({ x: 1, y: 2 })
+
+    store.resetAllToDefault()
+    expect(store.models).toEqual(defaultModels)
+    store.position = { x: 3, y: 4 }
+    expect(store.currentModel!.position).toEqual({ x: 3, y: 4 })
+    expect(defaultModels[0]!.position).toEqual({ x: 1482, y: 669 })
   })
 })

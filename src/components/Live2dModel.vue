@@ -15,7 +15,7 @@
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as PIXI from 'pixi.js'
-import { Live2DModel, MotionPriority, Cubism4ModelSettings, Cubism4InternalModel, InternalModel } from 'pixi-live2d-display/cubism4'
+import { Live2DModel, MotionPriority, SoundManager, Cubism4ModelSettings, Cubism4InternalModel, InternalModel } from 'pixi-live2d-display/cubism4'
 import { useLive2dStore, defaultModels, type Live2dMotion } from '@/stores/live2d'
 import { useLive2DEyeFocus } from '@/composables/animation'
 import { clamp, randInt } from '@/utils/math'
@@ -284,8 +284,9 @@ function onPointerMove(event: PIXI.InteractionEvent) {
 
   if (!dragging.value) return
 
-  const newX = event.data.global.x - dragOffset.value.x
-  const newY = event.data.global.y - dragOffset.value.y
+  // 坐标取整到像素：高分屏下鼠标坐标带小数，否则设置中的坐标会显示成 812.6666870117188 这样的值
+  const newX = Math.round(event.data.global.x - dragOffset.value.x)
+  const newY = Math.round(event.data.global.y - dragOffset.value.y)
 
   model.value.position.set(newX, newY)
   live2dStore.position = {
@@ -308,7 +309,9 @@ function onWheel(event: WheelEvent) {
 
   event.preventDefault()
   const delta = event.deltaY > 0 ? -live2dStore.scrollScaleStep : live2dStore.scrollScaleStep
-  const next = live2dStore.scale + delta
+  // 去掉反复加减步长累积的浮点误差（如 0.3 连续放大 5 次得到 0.35000000000000003），
+  // 保留 4 位小数，不影响更小的步长
+  const next = Math.round((live2dStore.scale + delta) * 10000) / 10000
   live2dStore.scale = Math.min(Math.max(next, live2dStore.minScale), live2dStore.maxScale)
 }
 
@@ -517,6 +520,12 @@ watch(() => sceneStore.maxFPS, (maxFPS) => {
   if (!app.value) return
   app.value.ticker.maxFPS = maxFPS
 })
+
+// 动作自带的声音（model3.json 中动作的 Sound）由库的 SoundManager 播放，库默认固定为 50% 音量，
+// 这里让它跟随设置中的动作音量。赋值时库会限制在 0~1 之间，并同时调整正在播放的声音
+watch(() => sceneStore.motionVolume, (volume) => {
+  SoundManager.volume = volume
+}, { immediate: true })
 
 // live2dStore 中的 currentModel 发生变化时，自动卸载旧模型并加载新模型
 watch(

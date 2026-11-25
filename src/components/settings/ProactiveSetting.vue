@@ -47,18 +47,31 @@ const GROUPS: TriggerGroup[] = ['time', 'event', 'context', 'spontaneous']
 const groups = GROUPS.map((group) => ({ group, label: TRIGGER_GROUP_LABELS[group], triggers: TRIGGERS.filter((trigger) => trigger.group === group) }))
 
 // 时机旁边的时间设置
-const TIME_FIELDS: Partial<Record<TriggerId, 'lunchTime' | 'dinnerTime' | 'lateNightTime'>> = {
+const TIME_FIELDS: Partial<Record<TriggerId, 'lunchTime' | 'afternoonBreakTime' | 'dinnerTime' | 'lateNightTime'>> = {
   'lunch': 'lunchTime',
+  'afternoon-break': 'afternoonBreakTime',
   'dinner': 'dinnerTime',
   'late-night': 'lateNightTime',
 }
 
-const focusMinutes = computed({
-  get: () => settings.value.focusMinutes,
-  set: (value: number) => {
-    if (Number.isFinite(value) && value >= 10) settings.value.focusMinutes = Math.round(value)
-  },
-})
+// 时机旁边的分钟数设置（低于下限的输入不生效）
+const MINUTE_FIELDS: Partial<Record<TriggerId, { key: 'focusMinutes' | 'sedentaryMinutes', min: number }>> = {
+  'long-focus': { key: 'focusMinutes', min: 10 },
+  'sedentary': { key: 'sedentaryMinutes', min: 30 },
+}
+
+function minuteField(id: TriggerId) {
+  return MINUTE_FIELDS[id]
+}
+
+function setMinutes(id: TriggerId, input: HTMLInputElement) {
+  const field = MINUTE_FIELDS[id]
+  if (!field) return
+  const value = input.valueAsNumber
+  if (Number.isFinite(value) && value >= field.min) settings.value[field.key] = Math.round(value)
+  // 输入无效时显示回原来的值
+  input.value = String(settings.value[field.key])
+}
 
 function tryTrigger(id: TriggerId) {
   void proactiveStore.tryNow(id)
@@ -200,14 +213,21 @@ function triggerLabel(entry: ProactiveLogEntry): string {
               <span class="switch-track" />
             </span>
           </label>
-          <div v-if="TIME_FIELDS[trigger.id] || trigger.id === 'long-focus' || trigger.kind === 'speech'" class="trigger-extra">
+          <div v-if="TIME_FIELDS[trigger.id] || minuteField(trigger.id) || trigger.kind === 'speech'" class="trigger-extra">
             <template v-if="TIME_FIELDS[trigger.id]">
               <span>时间</span>
               <input v-model="settings[TIME_FIELDS[trigger.id]!]" class="time-field" type="time" />
             </template>
-            <template v-if="trigger.id === 'long-focus'">
+            <template v-if="minuteField(trigger.id)">
               <span>连续</span>
-              <input v-model.number.lazy="focusMinutes" class="time-field minutes" type="number" min="10" step="10" />
+              <input
+                :value="settings[minuteField(trigger.id)!.key]"
+                class="time-field minutes"
+                type="number"
+                :min="minuteField(trigger.id)!.min"
+                step="10"
+                @change="setMinutes(trigger.id, $event.target as HTMLInputElement)"
+              />
               <span>分钟后提醒</span>
             </template>
             <button

@@ -1,12 +1,12 @@
 import type { ActivityEvent, ActivityState } from '@/proactive/activity'
 import type { ConversationState } from '@/proactive/gate'
 import type { DialogLine, ProactiveDecision } from '@/proactive/judge'
-import type { ProactiveCandidate } from '@/proactive/triggers'
+import type { ProactiveCandidate, TaskBrief } from '@/proactive/triggers'
 import type { ProactiveLogEntry, ProactiveOutcome, ProactiveSettings, ProactiveState, TriggerId, TriggerInfo } from '@/proactive/types'
 import { errorMessage, truncate } from '@/agent/utils'
 import { checkGate } from '@/proactive/gate'
 import { buildSpeakEvent, describeContext } from '@/proactive/judge'
-import { dayKey, eventCandidate, focusCandidate, spontaneousCandidates, timeCandidates } from '@/proactive/triggers'
+import { dayKey, eventCandidates, focusCandidate, sedentaryCandidate, spontaneousCandidates, taskDueCandidate, timeCandidates } from '@/proactive/triggers'
 import { FREQUENCY_PRESETS, triggerInfo } from '@/proactive/types'
 
 /**
@@ -35,12 +35,15 @@ export interface EngineDeps {
   /** 运行状态，由引擎直接修改（store 中是会保存到本地的响应式对象） */
   state: () => ProactiveState
   activity: () => ActivityState | null
+  /** 还没完成的待办（判断有没有快到期的） */
+  tasks: () => readonly TaskBrief[]
   conversation: () => ConversationState & { recentDialog: DialogLine[] }
   assistantName: () => string
   judge: (request: JudgeRequest) => Promise<ProactiveDecision>
   /** 说出来，返回说了什么；失败时返回空字符串 */
   speak: (request: SpeakRequest) => Promise<string>
-  animate: () => void
+  /** 只做动作、不说话的时机：小动作换个表情，做个动作播放模型自带的动作 */
+  animate: (trigger: TriggerId) => void
   log: (entry: ProactiveLogEntry) => void
 }
 
@@ -56,6 +59,10 @@ const MAX_TICK_GAP = 10 * MINUTE
 
 type HandleResult = ProactiveOutcome | 'busy' | 'cooling'
 
+function cooldownKeys(candidate: ProactiveCandidate): string[] {
+  return candidate.cooldown ? [candidate.cooldown.key].flat() : []
+}
+
 export class ProactiveEngine {
   private running = false
   private lastTickAt: number | null = null
@@ -69,7 +76,7 @@ export class ProactiveEngine {
     return this.running
   }
 
-  /** 定时调用：检查时间、上下文与自发的时机，每次最多处理一个 */
+  /** 定时调用：检查时间、上下文与自发的时机，每次最多处理一个（按顺序，前面的被拦下时再试后面的） */
   async tick(): Promise<void> {
     const now = this.deps.now()
     this.rollover(now)
@@ -80,19 +87,23 @@ export class ProactiveEngine {
     const settings = this.deps.settings()
     const state = this.deps.state()
     const activity = this.deps.activity()
-    const focus = focusCandidate(now, settings, state, activity)
+    const context = [
+      taskDueCandidate(now, state, this.deps.tasks()),
+      focusCandidate(now, settings, state, activity),
+      sedentaryCandidate(now, settings, state, activity),
+    ].filter((candidate): candidate is ProactiveCandidate => candidate !== null)
     await this.handleFirst([
       ...timeCandidates(now, settings, state, activity),
-      ...(focus ? [focus] : []),
+      ...context,
       ...spontaneousCandidates(this.deps.random, elapsed, FREQUENCY_PRESETS[settings.frequency].spontaneousScale),
     ])
   }
 
-  /** 活动状态变化产生的事件（回到电脑前、切换应用） */
+  /** 活动状态变化产生的事件（回到电脑前、切换应用、结束全屏） */
   async onActivityEvents(events: ActivityEvent[]): Promise<void> {
     if (events.length === 0) return
     this.rollover(this.deps.now())
-    await this.handleFirst(events.map(eventCandidate))
+    await this.handleFirst(events.flatMap(eventCandidates))
   }
 
   /** 用户发了消息：在等待回应的时间内发的，就算回应了主动说的话 */
@@ -126,7 +137,7 @@ export class ProactiveEngine {
     const state = deps.state()
     const settings = deps.settings()
     const trigger = triggerInfo(candidate.trigger)
-    if (!force && candidate.cooldown && (state.cooldowns[candidate.cooldown.key] ?? 0) > now) return 'cooling'
+    if (!force && cooldownKeys(candidate).some((key) => (state.cooldowns[key] ?? 0) > now)) return 'cooling'
 
     const activity = deps.activity()
     const conversation = deps.conversation()
@@ -142,7 +153,7 @@ export class ProactiveEngine {
     this.lastBlocked.delete(trigger.id)
 
     if (trigger.kind === 'animation') {
-      deps.animate()
+      deps.animate(trigger.id)
       return 'animated'
     }
 
@@ -190,9 +201,16 @@ export class ProactiveEngine {
 
   private markHandled(candidate: ProactiveCandidate, now: number) {
     const state = this.deps.state()
-    if (candidate.daily && !state.handledToday.includes(candidate.trigger)) state.handledToday = [...state.handledToday, candidate.trigger]
-    if (candidate.cooldown) state.cooldowns = { ...state.cooldowns, [candidate.cooldown.key]: now + candidate.cooldown.ms }
+    const handled = [...(candidate.daily ? [candidate.trigger] : []), ...(candidate.alsoHandles ?? [])]
+      .filter((id, index, ids) => !state.handledToday.includes(id) && ids.indexOf(id) === index)
+    if (handled.length) state.handledToday = [...state.handledToday, ...handled]
+    const keys = cooldownKeys(candidate)
+    if (candidate.cooldown && keys.length) {
+      const until = now + candidate.cooldown.ms
+      state.cooldowns = { ...state.cooldowns, ...Object.fromEntries(keys.map((key) => [key, until])) }
+    }
     if (candidate.focus) state.focusNotified = candidate.focus
+    if (candidate.rest) state.lastRestReminderAt = now
   }
 
   /** 新的一天：重置每日的计数，清理过期的冷却 */

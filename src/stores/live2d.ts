@@ -48,27 +48,67 @@ function createModelId(): string {
 // 切换到非默认的表情后，多久自动切回默认表情（毫秒）
 export const EXPRESSION_REVERT_MS = 30_000
 
-// 预置模型列表
-export const defaultModels: Live2dModel[] = [
-  {
-    id: 'atri',
-    name: 'ATRI',
-    description: '默认桌宠模型',
-    url: '/assets/live2d/models/ATRI/model.model3.json',
-    image: '/assets/live2d/models/ATRI/ATRI.png',
-    position: { x: 800, y: 500 },
-    scale: 0.3,
-    defaultExpression: { name: 'expression1.exp3' },
+const MODEL_ROOT = '/assets/live2d/models'
+
+interface PresetModelOptions {
+  id: string
+  name: string
+  /** public/assets/live2d/models 下的文件夹，其中有 model.model3.json 与同名的预览图 */
+  folder: string
+  description?: string
+  position: { x: number, y: number }
+  scale: number
+  defaultExpression?: string
+  persistentExpressions?: string[]
+}
+
+function presetModel(options: PresetModelOptions): Live2dModel {
+  const { id, name, folder, description = '', position, scale, defaultExpression = '', persistentExpressions } = options
+  return {
+    id,
+    name,
+    description,
+    url: `${MODEL_ROOT}/${folder}/model.model3.json`,
+    image: `${MODEL_ROOT}/${folder}/${folder}.png`,
+    position,
+    scale,
+    defaultExpression: { name: defaultExpression },
+    ...(persistentExpressions ? { persistentExpressions } : {}),
+    // 动作、碰撞区域、表情在模型加载后自动填充
     availableMotions: [],
     availableHitAreas: [],
     availableExpressions: [],
-  },
+  }
+}
+
+// 预置模型列表：第一个是第一次启动时使用的模型。预置模型不能在设置中删除
+export const defaultModels: Live2dModel[] = [
+  presetModel({ id: 'atri', name: 'ATRI', folder: 'ATRI', description: '默认桌宠模型', position: { x: 1482, y: 669 }, scale: 0.22, defaultExpression: 'expression1.exp3' }),
+  presetModel({ id: '05147e69-eb64-461b-9602-0b8dad275b22', name: 'AyachiNene', folder: 'AyachiNene', position: { x: 1493, y: 1048 }, scale: 0.3 }),
+  presetModel({ id: '316ca12c-efaf-43d1-8635-f24adafb1e43', name: 'CloverDays', folder: 'CloverDays', position: { x: 800, y: 500 }, scale: 0.3 }),
+  presetModel({ id: 'f1c02a3f-8caf-4ba7-bf7b-39531ace6f76', name: 'KumaMaid', folder: 'Kuma_Maid', position: { x: 1431, y: 727 }, scale: 0.2, defaultExpression: 'Click.exp3' }),
+  presetModel({ id: '49e261f4-41dc-44f0-b234-35bfa13ccda3', name: 'Murasame', folder: 'Murasame', position: { x: 781, y: 601 }, scale: 0.22 }),
+  presetModel({ id: 'bf5d2e1e-b17b-4a8f-a185-30d0fb2495e7', name: 'pudding', folder: 'pudding', position: { x: 1282, y: 607 }, scale: 0.2 }),
+  presetModel({ id: 'ccf16082-acf5-4e2e-b3ac-8d4c22b2560b', name: 'Virescent Fawn Witch', folder: 'Virescent Fawn Witch', position: { x: 1523, y: 737 }, scale: 0.2 }),
+  presetModel({ id: '5b7f2cc9-b9a8-4951-a1d3-37cc2d1b0e99', name: 'Ayane PUMK version', folder: 'Ayane PUMK version', position: { x: 1512, y: 646 }, scale: 0.26, persistentExpressions: ['Watermark Hide.exp3'] }),
+  presetModel({ id: '52f378b7-2b39-4354-af36-641a6f002d0f', name: 'Ayane sweater over sailor uniform', folder: 'Ayane sweater over sailor uniform', position: { x: 1504, y: 719 }, scale: 0.3, persistentExpressions: ['Watermark Hide.exp3'] }),
 ]
 
+/**
+ * 读取保存的模型列表时，把列表中还没有的预置模型（按 id 或模型文件判断）加到末尾，
+ * 这样之后新增的预置模型也会出现；已有模型的设置保持不变
+ */
+export function mergeDefaultModels(stored: Live2dModel[], defaults: Live2dModel[]): Live2dModel[] {
+  const missing = defaults.filter((preset) => !stored.some((model) => model.id === preset.id || model.url === preset.url))
+  return missing.length ? [...stored, ...missing] : stored
+}
 
 
 export const useLive2dStore = defineStore('live2d', () => {
-  const models = useLocalStorage<Live2dModel[]>('settings/live2d/models', defaultModels)
+  // 用预置模型的副本：列表中的模型会被修改（拖拽、缩放等），不能改到预置的数据
+  const models = useLocalStorage<Live2dModel[]>('settings/live2d/models', structuredClone(defaultModels), {
+    mergeDefaults: mergeDefaultModels,
+  })
   const currentModelId = useLocalStorage<string>('settings/live2d/currentModelId', defaultModels[0]!.id)
 
   const currentModel = computed(() => models.value.find((model) => model.id === currentModelId.value))
@@ -194,6 +234,14 @@ export const useLive2dStore = defineStore('live2d', () => {
     currentMotion.value = { group, index }
   }
 
+  // 随机做一个动作（不含待机动作）。模型没有别的动作时什么也不做
+  function playRandomMotion() {
+    const motions = availableMotions.value.filter((motion) => !/^idle$/i.test(motion.group))
+    if (motions.length === 0) return
+    const motion = motions[randInt(0, motions.length - 1)]!
+    playMotion(motion.group, motion.index)
+  }
+
   function playMotionByTag(tag: string) {
     const motions = availableMotions.value.filter(motion => motion.tags?.includes(tag))
     if (motions.length === 0) return
@@ -263,7 +311,7 @@ export const useLive2dStore = defineStore('live2d', () => {
   }
 
   function resetAllToDefault() {
-    models.value = defaultModels
+    models.value = structuredClone(defaultModels)
     currentModelId.value = defaultModels[0]!.id
     resetGlobalOptionsToDefault()
   }
@@ -313,6 +361,7 @@ export const useLive2dStore = defineStore('live2d', () => {
     switchModel,
 
     playMotion,
+    playRandomMotion,
     playMotionByTag,
     playExpression,
     playExpressionByTag,

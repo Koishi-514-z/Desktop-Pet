@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useSceneStore } from '@/stores/scene'
 
 const sceneStore = useSceneStore()
@@ -8,6 +8,8 @@ const sceneStore = useSceneStore()
 const RESOLUTION_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4]
 // 常用帧率档位
 const FPS_PRESETS = [30, 60, 120, 144, 180, 240]
+// 桌宠说完后，字幕再保留多少秒
+const SUBTITLE_HIDE_DELAYS = [3, 5, 10, 30]
 
 const resolutionIndex = computed(() => RESOLUTION_OPTIONS.indexOf(sceneStore.resolution))
 const indicatorStyle = computed(() => ({
@@ -36,31 +38,44 @@ const RING_RADIUS = 34
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS
 const ringOffset = computed(() => RING_LENGTH * (1 - load.value))
 
-// 以 0~100 的百分比形式编辑播放音量（存储值为 0~1）
-const volumePercent = computed({
-  get: () => Math.round(sceneStore.playbackVolume * 100),
-  set: (value: number) => {
-    sceneStore.playbackVolume = Math.min(Math.max(value, 0), 100) / 100
-  },
-})
+// 以 0~100 的百分比形式编辑 sceneStore 中的某个音量（存储值为 0~1），并支持静音 / 取消静音
+function useVolumeControl(key: 'playbackVolume' | 'motionVolume') {
+  const percent = computed({
+    get: () => Math.round(sceneStore[key] * 100),
+    set: (value: number) => {
+      sceneStore[key] = Math.min(Math.max(value, 0), 100) / 100
+    },
+  })
 
-// 静音前的音量，用于取消静音时恢复
-const volumeBeforeMute = ref(100)
+  // 静音前的音量，用于取消静音时恢复
+  const beforeMute = ref(100)
 
-function toggleMute() {
-  if (volumePercent.value > 0) {
-    volumeBeforeMute.value = volumePercent.value
-    volumePercent.value = 0
-  } else {
-    volumePercent.value = volumeBeforeMute.value || 100
+  function toggleMute() {
+    if (percent.value > 0) {
+      beforeMute.value = percent.value
+      percent.value = 0
+    } else {
+      percent.value = beforeMute.value || 100
+    }
   }
+
+  // 喇叭图标的档位：0 静音，1 较小，2 较大
+  const level = computed(() => {
+    if (percent.value === 0) return 0
+    if (percent.value < 50) return 1
+    return 2
+  })
+
+  return reactive({ percent, level, toggleMute })
 }
 
-const volumeLevel = computed(() => {
-  if (volumePercent.value === 0) return 0
-  if (volumePercent.value < 50) return 1
-  return 2
-})
+const speechVolume = useVolumeControl('playbackVolume')
+const motionVolume = useVolumeControl('motionVolume')
+
+const volumeSettings = [
+  { id: 'speech', label: '语音音量', desc: '桌宠说话时的音量，点击喇叭可静音', control: speechVolume },
+  { id: 'motion', label: '动作音量', desc: '播放动作时模型自带的台词和音效的音量，点击喇叭可静音', control: motionVolume },
+]
 </script>
 
 <template>
@@ -74,7 +89,8 @@ const volumeLevel = computed(() => {
         <div class="overview-stats">
           <span class="stat"><b>{{ sceneStore.resolution }}×</b>分辨率</span>
           <span class="stat"><b>{{ sceneStore.maxFPS }}</b>FPS 上限</span>
-          <span class="stat"><b>{{ volumePercent }}%</b>音量</span>
+          <span class="stat"><b>{{ speechVolume.percent }}%</b>语音</span>
+          <span class="stat"><b>{{ motionVolume.percent }}%</b>动作</span>
           <button class="reset-button" @click="sceneStore.resetToDefault()">恢复默认</button>
         </div>
       </div>
@@ -164,16 +180,30 @@ const volumeLevel = computed(() => {
         <span class="tile-title">界面</span>
       </header>
 
-      <label class="toggle-setting">
-        <span class="setting-label">
-          <span>显示字幕</span>
-          <span class="setting-desc">在屏幕底部显示当前会话的对话内容</span>
-        </span>
-        <span class="switch">
-          <input v-model="sceneStore.showSubtitle" type="checkbox" />
-          <span class="switch-track" />
-        </span>
-      </label>
+      <div class="setting">
+        <label class="toggle-setting">
+          <span class="setting-label">
+            <span>显示字幕</span>
+            <span class="setting-desc">桌宠说话时在屏幕底部显示说的内容，说完后按下面的时间自动隐藏；鼠标停在字幕上时不会隐藏</span>
+          </span>
+          <span class="switch">
+            <input v-model="sceneStore.showSubtitle" type="checkbox" />
+            <span class="switch-track" />
+          </span>
+        </label>
+        <div v-if="sceneStore.showSubtitle" class="fps-options">
+          <button
+            v-for="seconds in SUBTITLE_HIDE_DELAYS"
+            :key="seconds"
+            type="button"
+            class="fps-chip"
+            :class="{ active: sceneStore.subtitleHideDelay === seconds }"
+            @click="sceneStore.subtitleHideDelay = seconds"
+          >
+            {{ seconds }} 秒
+          </button>
+        </div>
+      </div>
     </section>
 
     <!-- 声音 -->
@@ -189,40 +219,40 @@ const volumeLevel = computed(() => {
         <span class="tile-title">声音</span>
       </header>
 
-      <div class="setting">
+      <div v-for="item in volumeSettings" :key="item.id" class="setting">
         <div class="setting-label">
-          <span>语音播放音量</span>
-          <span class="setting-desc">桌宠说话时的音量，点击喇叭可静音</span>
+          <span>{{ item.label }}</span>
+          <span class="setting-desc">{{ item.desc }}</span>
         </div>
         <div class="volume">
           <button
             class="speaker"
             type="button"
-            :class="{ muted: volumeLevel === 0 }"
-            :title="volumeLevel === 0 ? '取消静音' : '静音'"
-            @click="toggleMute"
+            :class="{ muted: item.control.level === 0 }"
+            :title="item.control.level === 0 ? '取消静音' : '静音'"
+            @click="item.control.toggleMute()"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 9h4l5-4v14l-5-4H4z" />
-              <template v-if="volumeLevel === 0">
+              <template v-if="item.control.level === 0">
                 <path d="M17 9l5 5M22 9l-5 5" />
               </template>
               <template v-else>
                 <path d="M16.5 9.5a3.5 3.5 0 0 1 0 5" />
-                <path v-if="volumeLevel === 2" d="M19 7a7 7 0 0 1 0 10" />
+                <path v-if="item.control.level === 2" d="M19 7a7 7 0 0 1 0 10" />
               </template>
             </svg>
           </button>
           <input
-            v-model.number="volumePercent"
+            v-model.number="item.control.percent"
             class="volume-slider"
             type="range"
             min="0"
             max="100"
             step="1"
-            :style="{ '--fill': `${volumePercent}%` }"
+            :style="{ '--fill': `${item.control.percent}%` }"
           />
-          <span class="volume-value">{{ volumePercent }}<small>%</small></span>
+          <span class="volume-value">{{ item.control.percent }}<small>%</small></span>
         </div>
       </div>
     </section>

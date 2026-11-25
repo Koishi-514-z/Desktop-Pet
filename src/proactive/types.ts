@@ -7,15 +7,24 @@
 
 export type TriggerId =
   | 'daily-greeting'
+  | 'festival'
   | 'lunch'
+  | 'afternoon-break'
   | 'dinner'
+  | 'weekend'
   | 'late-night'
   | 'idle-return'
   | 'app-switch'
+  | 'fullscreen-exit'
+  | 'meeting-end'
   | 'long-focus'
+  | 'sedentary'
+  | 'task-due'
   | 'idle-animation'
+  | 'random-motion'
   | 'self-talk'
   | 'topic'
+  | 'share'
 
 export type TriggerGroup = 'time' | 'event' | 'context' | 'spontaneous'
 
@@ -30,6 +39,8 @@ export interface TriggerInfo {
   priority: 'high' | 'normal' | 'low'
   /** 生成时对说话方式的额外要求 */
   guidance?: string
+  /** 默认是否开启，不写时开启 */
+  defaultEnabled?: boolean
 }
 
 export const TRIGGER_GROUP_LABELS: Record<TriggerGroup, string> = {
@@ -49,6 +60,15 @@ export const TRIGGERS: TriggerInfo[] = [
     priority: 'normal',
   },
   {
+    id: 'festival',
+    group: 'time',
+    label: '节日问候',
+    description: '春节、元宵、端午、中秋、国庆、圣诞等节日当天送上问候（当天第一次见面时和每日问候合成一句）',
+    kind: 'speech',
+    priority: 'normal',
+    guidance: '送上节日问候，可以顺带提一句这个节日的习俗或应景的小事，不要客套话连篇。',
+  },
+  {
     id: 'lunch',
     group: 'time',
     label: '午饭时间',
@@ -57,12 +77,28 @@ export const TRIGGERS: TriggerInfo[] = [
     priority: 'high',
   },
   {
+    id: 'afternoon-break',
+    group: 'time',
+    label: '下午茶',
+    description: '下午容易犯困的时候，提醒你喝点水、吃点东西或者起来走走',
+    kind: 'speech',
+    priority: 'normal',
+  },
+  {
     id: 'dinner',
     group: 'time',
     label: '晚饭时间',
     description: '到了晚饭时间，提醒你吃饭',
     kind: 'speech',
     priority: 'high',
+  },
+  {
+    id: 'weekend',
+    group: 'time',
+    label: '周末来了',
+    description: '周五傍晚说一句这周辛苦了，祝你周末愉快',
+    kind: 'speech',
+    priority: 'normal',
   },
   {
     id: 'late-night',
@@ -89,6 +125,24 @@ export const TRIGGERS: TriggerInfo[] = [
     priority: 'low',
   },
   {
+    id: 'fullscreen-exit',
+    group: 'event',
+    label: '结束全屏',
+    description: '全屏玩游戏、看视频半小时以上，退出全屏后说一句（全屏时不会打扰你）',
+    kind: 'speech',
+    priority: 'normal',
+    guidance: '用户刚结束全屏的游戏、视频或演示：可以随口问问怎么样，或者提醒休息一下眼睛，不要追问细节。',
+  },
+  {
+    id: 'meeting-end',
+    group: 'event',
+    label: '开完会',
+    description: '用会议软件开会 10 分钟以上，离开会议后说一句辛苦了（开会时不会打扰你）',
+    kind: 'speech',
+    priority: 'normal',
+    guidance: '用户可能刚开完会：可以说声辛苦了，或者提醒喝口水、活动一下，不要打听会议内容。',
+  },
+  {
     id: 'long-focus',
     group: 'context',
     label: '长时间专注',
@@ -97,12 +151,38 @@ export const TRIGGERS: TriggerInfo[] = [
     priority: 'high',
   },
   {
+    id: 'sedentary',
+    group: 'context',
+    label: '久坐提醒',
+    description: '在电脑前连续坐了很久、中途一直没有离开时，提醒你起来活动一下（不管在用什么应用；和长时间专注的提醒不会挨得太近）',
+    kind: 'speech',
+    priority: 'high',
+  },
+  {
+    id: 'task-due',
+    group: 'context',
+    label: '待办快到期',
+    description: '有待办一小时内到期（只有日期的，当天下午 4 点后）还没完成时提醒你；设置了提醒时间的待办由提醒功能负责',
+    kind: 'speech',
+    priority: 'high',
+    guidance: '提醒时说清是哪件事、什么时候到期，语气轻松，不要催得太紧。',
+  },
+  {
     id: 'idle-animation',
     group: 'spontaneous',
     label: '小动作',
     description: '时不时换个表情，不说话，也不调用模型',
     kind: 'animation',
     priority: 'low',
+  },
+  {
+    id: 'random-motion',
+    group: 'spontaneous',
+    label: '做个动作',
+    description: '时不时随机做一个模型自带的动作，不调用模型。动作带台词或音效时会出声（音量见「动作音量」），所以默认关闭',
+    kind: 'animation',
+    priority: 'low',
+    defaultEnabled: false,
   },
   {
     id: 'self-talk',
@@ -121,6 +201,15 @@ export const TRIGGERS: TriggerInfo[] = [
     kind: 'speech',
     priority: 'low',
     guidance: '主动发起一个轻松的话题，最好和用户的近况、计划或兴趣有关（可以参考记得的事），可以问一个简单的问题。',
+  },
+  {
+    id: 'share',
+    group: 'spontaneous',
+    label: '分享小发现',
+    description: '偶尔分享一个有趣的小知识，或者和季节、天气有关的小发现',
+    kind: 'speech',
+    priority: 'low',
+    guidance: '分享一个轻松有趣的小知识或小发现（可以和季节、节气、天气、时间或用户的兴趣有关），一两句话即可；拿不准的事实不要说，也不要变成长篇科普。',
   },
 ]
 
@@ -157,12 +246,15 @@ export interface ProactiveSettings {
   quietHours: { enabled: boolean, start: string, end: string }
   /** 各个时机是否开启 */
   triggers: Record<TriggerId, boolean>
-  /** 午饭、晚饭、深夜提醒的时间，HH:mm */
+  /** 午饭、下午茶、晚饭、深夜提醒的时间，HH:mm */
   lunchTime: string
+  afternoonBreakTime: string
   dinnerTime: string
   lateNightTime: string
   /** 连续专注多少分钟后提醒活动一下 */
   focusMinutes: number
+  /** 连续在电脑前（中途没有离开）多少分钟后提醒起来活动 */
+  sedentaryMinutes: number
   /** 是否把前台窗口的标题发送给模型（标题中可能有文件名、网页标题等隐私信息） */
   shareWindowTitle: boolean
   /** 前台窗口全屏时（游戏、视频、演示）不打扰 */
@@ -176,11 +268,13 @@ export const DEFAULT_SETTINGS: ProactiveSettings = {
   dndUntil: 0,
   frequency: 'normal',
   quietHours: { enabled: false, start: '00:30', end: '07:30' },
-  triggers: Object.fromEntries(TRIGGERS.map((trigger) => [trigger.id, true])) as Record<TriggerId, boolean>,
+  triggers: Object.fromEntries(TRIGGERS.map((trigger) => [trigger.id, trigger.defaultEnabled ?? true])) as Record<TriggerId, boolean>,
   lunchTime: '12:00',
+  afternoonBreakTime: '15:30',
   dinnerTime: '18:30',
   lateNightTime: '23:30',
   focusMinutes: 90,
+  sedentaryMinutes: 120,
   shareWindowTitle: false,
   respectFullscreen: true,
 }
@@ -220,6 +314,8 @@ export interface ProactiveState {
   awaitingReplyUntil: number
   /** 已经提醒过的那段专注：开始时间与提醒的次数 */
   focusNotified: { since: number, count: number } | null
+  /** 最近一次提醒休息（长时间专注、久坐）的时间，两种提醒不会挨得太近 */
+  lastRestReminderAt: number
   /** 今天主动说过的话（最近几条） */
   recentLines: SpokenLine[]
 }
@@ -234,6 +330,7 @@ export function createState(day = ''): ProactiveState {
     ignoredStreak: 0,
     awaitingReplyUntil: 0,
     focusNotified: null,
+    lastRestReminderAt: 0,
     recentLines: [],
   }
 }
