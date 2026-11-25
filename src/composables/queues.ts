@@ -41,37 +41,50 @@ export type PlaybackItem =
   | { type: 'emotion', emotion: string }
   | { type: 'end' }
 
-// 句末标点，用于将文本切分为完整语句后再输出，避免下游（如语音合成）收到语义不完整的片段
-const SENTENCE_END_REGEX = /[。！？；…!?;]/
+// 句末：句末标点，用于将文本切分为完整语句后再输出，避免下游（如语音合成）收到语义不完整的片段。
+// 连续的句末标点（如「……」「？！」）算作一处，紧跟着的右引号、右括号归到这一句
+const SENTENCE_END_REGEX = /[。！？；…!?;]+[”’"'」』）)\]]*/g
+
+// 一句话去掉标点与空白后不足这么多字时不单独输出，与下一句合并：
+// 避免语音合成收到「嗯。」「好的！」这样零碎的片段，读起来一顿一顿的
+export const MIN_SENTENCE_LENGTH = 16
+
+/** 句子的长度：不算标点、符号与空白 */
+export function sentenceLength(text: string): number {
+  return text.replace(/[\s\p{P}\p{S}]/gu, '').length
+}
 
 // 文本处理队列：将流式接收到的文本按 <Emotion> 标记切分，
-// 再按句末标点将文本切分为完整语句，依次 emit 'text'（完整语句）与 'emotion'（标记中的情绪名称）事件。
-// 检测到终止标记后，输出剩余的所有文本（无论是否构成完整语句）并 emit 'end'；
+// 再按句末标点将文本切分为完整语句（太短的与下一句合并），依次 emit 'text'（语句）与 'emotion'（标记中的情绪名称）事件。
+// 检测到终止标记后，输出剩余的所有文本（无论是否构成完整语句、是否够长）并 emit 'end'；
 export function useTextProcessingQueue() {
   // 尚未处理的文本缓冲区，可能包含不完整的标记
   const buffer = ref('')
 
-  // 已确定不属于标记、但尚未凑成完整语句的文本缓冲区
+  // 已确定不属于标记、但尚未输出的文本缓冲区：还没凑成完整语句，或者是等着与下一句合并的短句
   const sentenceBuffer = ref('')
 
-  // 按句末标点切分 sentenceBuffer 并依次 emit('text', ...)；
-  // force 为 true 时，连同末尾不完整的部分一起输出
-  function flushSentences(emit: (eventName: string, ...params: any[]) => void, force: boolean) {
-    let text = sentenceBuffer.value
-    let match = text.match(SENTENCE_END_REGEX)
-    while (match) {
-      const end = match.index! + match[0].length
-      emit('text', text.slice(0, end))
-      text = text.slice(end)
-      match = text.match(SENTENCE_END_REGEX)
+  // 按句末标点切分 sentenceBuffer 并依次 emit('text', ...)：够长的句子直接输出，
+  // 太短的留下与下一句合并；force 为 true 时，连同剩下的部分一起输出
+  function flushSentences(emit: (eventName: string, ...params: unknown[]) => void, force: boolean) {
+    const text = sentenceBuffer.value
+    // 已经输出到的位置
+    let cut = 0
+    for (const match of text.matchAll(SENTENCE_END_REGEX)) {
+      const end = match.index + match[0].length
+      const sentence = text.slice(cut, end)
+      if (sentenceLength(sentence) < MIN_SENTENCE_LENGTH) continue
+      emit('text', sentence)
+      cut = end
     }
 
-    if (force && text) {
-      emit('text', text)
-      text = ''
+    let rest = text.slice(cut)
+    if (force && rest) {
+      emit('text', rest)
+      rest = ''
     }
 
-    sentenceBuffer.value = text
+    sentenceBuffer.value = rest
   }
 
   const queue = createQueue<string>({
