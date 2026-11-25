@@ -23,6 +23,7 @@ import { useAudioStore } from '@/stores/audio'
 import { useSceneStore } from '@/stores/scene'
 import { isTauri, PASSTHROUGH_ATTR, setModelHitTester, useDesktopCursor } from '@/composables/desktop'
 import { patchLive2dMaskLimit } from '@/utils/live2d-mask-patch'
+import { patchLive2dPhysics } from '@/utils/live2d-physics-patch'
 
 type CubismModel = Cubism4InternalModel['coreModel']
 
@@ -32,6 +33,9 @@ Live2DModel.registerTicker(PIXI.Ticker)
 
 // 允许遮罩数量超过 64 个的模型正常渲染（否则报 Cannot read properties of undefined (reading 'R')）
 patchLive2dMaskLimit()
+
+// 物理模拟不再每帧新建大量临时对象（物理组多的模型会因此每隔几十秒卡顿几秒，见 utils/live2d-physics-patch.ts）
+patchLive2dPhysics()
 
 // 为模型贴图开启 mipmap，缩小显示时通过多级纹理采样减少模糊/锯齿
 PIXI.settings.MIPMAP_TEXTURES = PIXI.MIPMAP_MODES.ON
