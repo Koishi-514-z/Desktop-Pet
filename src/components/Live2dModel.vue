@@ -52,6 +52,38 @@ const baseScale = ref<number>(1)
 const dragging = ref<boolean>(false)
 const dragOffset = ref<{ x: number, y: number }>({ x: 0, y: 0 })
 
+// 拖拽、滚轮缩放时先只改画面上的模型，位置与缩放最多每隔这么久写回一次 store（松开鼠标时立即写回）。
+// store 中的模型列表会被深度侦听、整体保存到 localStorage（连同每个模型的动作列表，十几万字），
+// 写一次要十毫秒左右，拖拽时每动一下都写会让画面明显卡顿
+const TRANSFORM_SAVE_INTERVAL = 200
+let pendingTransform: { position?: { x: number, y: number }, scale?: number } = {}
+let lastTransformSaveAt = 0
+let transformSaveTimer: ReturnType<typeof setTimeout> | undefined
+
+function saveTransform() {
+  clearTimeout(transformSaveTimer)
+  transformSaveTimer = undefined
+  lastTransformSaveAt = performance.now()
+  const { position, scale } = pendingTransform
+  pendingTransform = {}
+  if (position) live2dStore.position = position
+  if (scale !== undefined) live2dStore.scale = scale
+}
+
+function queueTransformSave(patch: typeof pendingTransform) {
+  pendingTransform = { ...pendingTransform, ...patch }
+  const wait = TRANSFORM_SAVE_INTERVAL - (performance.now() - lastTransformSaveAt)
+  if (wait <= 0) saveTransform()
+  else transformSaveTimer ??= setTimeout(saveTransform, wait)
+}
+
+// 切换模型时丢掉还没写回的位置与缩放：此时 store 中的当前模型已经换成了新模型
+function cancelTransformSave() {
+  clearTimeout(transformSaveTimer)
+  transformSaveTimer = undefined
+  pendingTransform = {}
+}
+
 const localCurrentMotion = ref<{ group: string, index: number }>({ group: 'Idle', index: 0 })
 
 const moveCursorTimestamp = ref(Date.now())
@@ -289,13 +321,11 @@ function onPointerMove(event: PIXI.InteractionEvent) {
   const newY = Math.round(event.data.global.y - dragOffset.value.y)
 
   model.value.position.set(newX, newY)
-  live2dStore.position = {
-    x: newX,
-    y: newY,
-  }
+  queueTransformSave({ position: { x: newX, y: newY } })
 }
 
 function onPointerUp() {
+  if (dragging.value) saveTransform()
   dragging.value = false
 }
 
@@ -311,8 +341,10 @@ function onWheel(event: WheelEvent) {
   const delta = event.deltaY > 0 ? -live2dStore.scrollScaleStep : live2dStore.scrollScaleStep
   // 去掉反复加减步长累积的浮点误差（如 0.3 连续放大 5 次得到 0.35000000000000003），
   // 保留 4 位小数，不影响更小的步长
-  const next = Math.round((live2dStore.scale + delta) * 10000) / 10000
-  live2dStore.scale = Math.min(Math.max(next, live2dStore.minScale), live2dStore.maxScale)
+  const next = Math.round(((pendingTransform.scale ?? live2dStore.scale) + delta) * 10000) / 10000
+  const scale = Math.min(Math.max(next, live2dStore.minScale), live2dStore.maxScale)
+  model.value.scale.set(baseScale.value * scale)
+  queueTransformSave({ scale })
 }
 
 /**
@@ -356,6 +388,9 @@ function onTick() {
  * 必须在同一帧渲染之后立即读取，否则（未开启 preserveDrawingBuffer 时）缓冲区内容已失效
  */
 function sampleModelHit() {
+  // 拖拽时窗口一直响应鼠标（按下鼠标期间不穿透），用不到取样结果；
+  // 而读取像素要等 GPU 画完这一帧，拖拽复杂的模型时每次取样都会让画面卡一下
+  if (dragging.value) return
   if (!app.value || !model.value || !desktopCursor.value) {
     modelHit = false
     return
@@ -398,6 +433,7 @@ function onResize() {
  */
 function unloadModel() {
   if (!model.value) return
+  cancelTransformSave()
 
   model.value.off('hit', handleHit)
   model.value.internalModel.off('beforeModelUpdate', applyPersistentExpressions)

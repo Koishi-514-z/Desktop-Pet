@@ -47,7 +47,7 @@ const SENTENCE_END_REGEX = /[。！？；…!?;]+[”’"'」』）)\]]*/g
 
 // 一句话去掉标点与空白后不足这么多字时不单独输出，与下一句合并：
 // 避免语音合成收到「嗯。」「好的！」这样零碎的片段，读起来一顿一顿的
-export const MIN_SENTENCE_LENGTH = 16
+export const MIN_SENTENCE_LENGTH = 36
 
 /** 句子的长度：不算标点、符号与空白 */
 export function sentenceLength(text: string): number {
