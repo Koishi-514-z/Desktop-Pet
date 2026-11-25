@@ -2,7 +2,7 @@
 import type { ProviderCategory, ProviderProtocol } from '@/stores/providers'
 import { computed, ref } from 'vue'
 import { protocolRequiresApiKey, protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
-import { CATEGORY_LABELS, PROTOCOL_OPTIONS } from '@/utils/provider-options'
+import { CATEGORY_LABELS, getBaseUrlPlaceholder, PROTOCOL_OPTIONS } from '@/utils/provider-options'
 
 const props = defineProps<{ category: ProviderCategory }>()
 const emit = defineEmits<{ back: []; created: [id: string] }>()
@@ -102,11 +102,7 @@ async function submit() {
 
       <div v-if="showBaseUrl" class="field">
         <label>Base URL <span class="required">*</span></label>
-        <input
-          v-model="form.baseUrl"
-          type="text"
-          :placeholder="form.protocol === 'index-tts' ? 'http://127.0.0.1:7861/v1' : form.protocol === 'dashscope' ? 'https://dashscope.aliyuncs.com' : 'https://...'"
-        />
+        <input v-model="form.baseUrl" type="text" :placeholder="getBaseUrlPlaceholder(form.protocol)" />
       </div>
 
       <div class="field">

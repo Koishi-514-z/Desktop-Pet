@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useProvidersStore } from '@/stores/providers'
 import { createDashScopeTranscriptionModel } from '@/utils/dashscope'
+import { createFishAudioTranscriptionModel } from '@/utils/fish-audio'
 import { addHook } from '@/utils/hooks'
 
 // 识别一句话的超时时间：请求一直没有返回时放弃这一句，免得后面的话都被卡住
@@ -28,6 +29,9 @@ function resolveTranscriptionModel(provider: Provider) {
     case 'dashscope':
       // 千问的语音识别与 OpenAI 的 /audio/transcriptions 不兼容，使用百炼原生接口
       return createDashScopeTranscriptionModel(provider)
+    case 'fish-audio':
+      // Fish Audio 的语音识别以 multipart 表单上传录音，与 OpenAI 不兼容
+      return createFishAudioTranscriptionModel(provider)
     default:
       throw new Error(`协议 ${protocol} 暂不支持语音识别`)
   }

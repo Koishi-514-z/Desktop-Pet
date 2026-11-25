@@ -10,7 +10,9 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useProvidersStore } from '@/stores/providers'
 import { createDashScopeSpeechModel } from '@/utils/dashscope'
+import { createFishAudioSpeechModel } from '@/utils/fish-audio'
 import { addHook } from '@/utils/hooks'
+import { createMiniMaxSpeechModel } from '@/utils/minimax'
 
 // 根据 provider 配置的协议类型，创建对应的 AI SDK 语音合成模型实例
 function resolveSpeechModel(provider: Provider) {
@@ -34,6 +36,12 @@ function resolveSpeechModel(provider: Provider) {
     case 'dashscope':
       // 千问的语音合成与 OpenAI 不兼容，使用百炼原生接口
       return createDashScopeSpeechModel(provider)
+    case 'minimax':
+      // MiniMax 的语音合成与 OpenAI 不兼容，使用 MiniMax 自家的 T2A v2 接口
+      return createMiniMaxSpeechModel(provider)
+    case 'fish-audio':
+      // Fish Audio 的语音合成与 OpenAI 不兼容，使用 Fish Audio 自家的接口
+      return createFishAudioSpeechModel(provider)
     default:
       throw new Error(`协议 ${protocol} 暂不支持语音合成`)
   }

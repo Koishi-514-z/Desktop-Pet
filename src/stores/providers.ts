@@ -3,14 +3,16 @@ import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
 import { del, get, post } from '@/utils/web'
 import { dashscopeCompatibleUrl, dashscopeModels } from '@/utils/dashscope'
+import { FISH_AUDIO_ASR_MODELS, FISH_AUDIO_TTS_MODELS, listFishAudioVoices, validateFishAudio } from '@/utils/fish-audio'
+import { listMiniMaxVoices, MINIMAX_TTS_MODELS, validateMiniMax } from '@/utils/minimax'
 
 export type ProviderCategory = 'llm' | 'tts' | 'asr'
 
 // provider 所使用的 API 协议，决定 ChatStore / SpeechStore / TranscriptionStore 中使用哪个 AI SDK 适配器与其通信
-export type ProviderProtocol = 'openai' | 'anthropic' | 'google' | 'elevenlabs' | 'lmnt' | 'hume' | 'deepgram' | 'index-tts' | 'dashscope'
+export type ProviderProtocol = 'openai' | 'anthropic' | 'google' | 'elevenlabs' | 'lmnt' | 'hume' | 'deepgram' | 'index-tts' | 'dashscope' | 'minimax' | 'fish-audio'
 
-// 不需要配置 baseUrl 的协议（对应的 AI SDK provider 使用固定的官方接口地址）
-const PROTOCOLS_WITHOUT_BASE_URL: ProviderProtocol[] = ['elevenlabs', 'lmnt', 'hume', 'deepgram']
+// 不需要配置 baseUrl 的协议（使用固定的官方接口地址）
+const PROTOCOLS_WITHOUT_BASE_URL: ProviderProtocol[] = ['elevenlabs', 'lmnt', 'hume', 'deepgram', 'fish-audio']
 
 export function protocolRequiresBaseUrl(protocol: ProviderProtocol): boolean {
   return !PROTOCOLS_WITHOUT_BASE_URL.includes(protocol)
@@ -459,6 +461,56 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
     },
     listVoices: async function () {
       return QWEN_TTS_VOICES
+    },
+  },
+  // MiniMax：语音合成使用自家的 T2A v2 接口（见 utils/minimax.ts），声线从接口查询，模型列表是固定的
+  minimax: {
+    validator: async function (this: Provider) {
+      try {
+        await validateMiniMax(this)
+        return true
+      }
+      catch (error) {
+        console.error(error)
+        return false
+      }
+    },
+    listModels: async function () {
+      return MINIMAX_TTS_MODELS
+    },
+    listVoices: async function (this: Provider) {
+      try {
+        return await listMiniMaxVoices(this)
+      }
+      catch (error) {
+        console.error(error)
+        return []
+      }
+    },
+  },
+  // Fish Audio：语音合成与语音识别使用自家的接口（见 utils/fish-audio.ts），声线从声线库查询，模型列表是固定的
+  'fish-audio': {
+    validator: async function (this: Provider) {
+      try {
+        await validateFishAudio(this)
+        return true
+      }
+      catch (error) {
+        console.error(error)
+        return false
+      }
+    },
+    listModels: async function (this: Provider) {
+      return this.category === 'asr' ? FISH_AUDIO_ASR_MODELS : FISH_AUDIO_TTS_MODELS
+    },
+    listVoices: async function (this: Provider) {
+      try {
+        return await listFishAudioVoices(this)
+      }
+      catch (error) {
+        console.error(error)
+        return []
+      }
     },
   },
   // 本地部署的 IndexTTS
