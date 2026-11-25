@@ -9,6 +9,7 @@ import { experimental_generateSpeech as generateSpeech } from 'ai'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useProvidersStore } from '@/stores/providers'
+import { addHook } from '@/utils/hooks'
 
 // 根据 provider 配置的协议类型，创建对应的 AI SDK 语音合成模型实例
 function resolveSpeechModel(provider: Provider) {
@@ -74,13 +75,13 @@ export const useSpeechStore = defineStore('speech', () => {
     }
   }
 
-  // 添加语音合成完成/出错时的钩子函数
+  // 添加语音合成完成/出错时的钩子函数，返回取消注册的函数（组件卸载时应调用）
   function onFinish(hook: (audio: GeneratedAudioFile) => Promise<void>) {
-    onFinishHooks.value.push(hook)
+    return addHook(onFinishHooks, hook)
   }
-  
+
   function onError(hook: (error: unknown) => Promise<void>) {
-    onErrorHooks.value.push(hook)
+    return addHook(onErrorHooks, hook)
   }
 
   return {

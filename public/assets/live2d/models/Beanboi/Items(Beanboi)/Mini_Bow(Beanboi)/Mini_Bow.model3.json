@@ -1,0 +1,26 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "Mini_Bow.moc3",
+		"Textures": [
+			"Mini_Bow.8192/texture_00.png"
+		],
+		"Physics": "Mini_Bow.physics3.json",
+		"DisplayInfo": "Mini_Bow.cdi3.json"
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen",
+				"ParamEyeROpen"
+			]
+		}
+	]
+}

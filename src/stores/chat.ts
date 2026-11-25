@@ -23,6 +23,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { useRemindersStore } from '@/stores/reminders'
 import { useSceneStore } from '@/stores/scene'
 import { useMemoryStore } from '@/stores/memory'
+import { addHook } from '@/utils/hooks'
 import { deleteImages } from '@/utils/images'
 import { resolveLanguageModel } from '@/utils/llm'
 import { toMemoryDialog } from '@/memory/writer'
@@ -594,25 +595,25 @@ export const useChatStore = defineStore('chat', () => {
     moveSessionToFront(session.id)
   }
 
-  // 添加发送消息时的钩子函数
+  // 添加发送消息时的钩子函数，返回取消注册的函数（组件卸载时应调用）
   function onStart(hook: () => Promise<void>) {
-    onStartHooks.value.push(hook)
+    return addHook(onStartHooks, hook)
   }
 
   function onFirstChunkArrived(hook: () => Promise<void>) {
-    onFirstChunkArrivedHooks.value.push(hook)
+    return addHook(onFirstChunkArrivedHooks, hook)
   }
 
   function onChunk(hook: (delta: string) => Promise<void>) {
-    onChunkHooks.value.push(hook)
+    return addHook(onChunkHooks, hook)
   }
 
   function onFinish(hook: (text: string) => Promise<void>) {
-    onFinishHooks.value.push(hook)
+    return addHook(onFinishHooks, hook)
   }
 
   function onError(hook: (error: unknown) => Promise<void>) {
-    onErrorHooks.value.push(hook)
+    return addHook(onErrorHooks, hook)
   }
 
 

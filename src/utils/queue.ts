@@ -258,6 +258,9 @@ export function createSequencedQueue<T>(options: {
   /** 当前是否正在消费 */
   let drainTask: Promise<void> | undefined
 
+  /** reset() 的次数：正在进行的消费发现它变化后即停止，不会与新一轮的消费同时进行 */
+  let generation = 0
+
   const internalEventListeners: SequencedEvents<T> = {
     enqueue: [],
     dequeue: [],
@@ -294,10 +297,12 @@ export function createSequencedQueue<T>(options: {
 
   function scheduleDrain() {
     if (drainTask || (!pendingItems.has(nextSequence) && !skippedSequences.has(nextSequence))) return
-    drainTask = Promise.resolve().then(drain).finally(() => {
-      drainTask = undefined
+    const task: Promise<void> = Promise.resolve().then(drain).finally(() => {
+      // reset() 之后可能已经开始了新一轮的消费，只清除自己
+      if (drainTask === task) drainTask = undefined
       scheduleDrain()
     })
+    drainTask = task
   }
 
   function enqueue(sequence: number, payload: T) {
@@ -324,14 +329,17 @@ export function createSequencedQueue<T>(options: {
   }
 
   function reset(startSequence?: number) {
+    generation++
     pendingItems.clear()
     skippedSequences.clear()
     nextSequence = startSequence ?? 0
+    // 正在进行的消费会在当前项目处理完后停止，新一轮可以立即开始消费
     drainTask = undefined
   }
 
   async function drain() {
-    while (pendingItems.has(nextSequence) || skippedSequences.has(nextSequence)) {
+    const currentGeneration = generation
+    while (currentGeneration === generation && (pendingItems.has(nextSequence) || skippedSequences.has(nextSequence))) {
       if (skippedSequences.has(nextSequence)) {
         skippedSequences.delete(nextSequence)
         nextSequence++
@@ -347,7 +355,7 @@ export function createSequencedQueue<T>(options: {
       emit('dequeue', sequencedPayload, pendingItems.size)
 
       for (const handler of finalHandlers.value) {
-        
+        if (currentGeneration !== generation) break
         emit('process', sequencedPayload, handler)
         try {
           const result = await handler({ data: payload, emit: emitHandlerEvent, sequence: currentSequence })
@@ -360,7 +368,7 @@ export function createSequencedQueue<T>(options: {
       }
     }
 
-    if (pendingItems.size === 0) {
+    if (currentGeneration === generation && pendingItems.size === 0) {
       emit('drain')
     }
   }
@@ -404,6 +412,8 @@ export function createParallelSequencedQueue<T, R>(options: {
   concurrency?: number
 }) {
   let sequenceCounter = 0
+  /** reset() 的次数，用于识别 reset 之前就开始处理、之后才完成的旧任务 */
+  let generation = 0
 
   const finalProcessor = ref<((ctx: HandlerContext<T>) => Promise<R>) | null>(options.processor ?? null)
   const finalOutputHandler = ref<((ctx: HandlerContext<R> & { sequence: number, originalData: T }) => Promise<void>) | null>(options.outputHandler ?? null)
@@ -469,10 +479,13 @@ export function createParallelSequencedQueue<T, R>(options: {
   })
 
   // 处理阶段：使用 ParallelQueue 并行执行
-  const processQueue = createParallelQueue<{ sequence: number, data: T }>({
+  const processQueue = createParallelQueue<{ sequence: number, generation: number, data: T }>({
     handlers: [
       async (ctx) => {
-        const { sequence, data } = ctx.data
+        const { sequence, generation: itemGeneration, data } = ctx.data
+        // reset() 之后序号从头开始，旧任务的序号已经属于新的一轮：
+        // 它的结果（或失败后的跳过）若再写入输出队列，会顶替或跳过新一轮中同序号的项目
+        const isStale = () => itemGeneration !== generation
         if (!finalProcessor.value) {
           emit('processError', data, new Error('Processor not set'), sequence)
           outputQueue.skip(sequence)
@@ -481,12 +494,14 @@ export function createParallelSequencedQueue<T, R>(options: {
         emit('processStart', data, sequence)
         try {
           const result = await finalProcessor.value({ data, emit: emitHandlerEvent })
+          if (isStale()) return
           if (result) {
             emit('processComplete', data, result, sequence)
           }
           outputQueue.enqueue(sequence, { result, originalData: data })
         }
         catch (err) {
+          if (isStale()) return
           emit('processError', data, err, sequence)
           outputQueue.skip(sequence)
         }
@@ -499,10 +514,12 @@ export function createParallelSequencedQueue<T, R>(options: {
   function enqueue(payload: T) {
     const sequence = sequenceCounter++
     emit('enqueue', payload, sequence)
-    processQueue.enqueue({ sequence, data: payload })
+    processQueue.enqueue({ sequence, generation, data: payload })
   }
 
+  // 开始新的一轮：丢弃尚未输出的内容。已经在处理中的任务无法取消，完成后其结果会被丢弃
   function reset() {
+    generation++
     outputQueue.reset()
     processQueue.clear()
     sequenceCounter = 0

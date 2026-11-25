@@ -1,0 +1,55 @@
+{
+    "Type": "Live2D Expression",
+    "Parameters": [
+        {
+            "Id": "PARAM_BEAK_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_BIRD_WINGS_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_FEATHER_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_COLLAR_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "COLLAR_SPIKE_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_COOL_GLASS_ITEM",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HAIRFLUFF_TOP_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HAIRFLUFF_MID_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_HAIRFLUFF_BOT_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        },
+        {
+            "Id": "PARAM_BODY_HAIR_EXTRA",
+            "Value": 1.0,
+            "Blend": "Add"
+        }
+    ]
+}

@@ -1,0 +1,79 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "Ayane sweater over sailor uniform.moc3",
+		"Textures": [
+			"texture_00.png",
+			"texture_01.png",
+			"texture_02.png",
+			"texture_03.png"
+		],
+		"Physics": "Ayane sweater over sailor uniform.physics3.json",
+		"DisplayInfo": "Ayane sweater over sailor uniform.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "Blush.exp3",
+				"File": "Blush.exp3.json"
+			},
+			{
+				"Name": "Chaos.exp3",
+				"File": "Chaos.exp3.json"
+			},
+			{
+				"Name": "Dark Form.exp3",
+				"File": "Dark Form.exp3.json"
+			},
+			{
+				"Name": "Glasses Toggle.exp3",
+				"File": "Glasses Toggle.exp3.json"
+			},
+			{
+				"Name": "Heart Eyes.exp3",
+				"File": "Heart Eyes.exp3.json"
+			},
+			{
+				"Name": "Jacket Toggle.exp3",
+				"File": "Jacket Toggle.exp3.json"
+			},
+			{
+				"Name": "keep it up.exp3",
+				"File": "keep it up.exp3.json"
+			},
+			{
+				"Name": "Shh~~~.exp3",
+				"File": "Shh~~~.exp3.json"
+			},
+			{
+				"Name": "Starry Eyes.exp3",
+				"File": "Starry Eyes.exp3.json"
+			},
+			{
+				"Name": "take note.exp3",
+				"File": "take note.exp3.json"
+			},
+			{
+				"Name": "Tears.exp3",
+				"File": "Tears.exp3.json"
+			},
+			{
+				"Name": "Watermark Hide.exp3",
+				"File": "Watermark Hide.exp3.json"
+			}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeROpen",
+				"ParamEyeLOpen"
+			]
+		}
+	]
+}

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount } from 'vue'
 import Live2dModel from '@/components/Live2dModel.vue'
 import { useTextProcessingQueue, useSpeechGeneratingQueue, useAudioPlayingQueue } from '@/composables/queues'
 import { useChatStore } from '@/stores/chat';
@@ -15,28 +16,48 @@ const audioStore = useAudioStore()
 const audioPlayingQueue = useAudioPlayingQueue()
 const live2dStore = useLive2dStore()
 
+// 向全局 store 注册的钩子在卸载时全部注销：store 是单例，组件重新挂载（如开发时的热更新）后，
+// 旧组件的钩子若还在，就会驱动旧的一套队列，同一句话被重复合成、重复播放
+const disposers = [
+  chatStore.onStart(async () => {
+    textProcessingQueue.resetQueue()
+    speechGeneratingQueue.resetQueue()
+    audioPlayingQueue.resetQueue()
+    live2dStore.playExpressionByTag('thinking')
+  }),
 
-chatStore.onStart(async () => {
+  chatStore.onFirstChunkArrived(async () => {
+    live2dStore.playDefaultExpression()
+  }),
+
+  chatStore.onChunk(async (delta: string) => {
+    textProcessingQueue.enQueue(delta)
+  }),
+
+  chatStore.onFinish(async () => {
+    textProcessingQueue.endQueue()
+  }),
+
+  chatStore.onError(async (error: unknown) => {
+    console.error(error)
+  }),
+
+  speechStore.onError(async (error: unknown) => {
+    console.error(error)
+  }),
+
+  audioStore.onError(async (error: unknown) => {
+    console.error(error)
+  }),
+]
+
+onBeforeUnmount(() => {
+  disposers.forEach((dispose) => dispose())
+  // 丢弃这一套队列中尚未处理的内容，并停止它正在播放的语音
   textProcessingQueue.resetQueue()
   speechGeneratingQueue.resetQueue()
   audioPlayingQueue.resetQueue()
-  live2dStore.playExpressionByTag('thinking')
-})
-
-chatStore.onFirstChunkArrived(async () => {
-  live2dStore.playDefaultExpression()
-})
-
-chatStore.onChunk(async (delta: string) => {
-  textProcessingQueue.enQueue(delta)
-})
-
-chatStore.onFinish(async () => {
-  textProcessingQueue.endQueue()
-})
-
-chatStore.onError(async (error: unknown) => {
-  console.error(error)
+  audioStore.stop()
 })
 
 textProcessingQueue.onTextProcessed((text: string) => {
@@ -51,10 +72,6 @@ textProcessingQueue.onEndProcessed(() => {
   speechGeneratingQueue.enQueue({ type: 'end' })
 })
 
-
-speechStore.onError(async (error: unknown) => {
-  console.error(error)
-})
 
 speechGeneratingQueue.onItemReceived(async ({ data }) => {
   if (data.type !== 'speech') return data
@@ -71,10 +88,6 @@ speechGeneratingQueue.onItemGenerated(async ({ data, sequence, originalData }) =
   audioPlayingQueue.enQueue(data)
 })
 
-
-audioStore.onError(async (error: unknown) => {
-  console.error(error)
-})
 
 audioPlayingQueue.onItemReceived(async ({ data }) => {
   switch (data.type) {
@@ -95,16 +108,6 @@ audioPlayingQueue.onItemReceived(async ({ data }) => {
       break
   }
 })
-
-
-
-
-
-
-
-
-
-
 </script>
 
 <template>

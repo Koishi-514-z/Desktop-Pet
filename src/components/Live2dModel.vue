@@ -22,12 +22,16 @@ import { clamp, randInt } from '@/utils/math'
 import { useAudioStore } from '@/stores/audio'
 import { useSceneStore } from '@/stores/scene'
 import { isTauri, PASSTHROUGH_ATTR, setModelHitTester, useDesktopCursor } from '@/composables/desktop'
+import { patchLive2dMaskLimit } from '@/utils/live2d-mask-patch'
 
 type CubismModel = Cubism4InternalModel['coreModel']
 
 // 让 pixi-live2d-display 使用 PIXI 的 Ticker 自动驱动模型更新
 // （眨眼、呼吸、物理、待机动作等都依赖这个心跳）
 Live2DModel.registerTicker(PIXI.Ticker)
+
+// 允许遮罩数量超过 64 个的模型正常渲染（否则报 Cannot read properties of undefined (reading 'R')）
+patchLive2dMaskLimit()
 
 // 为模型贴图开启 mipmap，缩小显示时通过多级纹理采样减少模糊/锯齿
 PIXI.settings.MIPMAP_TEXTURES = PIXI.MIPMAP_MODES.ON
@@ -67,6 +71,17 @@ const HIT_SAMPLE_INTERVAL = 30
 const hitPixel = new Uint8Array(4)
 let modelHit = false
 let lastHitSampleAt = 0
+
+// 常驻表情（exp3.json）中的参数。pixi-live2d-display 同一时间只能播放一个表情，
+// 所以常驻表情不走表情管理器，而是每帧在模型更新前直接叠加到参数上
+interface ExpressionParameter {
+  Id: string
+  Value: number
+  Blend?: 'Add' | 'Multiply' | 'Overwrite'
+}
+let persistentParameters: ExpressionParameter[] = []
+// 每次加载常驻表情时递增，用来丢弃已过期的加载结果（期间切换了模型或修改了设置）
+let persistentLoadId = 0
 
 /**
  * 根据画布尺寸与模型原始尺寸，计算让模型完整显示的基础缩放
@@ -131,8 +146,9 @@ function syncModelMeta() {
   }))
 
   // 碰撞区域列表，附带 model.json 中自定义的 Motion 字段（点击该区域触发的动作组）
+  // 部分模型的 model3.json 没有 HitAreas 字段，按空列表处理
   const settings = model.value.internalModel.settings as Cubism4ModelSettings
-  const rawHitAreas = (settings as any).json?.HitAreas
+  const rawHitAreas: any[] = (settings as any).json?.HitAreas ?? []
   live2dStore.availableHitAreas = rawHitAreas.map((area: any) => ({
     name: area.Name,
     id: area.Id,
@@ -141,10 +157,30 @@ function syncModelMeta() {
 }
 
 /**
- * 播放指定动作
+ * 当前是否有非 idle 的动作正在播放，或正在加载、即将播放
+ */
+function isPlayingNonIdleMotion() {
+  if (!model.value) return false
+  const { state, groups } = model.value.internalModel.motionManager
+  const playing = state.currentPriority !== MotionPriority.NONE
+    && state.currentGroup !== undefined
+    && state.currentGroup !== groups.idle
+  const reserved = state.reservePriority !== MotionPriority.NONE
+    && state.reservedGroup !== undefined
+    && state.reservedGroup !== groups.idle
+  return playing || reserved
+}
+
+/**
+ * 播放指定动作。正在播放（或加载）非 idle 的动作时，忽略新的动作，避免打断
+ * 注：motionFinish 回调中切回 idle 的请求经由 watch 异步触发，此时上一个动作的状态已被清除，不会被拦截
  */
 async function playMotion(group: string, index?: number, priority = MotionPriority.NORMAL) {
   if (!model.value) return
+  if (isPlayingNonIdleMotion()) {
+    console.log("playMotion skipped, non-idle motion is playing", group, index)
+    return
+  }
   console.log("playMotion", group, index)
   await model.value.motion(group, index, priority)
 }
@@ -165,6 +201,49 @@ async function playExpression(name: string) {
     return
   }
 	await model.value.expression(name)
+}
+
+/**
+ * 读取常驻表情的 exp3.json，得到每帧需要叠加的参数。找不到或读取失败的表情会被跳过
+ */
+async function loadPersistentExpressions(names: string[] = []) {
+  if (!model.value) return
+  const loadId = ++persistentLoadId
+  const { settings, motionManager } = model.value.internalModel
+  const definitions = motionManager.expressionManager?.definitions ?? []
+  const files = names
+    .map((name) => definitions.find((def) => def.Name === name)?.File)
+    .filter((file): file is string => !!file)
+
+  const results = await Promise.all(files.map(async (file) => {
+    try {
+      const response = await fetch(settings.resolveURL(file))
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const json = await response.json()
+      return (json.Parameters ?? []) as ExpressionParameter[]
+    }
+    catch (error) {
+      console.warn('常驻表情加载失败', file, error)
+      return []
+    }
+  }))
+
+  if (loadId !== persistentLoadId) return
+  persistentParameters = results.flat()
+}
+
+/**
+ * 在模型更新前叠加常驻表情的参数。每帧更新结束后库会把参数还原成动作计算后的值，
+ * 所以这里每帧重新叠加一次，不会越加越多
+ */
+function applyPersistentExpressions() {
+  if (!model.value) return
+  const coreModel = model.value.internalModel.coreModel as CubismModel
+  for (const { Id, Value, Blend } of persistentParameters) {
+    if (Blend === 'Multiply') coreModel.multiplyParameterValueById(Id, Value)
+    else if (Blend === 'Overwrite') coreModel.setParameterValueById(Id, Value)
+    else coreModel.addParameterValueById(Id, Value)
+  }
 }
 
 /**
@@ -318,6 +397,9 @@ function unloadModel() {
   if (!model.value) return
 
   model.value.off('hit', handleHit)
+  model.value.internalModel.off('beforeModelUpdate', applyPersistentExpressions)
+  persistentParameters = []
+  persistentLoadId++
   model.value.internalModel.motionManager.off('motionStart')
   model.value.internalModel.motionManager.off('motionFinish')
 
@@ -335,6 +417,10 @@ async function loadModel(url: string) {
   unloadModel()
 
   model.value = await Live2DModel.from(url, { autoInteract: false })
+
+  // 先读取常驻表情再显示模型，避免模型刚出现时闪现水印等本该隐藏的部件
+  await loadPersistentExpressions(live2dStore.currentModel?.persistentExpressions)
+  model.value.internalModel.on('beforeModelUpdate', applyPersistentExpressions)
 
   model.value.anchor.set(0.5, 0.5)
   app.value.stage.addChild(model.value as unknown as PIXI.Container)
@@ -376,10 +462,7 @@ onMounted(async () => {
   app.value.view.setAttribute(PASSTHROUGH_ATTR, '')
   container.appendChild(app.value.view as HTMLCanvasElement)
 
-  // 加载 Live2D 模型
-  await loadModel(live2dStore.currentModel?.url ?? defaultModels[0]!.url)
-
-  // 绑定舞台级交互事件
+  // 先绑定舞台级交互事件，再加载模型：模型加载出错时，拖拽、缩放、鼠标穿透判断仍然可用
   app.value.stage.interactive = true
   app.value.stage.hitArea = app.value.screen
   app.value.stage.on('pointerdown', onPointerDown)
@@ -400,6 +483,14 @@ onMounted(async () => {
   if (isTauri) {
     app.value.ticker.add(sampleModelHit, undefined, PIXI.UPDATE_PRIORITY.UTILITY)
     setModelHitTester(() => modelHit)
+  }
+
+  // 加载 Live2D 模型
+  try {
+    await loadModel(live2dStore.currentModel?.url ?? defaultModels[0]!.url)
+  }
+  catch (error) {
+    console.error('Live2D 模型加载失败', error)
   }
 })
 
@@ -431,8 +522,15 @@ watch(() => sceneStore.maxFPS, (maxFPS) => {
 watch(
   () => live2dStore.currentModel?.url,
   (url) => {
-    if (url) loadModel(url)
+    if (url) loadModel(url).catch((error) => console.error('Live2D 模型加载失败', error))
   },
+)
+
+// 在设置中修改了当前模型的常驻表情时，重新读取（切换模型时由 loadModel 负责读取）
+watch(
+  () => live2dStore.currentModel?.persistentExpressions,
+  (names) => loadPersistentExpressions(names),
+  { deep: true },
 )
 
 // live2dStore 中指定了新的动作 / 表情时，驱动模型播放

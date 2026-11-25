@@ -1,0 +1,45 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "pudding.moc3",
+		"Textures": [
+			"texture_00.png"
+		],
+		"Physics": "pudding.physics3.json",
+		"DisplayInfo": "pudding.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "01_eb.exp3",
+				"File": "01_eb.exp3.json"
+			},
+			{
+				"Name": "02_Plate.exp3",
+				"File": "02_Plate.exp3.json"
+			},
+			{
+				"Name": "03_caramel.exp3",
+				"File": "03_caramel.exp3.json"
+			},
+			{
+				"Name": "04_Pumpkin.exp3",
+				"File": "04_Pumpkin.exp3.json"
+			},
+			{
+				"Name": "05_Strawberry.exp3",
+				"File": "05_Strawberry.exp3.json"
+			}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		}
+	]
+}
