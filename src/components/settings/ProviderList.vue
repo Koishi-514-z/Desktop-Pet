@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Provider, ProviderCategory } from '@/stores/providers'
 import { useProvidersStore } from '@/stores/providers'
-import { CATEGORY_LABELS, getInitial, getProtocolLabel } from '@/utils/provider-options'
+import { CATEGORY_LABELS, CATEGORY_SHORT_LABELS, getInitial, getProtocolLabel } from '@/utils/provider-options'
 
 const emit = defineEmits<{
   select: [id: string]
@@ -13,17 +13,15 @@ const providersStore = useProvidersStore()
 const sections: { category: ProviderCategory; getProviders: () => Provider[] }[] = [
   { category: 'llm', getProviders: () => providersStore.getLLMProviders() },
   { category: 'tts', getProviders: () => providersStore.getTTSProviders() },
+  { category: 'asr', getProviders: () => providersStore.getASRProviders() },
 ]
 
 function isCurrent(provider: Provider) {
-  return provider.category === 'llm'
-    ? providersStore.currentLLMProviderId === provider.id
-    : providersStore.currentTTSProviderId === provider.id
+  return providersStore.isCurrentProvider(provider)
 }
 
 function setCurrent(provider: Provider) {
-  if (provider.category === 'llm') providersStore.currentLLMProviderId = provider.id
-  else providersStore.currentTTSProviderId = provider.id
+  providersStore.setCurrentProvider(provider)
 }
 
 // 卡片底部展示的当前模型 / 声线
@@ -106,7 +104,7 @@ function remove(provider: Provider) {
           <span class="add-icon">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           </span>
-          <span>添加 {{ section.category === 'llm' ? 'LLM' : 'TTS' }} Provider</span>
+          <span>添加 {{ CATEGORY_SHORT_LABELS[section.category] }} Provider</span>
         </button>
       </div>
     </section>

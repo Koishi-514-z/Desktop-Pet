@@ -1256,6 +1256,28 @@ svg {
   opacity: 0.35;
 }
 
+/* 语音输入：打开时高亮，听到说话时外圈随音量放大 */
+.mic-button.active {
+  color: #fff;
+  background: rgb(52 211 153 / 22%);
+  box-shadow: 0 0 0 1px rgb(52 211 153 / 55%);
+  transition:
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.08s;
+}
+
+.mic-button.active.hearing {
+  background: rgb(52 211 153 / 32%);
+  box-shadow:
+    0 0 0 1px rgb(52 211 153 / 80%),
+    0 0 0 calc(var(--level, 0) * 6px) rgb(52 211 153 / 25%);
+}
+
+.input-hint.listening {
+  color: rgb(52 211 153 / 85%);
+}
+
 /* 拖入图片时的遮罩 */
 .interactive-area.file-dragging {
   border-color: rgb(91 157 255 / 70%);

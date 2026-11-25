@@ -46,6 +46,11 @@ svg {
   box-shadow: 0 4px 12px rgb(255 143 184 / 30%);
 }
 
+.provider-avatar.asr {
+  background: linear-gradient(135deg, #34d399, #4fd1e5);
+  box-shadow: 0 4px 12px rgb(52 211 153 / 30%);
+}
+
 .provider-avatar.small {
   width: 30px;
   height: 30px;

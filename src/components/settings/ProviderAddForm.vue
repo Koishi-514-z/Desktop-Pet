@@ -105,7 +105,7 @@ async function submit() {
         <input
           v-model="form.baseUrl"
           type="text"
-          :placeholder="form.protocol === 'index-tts' ? 'http://127.0.0.1:7861/v1' : 'https://...'"
+          :placeholder="form.protocol === 'index-tts' ? 'http://127.0.0.1:7861/v1' : form.protocol === 'dashscope' ? 'https://dashscope.aliyuncs.com' : 'https://...'"
         />
       </div>
 

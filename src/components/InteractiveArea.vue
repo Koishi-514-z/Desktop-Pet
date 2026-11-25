@@ -9,10 +9,14 @@ import AgentTrace from '@/components/AgentTrace.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 import { categoryLabel } from '@/memory/types'
 import { useAgentStore } from '@/stores/agent'
+import { useAudioStore } from '@/stores/audio'
 import { useCaptureStore } from '@/stores/capture'
 import { useChatStore } from '@/stores/chat'
+import { useMicrophoneStore } from '@/stores/microphone'
 import { usePersonaStore } from '@/stores/persona'
+import { useProvidersStore } from '@/stores/providers'
 import { useSceneStore } from '@/stores/scene'
+import { useTranscriptionStore } from '@/stores/transcription'
 import { getInitial, hashHue } from '@/utils/avatar'
 import { imageSrc } from '@/utils/images'
 
@@ -27,6 +31,10 @@ const chatStore = useChatStore()
 const personaStore = usePersonaStore()
 const sceneStore = useSceneStore()
 const captureStore = useCaptureStore()
+const microphoneStore = useMicrophoneStore()
+const transcriptionStore = useTranscriptionStore()
+const providersStore = useProvidersStore()
+const audioStore = useAudioStore()
 
 const inputText = ref('')
 const errorMessage = ref('')
@@ -342,6 +350,39 @@ const disposeErrorHook = chatStore.onError(async (error) => {
   errorMessage.value = error instanceof Error ? error.message : String(error)
 })
 onBeforeUnmount(disposeErrorHook)
+
+// ===== 语音输入 =====
+// 打开后一直在听：说完一句话会自动识别并发送（见 Stage 中的语音输入管线），面板关闭后也会继续听
+
+function toggleMicrophone() {
+  if (!microphoneStore.isListening && !providersStore.getCurrentASRProvider()) {
+    errorMessage.value = '还没有设置语音识别：请在「设置 → 服务商 → 语音识别 (ASR)」中填写并选用一个'
+    return
+  }
+  microphoneStore.toggle()
+}
+
+watch(() => microphoneStore.error, (error) => {
+  if (error) errorMessage.value = error
+})
+
+watch(() => transcriptionStore.error, (error) => {
+  if (error) errorMessage.value = `语音识别失败：${error}`
+})
+
+const microphoneTitle = computed(() => {
+  if (microphoneStore.isStarting) return '正在打开麦克风…'
+  return microphoneStore.isListening ? '关闭语音输入' : '语音输入：开启后说完话会自动发送'
+})
+
+// 输入框下方的提示：语音输入打开时显示正在做什么
+const inputHint = computed(() => {
+  if (!microphoneStore.isListening) return 'Enter 发送 · Shift + Enter 换行 · 可以粘贴或拖入图片'
+  if (microphoneStore.userSpeaking) return '正在听你说…'
+  if (transcriptionStore.isTranscribing) return '正在识别…'
+  if (audioStore.isPlaying || audioStore.speechPending) return `等 ${personaName.value} 说完再听…`
+  return '正在聆听，说完后会自动发送'
+})
 
 // ===== 执行中途的提问 =====
 
@@ -728,6 +769,21 @@ onMounted(() => {
                     <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" />
                   </svg>
                 </button>
+                <button
+                  type="button"
+                  class="tool-button mic-button"
+                  :class="{ active: microphoneStore.isListening, hearing: microphoneStore.userSpeaking }"
+                  :style="{ '--level': microphoneStore.level }"
+                  :title="microphoneTitle"
+                  :aria-pressed="microphoneStore.isListening"
+                  :disabled="microphoneStore.isStarting"
+                  @click="toggleMicrophone"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="9" y="3" width="6" height="11" rx="3" />
+                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                  </svg>
+                </button>
                 <input ref="fileInputRef" type="file" accept="image/*" multiple hidden @change="handleFileChange" />
               </div>
               <textarea
@@ -745,7 +801,7 @@ onMounted(() => {
                 </svg>
               </button>
             </div>
-            <p class="input-hint">Enter 发送 · Shift + Enter 换行 · 可以粘贴或拖入图片</p>
+            <p class="input-hint" :class="{ listening: microphoneStore.isListening }">{{ inputHint }}</p>
           </form>
         </section>
       </div>

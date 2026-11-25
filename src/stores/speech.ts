@@ -9,6 +9,7 @@ import { experimental_generateSpeech as generateSpeech } from 'ai'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useProvidersStore } from '@/stores/providers'
+import { createDashScopeSpeechModel } from '@/utils/dashscope'
 import { addHook } from '@/utils/hooks'
 
 // 根据 provider 配置的协议类型，创建对应的 AI SDK 语音合成模型实例
@@ -30,6 +31,9 @@ function resolveSpeechModel(provider: Provider) {
     case 'index-tts':
       // server 提供 OpenAI 兼容的 /audio/speech 接口；本地服务可不设 apiKey
       return createOpenAI({ apiKey, baseURL: baseUrl, name: 'index-tts' }).speech(modelId || 'index-tts')
+    case 'dashscope':
+      // 千问的语音合成与 OpenAI 不兼容，使用百炼原生接口
+      return createDashScopeSpeechModel(provider)
     default:
       throw new Error(`协议 ${protocol} 暂不支持语音合成`)
   }

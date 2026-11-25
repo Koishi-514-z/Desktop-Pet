@@ -1,13 +1,28 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import Live2dModel from '@/components/Live2dModel.vue'
-import { useTextProcessingQueue, useSpeechGeneratingQueue, useAudioPlayingQueue } from '@/composables/queues'
+import {
+  useTextProcessingQueue,
+  useSpeechGeneratingQueue,
+  useAudioPlayingQueue,
+  useVoiceDetectingQueue,
+  useTranscriptionQueue,
+} from '@/composables/queues'
 import { useChatStore } from '@/stores/chat';
 import { useSpeechStore } from '@/stores/speech';
 import { useAudioStore } from '@/stores/audio';
 import { useLive2dStore } from '@/stores/live2d';
+import { useMicrophoneStore } from '@/stores/microphone'
+import { useTranscriptionStore } from '@/stores/transcription'
 import { randBool } from '@/utils/math';
 
+// 语音管线（见 composables/queues.ts）：
+// 输入：麦克风 → 检测出一句句话 → 语音识别 → 发送给对话
+// 输出：对话的流式回复 → 切分语句 → 语音合成 → 依次播放
+const microphoneStore = useMicrophoneStore()
+const voiceDetectingQueue = useVoiceDetectingQueue()
+const transcriptionStore = useTranscriptionStore()
+const transcriptionQueue = useTranscriptionQueue()
 const chatStore = useChatStore()
 const textProcessingQueue = useTextProcessingQueue()
 const speechStore = useSpeechStore()
@@ -16,9 +31,75 @@ const audioStore = useAudioStore()
 const audioPlayingQueue = useAudioPlayingQueue()
 const live2dStore = useLive2dStore()
 
+// ===== 输入：语音识别 =====
+
+// 桌宠说完话后，再等一会儿才接着听，免得把自己声音的尾巴当成用户说的话
+const ECHO_GUARD_MS = 400
+// 识别出一句话后稍等一下再发送：这期间用户接着说的话会合并成一条消息
+const SEND_DELAY_MS = 400
+
+// 桌宠正在说话（正在播放，或者这一轮还有语音没播完）时不听，避免把自己的声音识别成用户说的话
+const petSpeaking = computed(() => audioStore.isPlaying || audioStore.speechPending)
+let listenAfter = 0
+
+// 识别出来、还没发送的文字，以及还没识别完的句数
+let draft = ''
+let transcribing = 0
+let sendTimer: ReturnType<typeof setTimeout> | undefined
+
+// 把识别出的几句话接起来：前后都是英文单词时用空格隔开，中文直接接上
+function joinTranscript(previous: string, next: string): string {
+  if (!previous) return next
+  return /[A-Za-z0-9]$/.test(previous) && /^[A-Za-z0-9]/.test(next) ? `${previous} ${next}` : previous + next
+}
+
+function cancelSend() {
+  clearTimeout(sendTimer)
+  sendTimer = undefined
+}
+
+// 用户说完、已经说的话都识别完了，才把攒下的文字作为一条消息发出去
+function scheduleSend() {
+  cancelSend()
+  if (!draft || transcribing > 0 || voiceDetectingQueue.isSpeaking()) return
+  sendTimer = setTimeout(() => {
+    sendTimer = undefined
+    const content = draft
+    draft = ''
+    void chatStore.sendMessage(content)
+  }, SEND_DELAY_MS)
+}
+
+// 丢掉正在听的这句话；之前已经说完的照常识别、发送
+function resetListening() {
+  voiceDetectingQueue.resetQueue()
+  microphoneStore.userSpeaking = false
+  scheduleSend()
+}
+
+watch(petSpeaking, (speaking) => {
+  if (speaking) resetListening()
+  else listenAfter = performance.now() + ECHO_GUARD_MS
+})
+
+// 打开麦克风时重新测量环境噪声；关闭时丢掉正在听的这句话
+watch(() => microphoneStore.isListening, (listening) => {
+  if (listening) voiceDetectingQueue.resetQueue({ recalibrate: true })
+  else resetListening()
+})
+
 // 向全局 store 注册的钩子在卸载时全部注销：store 是单例，组件重新挂载（如开发时的热更新）后，
 // 旧组件的钩子若还在，就会驱动旧的一套队列，同一句话被重复合成、重复播放
 const disposers = [
+  microphoneStore.onFrame((frame: Float32Array) => {
+    if (petSpeaking.value || performance.now() < listenAfter) return
+    voiceDetectingQueue.enQueue(frame)
+  }),
+
+  transcriptionStore.onError(async (error: unknown) => {
+    console.error(error)
+  }),
+
   chatStore.onStart(async () => {
     textProcessingQueue.resetQueue()
     speechGeneratingQueue.resetQueue()
@@ -58,13 +139,55 @@ const disposers = [
 
 onBeforeUnmount(() => {
   disposers.forEach((dispose) => dispose())
-  // 丢弃这一套队列中尚未处理的内容，并停止它正在播放的语音
+  // 丢弃这一套队列中尚未处理的内容，并停止它正在播放的语音（麦克风是全局的，保持打开）
+  voiceDetectingQueue.resetQueue()
+  transcriptionQueue.resetQueue()
+  cancelSend()
+  microphoneStore.userSpeaking = false
   textProcessingQueue.resetQueue()
   speechGeneratingQueue.resetQueue()
   audioPlayingQueue.resetQueue()
   audioStore.stop()
   audioStore.speechPending = false
 })
+
+voiceDetectingQueue.onSpeechStarted(() => {
+  microphoneStore.userSpeaking = true
+  cancelSend()
+})
+
+voiceDetectingQueue.onUtteranceDetected((utterance) => {
+  transcribing++
+  transcriptionQueue.enQueue(utterance)
+})
+
+voiceDetectingQueue.onSpeechEnded(() => {
+  microphoneStore.userSpeaking = false
+  // 太短被当作杂音丢掉时，也要把之前攒下的文字发出去
+  scheduleSend()
+})
+
+transcriptionQueue.onItemReceived(async ({ data }) => {
+  try {
+    const text = await transcriptionStore.transcribe(data.audio)
+    if (!text) throw new Error('没有识别出文字')
+    return text
+  }
+  catch (error) {
+    // 这一句会被跳过，不会再输出
+    transcribing--
+    scheduleSend()
+    throw error
+  }
+})
+
+transcriptionQueue.onItemTranscribed(async ({ data }) => {
+  transcribing--
+  draft = joinTranscript(draft, data)
+  scheduleSend()
+})
+
+// ===== 输出：语音合成与播放 =====
 
 textProcessingQueue.onTextProcessed((text: string) => {
   // 有话要说了：直到结束标记在播放队列中被处理之前，都算还有语音没播完

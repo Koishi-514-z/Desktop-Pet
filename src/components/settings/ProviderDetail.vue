@@ -64,19 +64,10 @@ const protocolOptions = computed(() => PROTOCOL_OPTIONS[provider.value?.category
 // 部分 TTS 协议使用固定的官方接口地址，无需配置 Base URL
 const showBaseUrl = computed(() => protocolRequiresBaseUrl(form.value.protocol))
 
-const isCurrent = computed(() => {
-  const p = provider.value
-  if (!p) return false
-  return p.category === 'llm'
-    ? providersStore.currentLLMProviderId === p.id
-    : providersStore.currentTTSProviderId === p.id
-})
+const isCurrent = computed(() => !!provider.value && providersStore.isCurrentProvider(provider.value))
 
 function setCurrent() {
-  const p = provider.value
-  if (!p) return
-  if (p.category === 'llm') providersStore.currentLLMProviderId = p.id
-  else providersStore.currentTTSProviderId = p.id
+  if (provider.value) providersStore.setCurrentProvider(provider.value)
 }
 
 async function save() {

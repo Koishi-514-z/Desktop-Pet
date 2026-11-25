@@ -1,6 +1,113 @@
 import { createQueue, createParallelSequencedQueue, type HandlerContext } from "@/utils/queue"
 import type { GeneratedAudioFile } from "ai"
 import { ref } from "vue"
+import { encodeWav, VOICE_SAMPLE_RATE, VoiceActivityDetector, type VoiceActivityOptions } from "@/utils/voice-activity"
+
+/**
+ * 桌宠的语音管线（由 Stage 组装）：
+ *
+ * 输入：麦克风 → voiceDetectingQueue（检测出一句句话）→ transcriptionQueue（并行识别、按顺序输出文字）→ 发送给对话
+ * 输出：对话的流式回复 → textProcessingQueue（切分语句与情绪标记）→ speechGeneratingQueue（并行合成、按顺序输出语音）
+ *      → audioPlayingQueue（依次播放，处理情绪与结束标记）
+ */
+
+// ===== 输入：语音识别 =====
+
+// 一句话的录音：16 kHz 单声道 WAV
+export interface Utterance {
+  audio: Uint8Array
+  durationMs: number
+}
+
+// 语音检测队列：接收麦克风的一帧帧声音，从中检测出一句一句的话，依次 emit
+// 'speech-start'（开始说话）、'utterance'（说完的一句话，已编码为 WAV）与 'speech-end'（这句话结束，
+// 太短被当作杂音丢掉时也会 emit）事件
+export function useVoiceDetectingQueue(options?: VoiceActivityOptions) {
+  const detector = new VoiceActivityDetector(options)
+
+  const queue = createQueue<Float32Array>({
+    handlers: [
+      async ({ data, emit }) => {
+        const wasSpeaking = detector.speaking
+        const samples = detector.push(data)
+        if (!wasSpeaking && detector.speaking) emit('speech-start')
+        if (samples) {
+          const utterance: Utterance = { audio: encodeWav(samples), durationMs: samples.length / VOICE_SAMPLE_RATE * 1000 }
+          emit('utterance', utterance)
+        }
+        if (wasSpeaking && !detector.speaking) emit('speech-end')
+      },
+    ],
+  })
+
+  function enQueue(frame: Float32Array) {
+    queue.enqueue(frame)
+  }
+
+  function onSpeechStarted(callback: () => void) {
+    queue.onHandlerEvent('speech-start', callback)
+  }
+
+  function onUtteranceDetected(callback: (utterance: Utterance) => void) {
+    queue.onHandlerEvent('utterance', callback)
+  }
+
+  function onSpeechEnded(callback: () => void) {
+    queue.onHandlerEvent('speech-end', callback)
+  }
+
+  // 是否正在说一句话
+  function isSpeaking() {
+    return detector.speaking
+  }
+
+  // 丢掉还没处理的声音与正在检测的这句话（不会 emit 'speech-end'）；recalibrate 时重新测量环境噪声
+  function resetQueue(options: { recalibrate?: boolean } = {}) {
+    queue.clear()
+    if (options.recalibrate) detector.recalibrate()
+    else detector.reset()
+  }
+
+  return {
+    enQueue,
+    onSpeechStarted,
+    onUtteranceDetected,
+    onSpeechEnded,
+    isSpeaking,
+    resetQueue,
+  }
+}
+
+// 语音识别队列：接收 voiceDetectingQueue 产出的一句句话，并行识别，但按说话的顺序输出文字；
+// 处理函数抛出异常（识别失败、没有识别出文字）时跳过这一句
+export function useTranscriptionQueue() {
+  const queue = createParallelSequencedQueue<Utterance, string>({})
+
+  function enQueue(item: Utterance) {
+    queue.enqueue(item)
+  }
+
+  function onItemReceived(handler: (ctx: HandlerContext<Utterance>) => Promise<string>) {
+    queue.setProcessor(handler)
+  }
+
+  function onItemTranscribed(handler: (ctx: HandlerContext<string> & { sequence: number, originalData: Utterance }) => Promise<void>) {
+    queue.setOutputHandler(handler)
+  }
+
+  function resetQueue() {
+    queue.reset()
+  }
+
+  return {
+    enQueue,
+    onItemReceived,
+    onItemTranscribed,
+    resetQueue,
+  }
+}
+
+// ===== 输出：语音合成与播放 =====
 
 // 匹配形如 <happy> 或 <END/> 的标记，捕获其标签名
 const EMOTION_TAG_REGEX = /<(\w+)\/?>/

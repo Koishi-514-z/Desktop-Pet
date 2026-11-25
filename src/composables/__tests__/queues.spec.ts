@@ -1,5 +1,7 @@
+import type { Utterance } from '@/composables/queues'
 import { describe, expect, it } from 'vitest'
-import { MIN_SENTENCE_LENGTH, sentenceLength, useTextProcessingQueue } from '@/composables/queues'
+import { MIN_SENTENCE_LENGTH, sentenceLength, useTextProcessingQueue, useTranscriptionQueue, useVoiceDetectingQueue } from '@/composables/queues'
+import { VOICE_FRAME_SAMPLES, VOICE_SAMPLE_RATE } from '@/utils/voice-activity'
 
 type QueueEvent = ['text', string] | ['emotion', string] | ['end']
 
@@ -84,5 +86,67 @@ describe('文本处理队列', () => {
     queue.endQueue()
     await settle()
     expect(texts(events)).toEqual(['今天我们去公园散步吧！'])
+  })
+})
+
+/** 若干毫秒的声音：振幅为 0 时是安静，否则是正弦波（模拟说话） */
+function sound(ms: number, amplitude: number): Float32Array[] {
+  const count = ms / (VOICE_FRAME_SAMPLES / VOICE_SAMPLE_RATE * 1000)
+  return Array.from({ length: count }, (_, i) => Float32Array.from(
+    { length: VOICE_FRAME_SAMPLES },
+    (__, n) => amplitude * Math.sin(2 * Math.PI * 220 * (i * VOICE_FRAME_SAMPLES + n) / VOICE_SAMPLE_RATE),
+  ))
+}
+
+describe('语音检测队列', () => {
+  function detect(...parts: Float32Array[][]) {
+    const queue = useVoiceDetectingQueue()
+    const events: string[] = []
+    const utterances: Utterance[] = []
+    queue.onSpeechStarted(() => events.push('start'))
+    queue.onUtteranceDetected((utterance) => {
+      events.push('utterance')
+      utterances.push(utterance)
+    })
+    queue.onSpeechEnded(() => events.push('end'))
+    parts.flat().forEach((frame) => queue.enQueue(frame))
+    return { events, utterances }
+  }
+
+  it('说完一句话时依次给出开始、这句话（WAV）与结束', async () => {
+    const { events, utterances } = detect(sound(1000, 0), sound(1000, 0.2), sound(1200, 0))
+    await settle()
+    expect(events).toEqual(['start', 'utterance', 'end'])
+    expect(String.fromCharCode(...utterances[0]!.audio.subarray(0, 4))).toBe('RIFF')
+    expect(utterances[0]!.durationMs).toBeGreaterThan(1400)
+  })
+
+  it('太短的声音只有开始与结束，没有这句话', async () => {
+    const { events } = detect(sound(1000, 0), sound(100, 0.3), sound(1200, 0))
+    await settle()
+    expect(events).toEqual(['start', 'end'])
+  })
+})
+
+describe('语音识别队列', () => {
+  const utterance = (id: number): Utterance => ({ audio: Uint8Array.of(id), durationMs: 1000 })
+
+  it('并行识别，按说话的顺序输出；识别失败的句子被跳过', async () => {
+    const queue = useTranscriptionQueue()
+    const outputs: string[] = []
+    // 第一句识别得最慢，第三句识别失败
+    const delays = [60, 10, 20, 5]
+    queue.onItemReceived(async ({ data }) => {
+      const id = data.audio[0]!
+      await new Promise((resolve) => setTimeout(resolve, delays[id]))
+      if (id === 2) throw new Error('识别失败')
+      return `第${id}句`
+    })
+    queue.onItemTranscribed(async ({ data }) => {
+      outputs.push(data)
+    })
+    for (const id of [0, 1, 2, 3]) queue.enQueue(utterance(id))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(outputs).toEqual(['第0句', '第1句', '第3句'])
   })
 })
