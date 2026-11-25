@@ -25,6 +25,10 @@ export const useAudioStore = defineStore('audio', () => {
   // 是否正在播放音频
   const isPlaying = ref(false)
 
+  // 当前这一轮回复是否还有语音没播完：从第一句话送去合成，到最后一句播完为止（句子之间等待合成的空档也算在内）。
+  // 由 Stage 中的语音流水线维护；字幕据此等语音全部播完后才开始隐藏的倒计时
+  const speechPending = ref(false)
+
   // 是否使用自定义的播放器
   const useCustomPlayer = ref(false)
 
@@ -205,6 +209,7 @@ export const useAudioStore = defineStore('audio', () => {
 
   return {
     isPlaying,
+    speechPending,
     useCustomPlayer,
     volume,
     play,

@@ -23,6 +23,8 @@ const disposers = [
     textProcessingQueue.resetQueue()
     speechGeneratingQueue.resetQueue()
     audioPlayingQueue.resetQueue()
+    // 新的一轮回复开始：上一轮还没播的语音已经丢弃
+    audioStore.speechPending = false
     live2dStore.playExpressionByTag('thinking')
   }),
 
@@ -40,6 +42,9 @@ const disposers = [
 
   chatStore.onError(async (error: unknown) => {
     console.error(error)
+    // 回复中途出错时同样结束这一轮：已经送去合成的语音照常播完，最后发出结束标记
+    // （否则一直等不到结束标记，字幕也就一直不会隐藏）
+    textProcessingQueue.endQueue()
   }),
 
   speechStore.onError(async (error: unknown) => {
@@ -58,9 +63,12 @@ onBeforeUnmount(() => {
   speechGeneratingQueue.resetQueue()
   audioPlayingQueue.resetQueue()
   audioStore.stop()
+  audioStore.speechPending = false
 })
 
 textProcessingQueue.onTextProcessed((text: string) => {
+  // 有话要说了：直到结束标记在播放队列中被处理之前，都算还有语音没播完
+  audioStore.speechPending = true
   speechGeneratingQueue.enQueue({ type: 'speech', text })
 })
 
@@ -105,6 +113,8 @@ audioPlayingQueue.onItemReceived(async ({ data }) => {
       break
     case 'end':
       live2dStore.playDefaultExpression()
+      // 结束标记排在这一轮所有语音之后：到这里语音已经全部播完（合成失败的句子会被跳过）
+      audioStore.speechPending = false
       break
   }
 })

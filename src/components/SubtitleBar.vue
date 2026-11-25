@@ -120,10 +120,11 @@ watch(displayText, () => {
 // 隐藏的时间到了、鼠标却还停在字幕上（在看、或者在翻之前的消息）时，隔多久再看一次
 const HOVER_RECHECK_MS = 1500
 
-// 桌宠正在说话：正在流式输出回复（已经出现文字；思考、调用工具时还没开口不算），或者正在播放语音。
-// 语音通常在文字生成完之后还会播一会儿，句子之间短暂的空档由隐藏前的等待时间盖过去
+// 桌宠正在说话：正在流式输出回复（已经出现文字；思考、调用工具时还没开口不算），
+// 或者这一轮回复的语音还没全部播完（正在播放、等待合成都算）。语音通常在文字生成完之后还要播一会儿，
+// 因此隐藏的倒计时要等最后一句语音播完才开始
 const speaking = computed(() => {
-  if (audioStore.isPlaying) return true
+  if (audioStore.isPlaying || audioStore.speechPending) return true
   const latest = messages.value.at(-1)
   return chatStore.isStreaming && latest?.role === 'assistant' && latest === chatStore.visibleMessages.at(-1)
 })
