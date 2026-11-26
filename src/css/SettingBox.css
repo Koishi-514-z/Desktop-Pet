@@ -18,13 +18,19 @@
   background: rgb(64 158 255 / 100%);
 }
 
-.settings-panel {
+/* 外框：位置与尺寸由组件设置（用户调整后的大小），窗口较小时自动收缩 */
+.settings-frame {
   position: fixed;
   z-index: 999;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
+.settings-panel {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  width: 640px;
-  height: 720px;
   overflow: hidden;
   color: #fff;
   background: rgb(30 30 34 / 70%);
@@ -106,6 +112,9 @@
   min-width: 0;
   padding: 14px;
   overflow-y: auto;
+  /* Provider、Persona、Live2D 的详情页底部悬浮着操作栏（.detail-actions），会挡住最下面一截：
+     滚到某个元素（scrollIntoView、Tab 切换焦点）时让出这段距离，元素停在操作栏上方 */
+  scroll-padding-bottom: 72px;
 }
 
 .settings-placeholder {

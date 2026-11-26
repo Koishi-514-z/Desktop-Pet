@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import type { ProviderModel, ProviderProtocol, ProviderVoice } from '@/stores/providers'
-import { computed, ref, watch } from 'vue'
-import { getProviderVoices, protocolRequiresApiKey, protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
+import type { ProviderModel, ProviderProtocol, ProviderVoice, RatingKind } from '@/stores/providers'
+import { useLocalStorage } from '@vueuse/core'
+import { computed, nextTick, ref, watch } from 'vue'
+import {
+  getProviderVoices,
+  getRating,
+  protocolRequiresApiKey,
+  protocolRequiresBaseUrl,
+  sortByRating,
+  useProvidersStore,
+} from '@/stores/providers'
+import RatingStars from './RatingStars.vue'
 import {
   CATEGORY_LABELS,
   PROTOCOL_OPTIONS,
@@ -101,10 +110,29 @@ function matches(item: { id: string; name: string; description?: string }, query
   return [item.id, item.name, item.description ?? ''].some((s) => s.toLowerCase().includes(q))
 }
 
+// 评分：打分后可以按评分排列，喜欢的模型 / 声线排在前面（所有 provider 共用这个开关）
+const sortByRatingEnabled = useLocalStorage('settings/providers/sortByRating', false)
+
+function ratingOf(kind: RatingKind, itemId: string) {
+  return provider.value ? getRating(provider.value, kind, itemId) : 0
+}
+
+function rate(kind: RatingKind, itemId: string, rating: number) {
+  if (provider.value) providersStore.setRating(provider.value.id, kind, itemId, rating)
+}
+
+function arrange<T extends { id: string }>(items: T[], kind: RatingKind): T[] {
+  return sortByRatingEnabled.value && provider.value ? sortByRating(items, provider.value, kind) : items
+}
+
+const hasRatings = computed(() =>
+  Object.values(provider.value?.ratings ?? {}).some((ratings) => Object.keys(ratings).length > 0),
+)
+
 // 模型
 const modelQuery = ref('')
 const models = computed(() => provider.value?.models ?? [])
-const filteredModels = computed(() => models.value.filter((m) => matches(m, modelQuery.value)))
+const filteredModels = computed(() => arrange(models.value.filter((m) => matches(m, modelQuery.value)), 'models'))
 const selectedModel = computed(() => models.value.find((m) => m.id === provider.value?.selectedModelId))
 
 function selectModel(model: ProviderModel) {
@@ -115,7 +143,7 @@ function selectModel(model: ProviderModel) {
 // 声线：手动输入的音色在前，之后是接口获取的声线
 const voiceQuery = ref('')
 const voices = computed(() => (provider.value ? getProviderVoices(provider.value) : []))
-const filteredVoices = computed(() => voices.value.filter((v) => matches(v, voiceQuery.value)))
+const filteredVoices = computed(() => arrange(voices.value.filter((v) => matches(v, voiceQuery.value)), 'voices'))
 const selectedVoice = computed(() => voices.value.find((v) => v.id === provider.value?.selectedVoiceId))
 const customVoiceIds = computed(() => new Set((provider.value?.customVoices ?? []).map((v) => v.id)))
 
@@ -127,13 +155,18 @@ function selectVoice(voice: ProviderVoice) {
 // 手动输入音色 ID：列表中没有想要的音色时使用（如 Fish Audio 声线库中的其他声线）
 const customVoiceId = ref('')
 const customVoiceName = ref('')
+const voiceGrid = ref<HTMLElement | null>(null)
 
-function addCustomVoice() {
+async function addCustomVoice() {
   if (!provider.value || !customVoiceId.value.trim()) return
   providersStore.addCustomVoice(provider.value.id, { id: customVoiceId.value, name: customVoiceName.value })
   customVoiceId.value = ''
   customVoiceName.value = ''
   voiceQuery.value = ''
+  // 声线很多时，刚加上（或者列表里本来就有）并选中的音色可能不在能看到的地方，滚过去。
+  // 设置面板底部悬浮着操作栏，滚动时会给它让出位置（见 SettingBox.css 中的 scroll-padding-bottom）
+  await nextTick()
+  voiceGrid.value?.querySelector('.voice-card.selected')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 
 function removeCustomVoice(voice: ProviderVoice) {
@@ -328,7 +361,18 @@ function remove() {
         </h4>
         <span v-if="selectedModel" class="panel-hint" :title="selectedModel.id">
           当前：{{ selectedModel.name }}
+          <span v-if="ratingOf('models', selectedModel.id)" class="hint-rating">★{{ ratingOf('models', selectedModel.id) }}</span>
         </span>
+        <button
+          v-if="models.length > 1"
+          type="button"
+          class="chip small"
+          :class="{ active: sortByRatingEnabled }"
+          :title="hasRatings ? '评分高的排在前面' : '点卡片上的星星给模型和声线打分后，可以按评分排列'"
+          @click="sortByRatingEnabled = !sortByRatingEnabled"
+        >
+          评分优先
+        </button>
       </div>
 
       <template v-if="models.length > 0">
@@ -341,14 +385,17 @@ function remove() {
         </div>
 
         <div class="option-grid">
-          <button
+          <div
             v-for="model in filteredModels"
             :key="model.id"
-            type="button"
+            role="button"
+            tabindex="0"
             class="option-card"
             :class="{ selected: model.id === provider.selectedModelId }"
             :title="model.id"
             @click="selectModel(model)"
+            @keydown.enter.prevent="selectModel(model)"
+            @keydown.space.prevent="selectModel(model)"
           >
             <span class="option-icon">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -360,11 +407,17 @@ function remove() {
               <span class="option-name">{{ model.name }}</span>
               <span v-if="model.description" class="option-meta">{{ model.description }}</span>
               <span v-else-if="model.id !== model.name" class="option-meta mono">{{ model.id }}</span>
+              <RatingStars
+                class="option-rating"
+                :label="`${model.name} 的评分`"
+                :model-value="ratingOf('models', model.id)"
+                @update:model-value="rate('models', model.id, $event)"
+              />
             </span>
             <span class="option-check">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
             </span>
-          </button>
+          </div>
         </div>
         <p v-if="filteredModels.length === 0" class="empty-hint">没有匹配的模型</p>
       </template>
@@ -383,8 +436,42 @@ function remove() {
         </h4>
         <span v-if="selectedVoice" class="panel-hint" :title="selectedVoice.id">
           当前：{{ selectedVoice.name }}
+          <span v-if="ratingOf('voices', selectedVoice.id)" class="hint-rating">★{{ ratingOf('voices', selectedVoice.id) }}</span>
         </span>
+        <button
+          v-if="voices.length > 1"
+          type="button"
+          class="chip small"
+          :class="{ active: sortByRatingEnabled }"
+          :title="hasRatings ? '评分高的排在前面' : '点卡片上的星星给模型和声线打分后，可以按评分排列'"
+          @click="sortByRatingEnabled = !sortByRatingEnabled"
+        >
+          评分优先
+        </button>
       </div>
+
+      <!-- 手动输入音色 ID 放在声线列表上方：放在下面时，列表的高度一变（搜索、刷新、增删音色）就会把它挤出视野，
+           或者挤到悬浮在底部的操作栏后面，看起来像是消失了 -->
+      <div class="field-row custom-voice-row">
+        <input
+          v-model="customVoiceId"
+          class="custom-voice-id"
+          type="text"
+          placeholder="手动输入音色 ID"
+          @keydown.enter="addCustomVoice"
+        />
+        <input
+          v-model="customVoiceName"
+          class="custom-voice-name"
+          type="text"
+          placeholder="名称（可选）"
+          @keydown.enter="addCustomVoice"
+        />
+        <button class="action-button" type="button" :disabled="!customVoiceId.trim()" @click="addCustomVoice">
+          使用
+        </button>
+      </div>
+      <p class="panel-note">列表里没有想要的音色时，可以输入服务商提供的音色 ID，合成语音时会使用它。</p>
 
       <template v-if="voices.length > 0">
         <div v-if="voices.length > SEARCH_THRESHOLD" class="search-box">
@@ -395,7 +482,7 @@ function remove() {
           <input v-model="voiceQuery" type="text" placeholder="搜索声线" />
         </div>
 
-        <div class="option-grid voice-grid">
+        <div ref="voiceGrid" class="option-grid voice-grid">
           <div
             v-for="voice in filteredVoices"
             :key="voice.id"
@@ -415,6 +502,12 @@ function remove() {
               <span class="option-name">{{ voice.name }}</span>
               <span v-if="voice.description" class="option-meta">{{ voice.description }}</span>
               <span v-else-if="voice.id !== voice.name" class="option-meta mono">{{ voice.id }}</span>
+              <RatingStars
+                class="option-rating"
+                :label="`${voice.name} 的评分`"
+                :model-value="ratingOf('voices', voice.id)"
+                @update:model-value="rate('voices', voice.id, $event)"
+              />
             </span>
             <button
               v-if="customVoiceIds.has(voice.id)"
@@ -445,29 +538,9 @@ function remove() {
       </template>
 
       <p v-else class="empty-state">
-        {{ provider.uploadVoice ? '暂无声线，可以手动输入音色 ID，或在下方上传参考音频创建音色。' : '暂无可用声线，可以手动输入音色 ID。' }}
+        {{ provider.uploadVoice ? '暂无声线，可以在上方手动输入音色 ID，或在下方上传参考音频创建音色。' : '暂无可用声线，可以在上方手动输入音色 ID。' }}
       </p>
 
-      <div class="field-row custom-voice-row">
-        <input
-          v-model="customVoiceId"
-          class="custom-voice-id"
-          type="text"
-          placeholder="手动输入音色 ID"
-          @keydown.enter="addCustomVoice"
-        />
-        <input
-          v-model="customVoiceName"
-          class="custom-voice-name"
-          type="text"
-          placeholder="名称（可选）"
-          @keydown.enter="addCustomVoice"
-        />
-        <button class="action-button" type="button" :disabled="!customVoiceId.trim()" @click="addCustomVoice">
-          使用
-        </button>
-      </div>
-      <p class="panel-note">列表里没有想要的音色时，可以输入服务商提供的音色 ID，合成语音时会使用它。</p>
     </section>
 
     <!-- 上传自定义音色 -->

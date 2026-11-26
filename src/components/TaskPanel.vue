@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type { Task, TaskPriority, TaskRange, TaskRecurrence } from '@/tasks/model'
+import type { PanelRect } from '@/utils/panel-resize'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import ResizeHandles from '@/components/ResizeHandles.vue'
+import { DEFAULT_TASK_PANEL_SIZE, MIN_CHAT_PANEL_SIZE, MIN_TASK_PANEL_SIZE, useSceneStore } from '@/stores/scene'
 import { useTasksStore } from '@/stores/tasks'
 import { filterTasks, formatDue, isOverdue, parseDue, PRIORITY_LABELS, RECURRENCE_LABELS } from '@/tasks/model'
-
-// 面板默认尺寸，窗口较小时由 CSS 自动收缩
-const PANEL_WIDTH = 360
-const PANEL_HEIGHT = 540
+import { FLOATING_BUTTONS_GAP, fitPanelSize, keepPanelInView, PANEL_MARGIN, viewportSize } from '@/utils/panel-resize'
 
 const tasksStore = useTasksStore()
+const sceneStore = useSceneStore()
 
 const visible = ref(false)
 const position = ref({ x: 0, y: 0 })
@@ -167,12 +168,40 @@ function stopDrag() {
   window.removeEventListener('pointerup', stopDrag)
 }
 
+// ===== 拖动边、角调整大小（记住调整后的尺寸，见 ResizeHandles）=====
+
+// 面板的位置与尺寸（尺寸是用户调整后记住的；窗口较小时 CSS 会再收缩）
+const panelStyle = computed(() => ({
+  left: `${position.value.x}px`,
+  top: `${position.value.y}px`,
+  width: `${sceneStore.taskPanelSize.width}px`,
+  height: `${sceneStore.taskPanelSize.height}px`,
+}))
+
+function sizeLimits() {
+  return { min: MIN_TASK_PANEL_SIZE, bounds: viewportSize(), margin: PANEL_MARGIN }
+}
+
+function applyPanelRect(rect: PanelRect) {
+  position.value = { x: rect.x, y: rect.y }
+  sceneStore.taskPanelSize = { width: rect.width, height: rect.height }
+}
+
+// 双击边、角恢复默认尺寸（左上角不动；放不下时往回挪，不挡住右下角的悬浮按钮）
+function resetPanelSize() {
+  const size = fitPanelSize(DEFAULT_TASK_PANEL_SIZE, sizeLimits())
+  sceneStore.taskPanelSize = size
+  position.value = keepPanelInView(position.value, size, viewportSize(), FLOATING_BUTTONS_GAP)
+}
+
 onMounted(() => {
-  // 默认放在对话面板的左侧
-  position.value = {
-    x: Math.max(16, window.innerWidth - 88 - 600 - 16 - PANEL_WIDTH),
-    y: Math.max(16, window.innerHeight - PANEL_HEIGHT - 24),
-  }
+  // 默认放在对话面板的左侧（按对话面板记住的、窗口放得下的宽度算），放不下时贴着窗口左边
+  const chatWidth = fitPanelSize(sceneStore.chatPanelSize, { min: MIN_CHAT_PANEL_SIZE, bounds: viewportSize(), margin: PANEL_MARGIN }).width
+  const size = fitPanelSize(sceneStore.taskPanelSize, sizeLimits())
+  position.value = keepPanelInView({ x: Infinity, y: Infinity }, size, viewportSize(), {
+    right: FLOATING_BUTTONS_GAP.right + chatWidth + PANEL_MARGIN,
+    bottom: FLOATING_BUTTONS_GAP.bottom,
+  })
   clock = setInterval(() => (now.value = new Date()), 60_000)
 })
 
@@ -194,97 +223,103 @@ onBeforeUnmount(() => {
   </button>
 
   <Transition name="panel">
-    <div v-show="visible" class="task-panel" :style="{ left: `${position.x}px`, top: `${position.y}px` }">
-      <header class="panel-header" @pointerdown="startDrag">
-        <span class="panel-title">待办</span>
-        <span class="panel-subtitle">
-          {{ tasksStore.pending.length }} 项未完成<template v-if="tasksStore.overdueCount">，<b class="overdue">{{ tasksStore.overdueCount }} 项逾期</b></template>
-        </span>
-        <button class="icon-button" title="关闭" @click="visible = false">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-        </button>
-      </header>
+    <!-- 外框负责位置、尺寸与显示：调整大小的手柄跨在面板边缘（面板本身裁掉了溢出的内容，手柄放不进去） -->
+    <div v-show="visible" class="task-frame" :style="panelStyle">
+      <div class="task-panel">
+        <header class="panel-header" @pointerdown="startDrag">
+          <span class="panel-title">待办</span>
+          <span class="panel-subtitle">
+            {{ tasksStore.pending.length }} 项未完成<template v-if="tasksStore.overdueCount">，<b class="overdue">{{ tasksStore.overdueCount }} 项逾期</b></template>
+          </span>
+          <button class="icon-button" title="关闭" @click="visible = false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </header>
 
-      <form class="quick-add" @submit.prevent="add">
-        <input v-model="draft.title" class="field title" placeholder="添加待办，也可以在对话里说「明天下午三点交周报」" />
-        <div class="row">
-          <input v-model="draft.date" class="field date" type="date" title="截止日期" />
-          <input v-model="draft.time" class="field" type="time" title="截止时刻（可选）" :disabled="!draft.date" />
-          <select v-model="draft.priority" class="field priority" title="优先级">
-            <option v-for="(label, id) in PRIORITY_LABELS" :key="id" :value="id">{{ label }}</option>
-          </select>
-          <button class="add" type="submit" :disabled="!draft.title.trim()">添加</button>
-        </div>
-      </form>
+        <form class="quick-add" @submit.prevent="add">
+          <input v-model="draft.title" class="field title" placeholder="添加待办，也可以在对话里说「明天下午三点交周报」" />
+          <div class="row">
+            <input v-model="draft.date" class="field date" type="date" title="截止日期" />
+            <input v-model="draft.time" class="field" type="time" title="截止时刻（可选）" :disabled="!draft.date" />
+            <select v-model="draft.priority" class="field priority" title="优先级">
+              <option v-for="(label, id) in PRIORITY_LABELS" :key="id" :value="id">{{ label }}</option>
+            </select>
+            <button class="add" type="submit" :disabled="!draft.title.trim()">添加</button>
+          </div>
+        </form>
 
-      <nav class="views">
-        <button v-for="item in VIEWS" :key="item.id" class="view" :class="{ active: view === item.id }" type="button" @click="view = item.id">
-          {{ item.label }}<span v-if="count(item.id)" class="count">{{ count(item.id) }}</span>
-        </button>
-      </nav>
+        <nav class="views">
+          <button v-for="item in VIEWS" :key="item.id" class="view" :class="{ active: view === item.id }" type="button" @click="view = item.id">
+            {{ item.label }}<span v-if="count(item.id)" class="count">{{ count(item.id) }}</span>
+          </button>
+        </nav>
 
-      <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="error">{{ error }}</p>
 
-      <ul ref="listRef" class="tasks">
-        <li v-if="visibleTasks.length === 0" class="empty">{{ view === 'done' ? '还没有完成的任务' : '没有待办，轻松一下吧' }}</li>
-        <li v-for="task in visibleTasks" :key="task.id" class="task" :class="[`priority-${task.priority}`, { done: task.done }]">
-          <template v-if="editingId === task.id">
-            <form class="edit" @submit.prevent="saveEdit(task)">
-              <input v-model="edit.title" class="field" placeholder="任务内容" />
-              <textarea v-model="edit.notes" class="field" rows="2" placeholder="备注" />
-              <div class="row">
-                <input v-model="edit.date" class="field" type="date" title="截止日期" />
-                <input v-model="edit.time" class="field" type="time" title="截止时刻" :disabled="!edit.date" />
+        <ul ref="listRef" class="tasks">
+          <li v-if="visibleTasks.length === 0" class="empty">{{ view === 'done' ? '还没有完成的任务' : '没有待办，轻松一下吧' }}</li>
+          <li v-for="task in visibleTasks" :key="task.id" class="task" :class="[`priority-${task.priority}`, { done: task.done }]">
+            <template v-if="editingId === task.id">
+              <form class="edit" @submit.prevent="saveEdit(task)">
+                <input v-model="edit.title" class="field" placeholder="任务内容" />
+                <textarea v-model="edit.notes" class="field" rows="2" placeholder="备注" />
+                <div class="row">
+                  <input v-model="edit.date" class="field" type="date" title="截止日期" />
+                  <input v-model="edit.time" class="field" type="time" title="截止时刻" :disabled="!edit.date" />
+                </div>
+                <div class="row">
+                  <select v-model="edit.priority" class="field" title="优先级">
+                    <option v-for="(label, id) in PRIORITY_LABELS" :key="id" :value="id">{{ label }}优先级</option>
+                  </select>
+                  <select v-model="edit.recurrence" class="field" title="重复">
+                    <option value="">不重复</option>
+                    <option v-for="(label, id) in RECURRENCE_LABELS" :key="id" :value="id">{{ label }}</option>
+                  </select>
+                </div>
+                <div class="row">
+                  <span class="label">提醒</span>
+                  <input v-model="edit.remindDate" class="field" type="date" />
+                  <input v-model="edit.remindTime" class="field" type="time" />
+                </div>
+                <input v-model="edit.tags" class="field" placeholder="标签，用逗号分隔" />
+                <div class="row end">
+                  <button class="small" type="button" @click="editingId = null">取消</button>
+                  <button class="small primary" type="submit" :disabled="!edit.title.trim()">保存</button>
+                </div>
+              </form>
+            </template>
+
+            <template v-else>
+              <input class="check" type="checkbox" :checked="task.done" :title="task.done ? '标记为未完成' : '完成'" @change="toggle(task)" />
+              <div class="body" @dblclick="startEdit(task)">
+                <span class="title">{{ task.title }}</span>
+                <span v-if="task.notes" class="notes">{{ task.notes }}</span>
+                <span class="meta">
+                  <span v-if="task.due !== undefined" :class="{ overdue: isOverdue(task, now.getTime()) }">{{ formatDue(task, now) }}{{ isOverdue(task, now.getTime()) ? ' · 已逾期' : '' }}</span>
+                  <span v-if="task.recurrence">↻ {{ RECURRENCE_LABELS[task.recurrence] }}</span>
+                  <span v-if="task.remindAt && !task.done">⏰ {{ formatDue({ due: task.remindAt, dueHasTime: true }, now) }}</span>
+                  <span v-for="tag in task.tags" :key="tag" class="tag">#{{ tag }}</span>
+                </span>
               </div>
-              <div class="row">
-                <select v-model="edit.priority" class="field" title="优先级">
-                  <option v-for="(label, id) in PRIORITY_LABELS" :key="id" :value="id">{{ label }}优先级</option>
-                </select>
-                <select v-model="edit.recurrence" class="field" title="重复">
-                  <option value="">不重复</option>
-                  <option v-for="(label, id) in RECURRENCE_LABELS" :key="id" :value="id">{{ label }}</option>
-                </select>
+              <div class="actions">
+                <button v-if="!task.done" class="icon-button" title="编辑" @click="startEdit(task)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                </button>
+                <button class="icon-button danger" title="删除" @click="remove(task)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                </button>
               </div>
-              <div class="row">
-                <span class="label">提醒</span>
-                <input v-model="edit.remindDate" class="field" type="date" />
-                <input v-model="edit.remindTime" class="field" type="time" />
-              </div>
-              <input v-model="edit.tags" class="field" placeholder="标签，用逗号分隔" />
-              <div class="row end">
-                <button class="small" type="button" @click="editingId = null">取消</button>
-                <button class="small primary" type="submit" :disabled="!edit.title.trim()">保存</button>
-              </div>
-            </form>
-          </template>
+            </template>
+          </li>
+        </ul>
 
-          <template v-else>
-            <input class="check" type="checkbox" :checked="task.done" :title="task.done ? '标记为未完成' : '完成'" @change="toggle(task)" />
-            <div class="body" @dblclick="startEdit(task)">
-              <span class="title">{{ task.title }}</span>
-              <span v-if="task.notes" class="notes">{{ task.notes }}</span>
-              <span class="meta">
-                <span v-if="task.due !== undefined" :class="{ overdue: isOverdue(task, now.getTime()) }">{{ formatDue(task, now) }}{{ isOverdue(task, now.getTime()) ? ' · 已逾期' : '' }}</span>
-                <span v-if="task.recurrence">↻ {{ RECURRENCE_LABELS[task.recurrence] }}</span>
-                <span v-if="task.remindAt && !task.done">⏰ {{ formatDue({ due: task.remindAt, dueHasTime: true }, now) }}</span>
-                <span v-for="tag in task.tags" :key="tag" class="tag">#{{ tag }}</span>
-              </span>
-            </div>
-            <div class="actions">
-              <button v-if="!task.done" class="icon-button" title="编辑" @click="startEdit(task)">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-              </button>
-              <button class="icon-button danger" title="删除" @click="remove(task)">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-              </button>
-            </div>
-          </template>
-        </li>
-      </ul>
+        <footer v-if="view === 'done' && visibleTasks.length" class="footer">
+          <button class="small" type="button" @click="run(() => tasksStore.clearCompleted())">清除已完成</button>
+        </footer>
+      </div>
 
-      <footer v-if="view === 'done' && visibleTasks.length" class="footer">
-        <button class="small" type="button" @click="run(() => tasksStore.clearCompleted())">清除已完成</button>
-      </footer>
+      <!-- 拖动边、角调整大小，双击恢复默认尺寸 -->
+      <ResizeHandles :min="MIN_TASK_PANEL_SIZE" @resize="applyPanelRect" @reset="resetPanelSize" />
     </div>
   </Transition>
 </template>

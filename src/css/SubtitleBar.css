@@ -71,6 +71,46 @@
   transform: translateY(-50%);
 }
 
+/* 打断按钮，悬浮在卡片右上角（与说话人标签对称），只在桌宠说话时显示 */
+.interrupt-button {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 85%);
+  cursor: pointer;
+  background: rgb(36 36 48 / 88%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+  transform: translateY(-50%);
+  transition:
+    background 0.2s,
+    color 0.2s,
+    transform 0.15s;
+}
+
+.interrupt-button svg {
+  width: 10px;
+  height: 10px;
+  fill: currentcolor;
+}
+
+.interrupt-button:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #ff8a9b, #ff4d6d);
+}
+
+.interrupt-button:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
 .live-dot {
   width: 6px;
   height: 6px;

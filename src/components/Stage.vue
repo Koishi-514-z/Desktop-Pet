@@ -12,6 +12,7 @@ import { useChatStore } from '@/stores/chat';
 import { useSpeechStore } from '@/stores/speech';
 import { useAudioStore } from '@/stores/audio';
 import { useLive2dStore } from '@/stores/live2d';
+import { useLanguageStore } from '@/stores/language'
 import { useMicrophoneStore } from '@/stores/microphone'
 import { useTranscriptionStore } from '@/stores/transcription'
 import { randBool } from '@/utils/math';
@@ -30,6 +31,7 @@ const speechGeneratingQueue = useSpeechGeneratingQueue()
 const audioStore = useAudioStore()
 const audioPlayingQueue = useAudioPlayingQueue()
 const live2dStore = useLive2dStore()
+const languageStore = useLanguageStore()
 
 // ===== 输入：语音识别 =====
 
@@ -101,6 +103,7 @@ const disposers = [
   }),
 
   chatStore.onStart(async () => {
+    resetSpeechTurn()
     textProcessingQueue.resetQueue()
     speechGeneratingQueue.resetQueue()
     audioPlayingQueue.resetQueue()
@@ -128,6 +131,17 @@ const disposers = [
     textProcessingQueue.endQueue()
   }),
 
+  chatStore.onInterrupt(async () => {
+    // 打断：还没说的话全部丢掉（正在翻译、合成的语音完成后也会被丢弃），停止正在播放的这一句
+    resetSpeechTurn()
+    textProcessingQueue.resetQueue()
+    speechGeneratingQueue.resetQueue()
+    audioPlayingQueue.resetQueue()
+    audioStore.stop()
+    audioStore.speechPending = false
+    live2dStore.playDefaultExpression()
+  }),
+
   speechStore.onError(async (error: unknown) => {
     console.error(error)
   }),
@@ -144,6 +158,7 @@ onBeforeUnmount(() => {
   transcriptionQueue.resetQueue()
   cancelSend()
   microphoneStore.userSpeaking = false
+  resetSpeechTurn()
   textProcessingQueue.resetQueue()
   speechGeneratingQueue.resetQueue()
   audioPlayingQueue.resetQueue()
@@ -189,10 +204,22 @@ transcriptionQueue.onItemTranscribed(async ({ data }) => {
 
 // ===== 输出：语音合成与播放 =====
 
+// 这一轮回复中已经送去合成的文字（念的语言与显示的不同时，作为翻译的前文）
+let spokenText = ''
+// 取消这一轮还没完成的翻译请求（新的一轮开始、打断、卸载时）
+let speechController = new AbortController()
+
+function resetSpeechTurn() {
+  spokenText = ''
+  speechController.abort()
+  speechController = new AbortController()
+}
+
 textProcessingQueue.onTextProcessed((text: string) => {
   // 有话要说了：直到结束标记在播放队列中被处理之前，都算还有语音没播完
   audioStore.speechPending = true
-  speechGeneratingQueue.enQueue({ type: 'speech', text })
+  speechGeneratingQueue.enQueue({ type: 'speech', text, context: spokenText })
+  spokenText += text
 })
 
 textProcessingQueue.onEmotionProcessed((emotion: string) => {
@@ -207,7 +234,9 @@ textProcessingQueue.onEndProcessed(() => {
 speechGeneratingQueue.onItemReceived(async ({ data }) => {
   if (data.type !== 'speech') return data
 
-  const audio = await speechStore.speak(data.text)
+  // 念的语言与显示的不同时，先翻译成要念的语言（屏幕上仍显示原文）
+  const text = await languageStore.toSpeechText(data.text, { context: data.context, abortSignal: speechController.signal })
+  const audio = await speechStore.speak(text)
   if (!audio) {
     throw new Error('Failed to generate speech')
   }

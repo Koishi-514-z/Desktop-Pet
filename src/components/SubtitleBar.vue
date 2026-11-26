@@ -197,6 +197,12 @@ const visible = computed(() => sceneStore.showSubtitle && !!currentMessage.value
           <span v-if="isLive" class="live-dot" title="正在回复"></span>
         </div>
 
+        <!-- 桌宠说话时可以打断（语音对话时不用打开对话面板） -->
+        <button v-if="speaking" class="interrupt-button" title="打断，不让它继续说" @click="chatStore.interrupt()">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+          打断
+        </button>
+
         <div ref="textWrapper" class="subtitle-body">
           <Transition :name="`subtitle-slide-${direction}`" mode="out-in" @enter="onTextEnter">
             <!-- prettier-ignore -->

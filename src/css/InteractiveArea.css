@@ -33,6 +33,14 @@ svg {
 
 /* ===== 面板 ===== */
 
+/* 外框：位置与尺寸由组件设置（用户调整后的大小），窗口较小时自动收缩 */
+.panel-frame {
+  position: fixed;
+  z-index: 999;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
 .interactive-area {
   --accent: #5b9dff;
   --accent-2: #8b7bff;
@@ -41,12 +49,10 @@ svg {
   --text-faint: rgb(255 255 255 / 38%);
   --line: rgb(255 255 255 / 8%);
 
-  position: fixed;
-  z-index: 999;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  width: min(600px, calc(100vw - 32px));
-  height: min(720px, calc(100vh - 32px));
   overflow: hidden;
   font-size: 14px;
   color: #fff;
@@ -595,6 +601,13 @@ svg {
   height: 11px;
   fill: currentcolor;
   stroke: none;
+}
+
+/* 被打断的回复 */
+.interrupted-tag {
+  color: rgb(255 255 255 / 55%);
+  background: rgb(255 255 255 / 6%);
+  border-color: rgb(255 255 255 / 14%);
 }
 
 /* 桌宠主动说的话 */
@@ -1453,6 +1466,17 @@ svg {
   cursor: default;
   box-shadow: none;
   opacity: 0.35;
+}
+
+/* 桌宠正在回复时，发送按钮变成打断按钮 */
+.send.interrupt {
+  background: linear-gradient(135deg, #ff8a9b, #ff4d6d);
+  box-shadow: 0 4px 12px rgb(255 77 109 / 35%);
+}
+
+.send.interrupt svg {
+  fill: currentcolor;
+  stroke: none;
 }
 
 .input-hint {

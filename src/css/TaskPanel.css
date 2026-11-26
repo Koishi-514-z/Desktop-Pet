@@ -52,18 +52,24 @@ svg {
 
 /* ===== 面板 ===== */
 
+/* 外框：位置与尺寸由组件设置（用户调整后的大小），窗口较小时自动收缩 */
+.task-frame {
+  position: fixed;
+  z-index: 999;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
 .task-panel {
   --accent: #5b9dff;
   --accent-2: #8b7bff;
   --text-dim: rgb(255 255 255 / 55%);
   --line: rgb(255 255 255 / 8%);
 
-  position: fixed;
-  z-index: 999;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  width: min(360px, calc(100vw - 32px));
-  height: min(540px, calc(100vh - 32px));
   overflow: hidden;
   font-size: 13px;
   color: #fff;

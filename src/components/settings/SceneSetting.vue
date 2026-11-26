@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import { useLanguageStore } from '@/stores/language'
 import { useSceneStore } from '@/stores/scene'
+import { isPresetLanguage, LANGUAGE_OPTIONS, languageLabel } from '@/utils/language'
 
 const sceneStore = useSceneStore()
+const languageStore = useLanguageStore()
+
+function resetToDefault() {
+  sceneStore.resetToDefault()
+  languageStore.resetToDefault()
+}
 
 // 渲染分辨率可选档位
 const RESOLUTION_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4]
@@ -72,6 +80,47 @@ function useVolumeControl(key: 'playbackVolume' | 'motionVolume') {
 const speechVolume = useVolumeControl('playbackVolume')
 const motionVolume = useVolumeControl('motionVolume')
 
+// 回复语言：可以选预置的语言，也可以自己输入（如 Italiano、四川话）；为空表示不指定
+function useLanguageChoice(key: 'displayLanguage' | 'speechLanguage') {
+  const value = computed(() => languageStore[key].trim())
+  const isCustom = computed(() => !!value.value && !isPresetLanguage(value.value))
+
+  function select(language: string) {
+    languageStore[key] = language
+  }
+
+  function setCustom(event: Event) {
+    languageStore[key] = (event.target as HTMLInputElement).value.trim()
+  }
+
+  return reactive({ value, isCustom, select, setCustom })
+}
+
+const languageSettings = [
+  {
+    id: 'display',
+    label: '显示的语言',
+    desc: '对话框和字幕中桌宠回复用的语言；不指定时通常跟着你说的语言',
+    autoLabel: '不指定',
+    control: useLanguageChoice('displayLanguage'),
+  },
+  {
+    id: 'speech',
+    label: '念的语言',
+    desc: '桌宠念出来的语言。和显示的不同时，每句话念之前会先翻译（屏幕上仍显示原文），会多一次模型请求、稍晚一点开口',
+    autoLabel: '与显示相同',
+    control: useLanguageChoice('speechLanguage'),
+  },
+]
+
+const languageSummary = computed(() => {
+  const display = languageStore.displayLanguage.trim()
+  const speech = languageStore.speechLanguage.trim()
+  if (!display && !speech) return ''
+  const shown = display ? languageLabel(display) : '不指定'
+  return `显示：${shown} · 念：${speech ? languageLabel(speech) : shown}`
+})
+
 const volumeSettings = [
   { id: 'speech', label: '语音音量', desc: '桌宠说话时的音量，点击喇叭可静音', control: speechVolume },
   { id: 'motion', label: '动作音量', desc: '播放动作时模型自带的台词和音效的音量，点击喇叭可静音', control: motionVolume },
@@ -91,7 +140,7 @@ const volumeSettings = [
           <span class="stat"><b>{{ sceneStore.maxFPS }}</b>FPS 上限</span>
           <span class="stat"><b>{{ speechVolume.percent }}%</b>语音</span>
           <span class="stat"><b>{{ motionVolume.percent }}%</b>动作</span>
-          <button class="reset-button" @click="sceneStore.resetToDefault()">恢复默认</button>
+          <button class="reset-button" @click="resetToDefault()">恢复默认</button>
         </div>
       </div>
       <svg class="gauge" viewBox="0 0 80 80" aria-hidden="true">
@@ -202,6 +251,57 @@ const volumeSettings = [
           >
             {{ seconds }} 秒
           </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 语言：桌宠回复的语言（你自己输入的内容不受影响） -->
+    <section class="tile">
+      <header class="tile-head">
+        <span class="tile-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+          </svg>
+        </span>
+        <span class="tile-title">语言</span>
+        <span v-if="languageSummary" class="tile-summary">{{ languageSummary }}</span>
+      </header>
+
+      <div v-for="item in languageSettings" :key="item.id" class="setting">
+        <div class="setting-label">
+          <span>{{ item.label }}</span>
+          <span class="setting-desc">{{ item.desc }}</span>
+        </div>
+        <div class="fps-options">
+          <button
+            type="button"
+            class="fps-chip"
+            :class="{ active: !item.control.value }"
+            @click="item.control.select('')"
+          >
+            {{ item.autoLabel }}
+          </button>
+          <button
+            v-for="option in LANGUAGE_OPTIONS"
+            :key="option.value"
+            type="button"
+            class="fps-chip"
+            :class="{ active: item.control.value === option.value }"
+            @click="item.control.select(option.value)"
+          >
+            {{ option.label }}
+          </button>
+          <label class="fps-custom language-custom" :class="{ active: item.control.isCustom }">
+            <span>其他</span>
+            <input
+              type="text"
+              placeholder="如 Italiano"
+              :value="item.control.isCustom ? item.control.value : ''"
+              @change="item.control.setCustom"
+              @keydown.enter="($event.target as HTMLInputElement).blur()"
+            />
+          </label>
         </div>
       </div>
     </section>

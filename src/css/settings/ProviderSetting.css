@@ -404,6 +404,10 @@ svg {
   letter-spacing: 0.04em;
 }
 
+.panel-head .panel-title {
+  margin-right: auto;
+}
+
 .panel-hint {
   max-width: 60%;
   overflow: hidden;
@@ -540,6 +544,12 @@ svg {
   background: rgb(255 255 255 / 10%);
 }
 
+/* 当前模型 / 声线的评分 */
+.hint-rating {
+  margin-left: 4px;
+  color: #ffc857;
+}
+
 /* 协议选择胶囊 */
 .chip-group {
   display: flex;
@@ -573,6 +583,12 @@ svg {
   border-color: rgb(64 158 255 / 70%);
 }
 
+.chip.small {
+  flex-shrink: 0;
+  padding: 2px 9px;
+  font-size: 11px;
+}
+
 /* 搜索框 */
 .search-box {
   position: relative;
@@ -602,6 +618,8 @@ svg {
   padding: 6px;
   margin: -6px;
   overflow-y: auto;
+  /* 滚到某张卡片时留出内边距，右上角的选中标记不会被裁掉 */
+  scroll-padding: 6px;
 }
 
 /* 声线名称通常较短，每行可放更多 */
@@ -723,6 +741,20 @@ svg {
 
 .option-meta.mono {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* 评分：打过分的一直显示，没打过的在鼠标移到卡片上（或选中）时才显示 */
+.option-rating {
+  margin-top: 3px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.option-rating.rated,
+.option-card:hover .option-rating,
+.option-card:focus-within .option-rating,
+.option-card.selected .option-rating {
+  opacity: 1;
 }
 
 /* 选中标记 */

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Provider, ProviderCategory } from '@/stores/providers'
-import { getProviderVoices, useProvidersStore } from '@/stores/providers'
+import { getProviderVoices, getRating, useProvidersStore } from '@/stores/providers'
 import { CATEGORY_LABELS, CATEGORY_SHORT_LABELS, getInitial, getProtocolLabel } from '@/utils/provider-options'
 
 const emit = defineEmits<{
@@ -24,11 +24,15 @@ function setCurrent(provider: Provider) {
   providersStore.setCurrentProvider(provider)
 }
 
-// 卡片底部展示的当前模型 / 声线
+// 卡片底部展示的当前模型 / 声线（打过分的带上评分）
 function getSelectionSummary(provider: Provider) {
   const model = provider.models.find((m) => m.id === provider.selectedModelId)
   const voice = getProviderVoices(provider).find((v) => v.id === provider.selectedVoiceId)
-  return [model?.name, voice?.name].filter(Boolean).join(' · ')
+  const withRating = (name: string, rating: number) => (rating ? `${name} ★${rating}` : name)
+  return [
+    model && withRating(model.name, getRating(provider, 'models', model.id)),
+    voice && withRating(voice.name, getRating(provider, 'voices', voice.id)),
+  ].filter(Boolean).join(' · ')
 }
 
 function remove(provider: Provider) {

@@ -163,6 +163,15 @@ svg {
   font-weight: 700;
 }
 
+/* 标题右侧的当前设置概要 */
+.tile-summary {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--mint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reset-button {
   margin-left: auto;
   padding: 4px 10px;
@@ -320,6 +329,12 @@ svg {
   border: none;
   border-radius: 6px;
   outline: none;
+}
+
+/* 语言：自己输入的语言名称比帧率长 */
+.fps-custom.language-custom input {
+  width: 84px;
+  font-weight: 500;
 }
 
 /* 开关设置行 */

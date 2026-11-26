@@ -18,6 +18,7 @@ import { errorMessage, formatDateTime, truncate } from '@/agent/utils'
 import { EMOTION_TAG_REGEX_GLOBAL } from '@/composables/queues'
 import { useIndexedDBStorage } from '@/composables/storage'
 import { useAgentStore } from '@/stores/agent'
+import { useLanguageStore } from '@/stores/language'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
 import { useRemindersStore } from '@/stores/reminders'
@@ -53,6 +54,8 @@ export interface ChatMessage {
   toolLog?: string
   // assistant 消息：桌宠主动说的话，trigger 为时机的名称（如「午饭时间」）
   proactive?: { trigger: string }
+  // assistant 消息：这轮回复被用户打断了，content 为打断前已经生成的部分
+  interrupted?: boolean
   // user 消息：附带的划词内容
   quote?: string
   // user 消息：附带的图片（数据保存在 IndexedDB 中）
@@ -135,9 +138,20 @@ function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: bool
 
     const cards = (message.displays ?? [])
       .map((display) => `【已展示给用户的「${display.title}」】\n${truncate(display.content, HISTORY_ATTACHMENT_LENGTH)}`)
-    // 回复失败、只保留了执行过程的消息没有内容，部分服务商不接受空的 assistant 消息
-    const content = [message.content, ...cards].filter(Boolean).join('\n\n') || '（这次回复失败了，没有内容）'
+    // 回复失败或被打断、只保留了执行过程的消息没有内容，部分服务商不接受空的 assistant 消息
+    const content = [message.content, ...cards].filter(Boolean).join('\n\n')
+      || (message.interrupted ? '（这次回复被用户打断了）' : '（这次回复失败了，没有内容）')
     return [{ role: 'assistant', content: options.withToolLogs ? appendToolLog(content, message.toolLog) : content }]
+  })
+}
+
+// 等待 promise；打断时不再等待，立即以打断的原因结束（promise 本身仍会在后台完成）
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
   })
 }
 
@@ -158,6 +172,7 @@ function createSessionId(): string {
 
 export const useChatStore = defineStore('chat', () => {
   const providersStore = useProvidersStore()
+  const languageStore = useLanguageStore()
   const personaStore = usePersonaStore()
   const agentStore = useAgentStore()
   const remindersStore = useRemindersStore()
@@ -193,6 +208,11 @@ export const useChatStore = defineStore('chat', () => {
   const onChunkHooks = ref<((delta: string) => Promise<void>)[]>([])
   const onFinishHooks = ref<((text: string) => Promise<void>)[]>([])
   const onErrorHooks = ref<((error: unknown) => Promise<void>)[]>([])
+  // 用户打断时的钩子函数（无论是否正在生成回复），用于停止语音合成与播放
+  const onInterruptHooks = ref<(() => Promise<void>)[]>([])
+
+  // 正在进行的这一轮回复的 AbortController，打断时用它取消这一轮的所有请求
+  let replyController: AbortController | null = null
 
   // 当前选中的会话（会话加载完成后才能找到）
   const currentSession = ref<ChatSession | null>(null)
@@ -390,6 +410,10 @@ export const useChatStore = defineStore('chat', () => {
     session.updatedAt = Date.now()
     moveSessionToFront(session.id)
     isStreaming.value = true
+    // 打断时取消这一轮回复中的所有请求：意图识别、工具执行、生成回复
+    const controller = new AbortController()
+    replyController = controller
+    const { signal } = controller
 
     // 请求消息不包含下面新增的占位回复；系统提示词单独传入，以便附加技能执行结果
     const systemPrompt = session.messages.find((m) => m.role === 'system')?.content ?? personaStore.systemPrompt
@@ -436,6 +460,7 @@ export const useChatStore = defineStore('chat', () => {
           routerModel: agentStore.resolveRouterModel(),
           skills: agentStore.activeSkills,
           directCall: turn.directCall,
+          abortSignal: signal,
           onEvent: (event) => {
             agentStatus.value = describeAgentEvent(event)
             const current = trace()
@@ -458,6 +483,7 @@ export const useChatStore = defineStore('chat', () => {
           messages: agentDialog,
           background: recallPromise.then((recalled) => recalled?.facts ?? ''),
           skills: proactive.skills,
+          abortSignal: signal,
           onEvent: (event) => {
             agentStatus.value = describeAgentEvent(event)
             const current = trace()
@@ -466,6 +492,8 @@ export const useChatStore = defineStore('chat', () => {
           setStatus: (status) => { agentStatus.value = status },
         })
       }
+      // 不是所有工具都能中途取消：被打断时丢掉执行结果
+      signal.throwIfAborted()
       if (agentResult) {
         const message = session.messages[assistantIndex]!
         message.skills = agentResult.skills.map((skill) => skill.id)
@@ -474,13 +502,14 @@ export const useChatStore = defineStore('chat', () => {
         if (toolLog) message.toolLog = toolLog
       }
 
-      const recalled = await recallPromise
+      const recalled = await untilAborted(recallPromise, signal)
       if (recalled) {
         session.messages[assistantIndex]!.memories = recalled.memories.map(({ id, category, content, core }) => ({ id, category, content, core }))
       }
 
-      // 阶段三：以角色口吻润色执行结果（或直接闲聊），系统提示词 = 人设 + 相关记忆 + 技能执行结果
-      const system = [systemPrompt, recalled?.prompt, agentResult && buildAgentContextPrompt(agentResult)]
+      // 阶段三：以角色口吻润色执行结果（或直接闲聊），系统提示词 = 人设 + 相关记忆 + 技能执行结果 + 回复语言。
+      // 回复语言放在最后、每次回复时附加（不写进会话），改了设置马上生效，也不会被之前的对话用的语言带偏
+      const system = [systemPrompt, recalled?.prompt, agentResult && buildAgentContextPrompt(agentResult), languageStore.replyLanguagePrompt]
         .filter(Boolean)
         .join('\n\n')
       const currentTrace = trace()
@@ -489,11 +518,14 @@ export const useChatStore = defineStore('chat', () => {
         model,
         system,
         messages: dialog,
+        abortSignal: signal,
       })
 
       // 用 fullStream 而不是 textStream：textStream 会丢弃流中的错误（如超出上下文长度、限流），
       // 导致请求失败时只得到一条空回复，界面上也没有任何提示
       for await (const part of result.fullStream) {
+        // 被打断：剩下的内容不再处理，免得已经停下的语音又接着说（流被取消时会收到 abort 而不是报错）
+        if (signal.aborted || part.type === 'abort') break
         if (part.type === 'error') throw part.error
         if (part.type !== 'text-delta') continue
         const delta = part.text
@@ -509,6 +541,7 @@ export const useChatStore = defineStore('chat', () => {
         session.updatedAt = Date.now()
         onChunkHooks.value.forEach(hook => hook(delta))
       }
+      signal.throwIfAborted()
       // 没有出错也没有任何文字（如推理模型把输出额度都用在了思考上）时同样视为失败
       if (!fullText.trim()) throw new Error('模型没有返回任何内容，可能是输出长度不够或被服务商拦截了，可以重试或换一个模型')
       settleTrace(session.messages[assistantIndex])
@@ -526,6 +559,14 @@ export const useChatStore = defineStore('chat', () => {
     }
     catch (error) {
       const message = session.messages[assistantIndex]
+      if (signal.aborted) {
+        // 被打断不算出错，不提示：已经生成的文字保留并标记为被打断，什么都还没有时移除占位回复。
+        // 这一轮没有说完，也不整理记忆
+        settleTrace(message, '已被打断')
+        if (!fullText && !message?.displays && !message?.trace) session.messages.splice(assistantIndex, 1)
+        else if (message) message.interrupted = true
+        return fullText.replace(EMOTION_TAG_REGEX_GLOBAL, '').trim()
+      }
       settleTrace(message, errorMessage(error))
       // 未产生任何内容（文字、结果卡片与执行过程）时移除空的占位回复；
       // 执行过工具时保留，便于查看是哪一步出了问题
@@ -536,11 +577,30 @@ export const useChatStore = defineStore('chat', () => {
       return ''
     }
     finally {
+      if (replyController === controller) replyController = null
       settlePermission?.('deny')
       settleQuestion?.(null)
       agentStatus.value = ''
       isStreaming.value = false
     }
+  }
+
+  /**
+   * 打断：强制结束正在进行的这一轮回复（取消意图识别、工具执行与生成回复的请求，已经生成的文字保留），
+   * 并通过 onInterrupt 钩子通知语音管线停止说话（回复已经生成完、只是语音还没播完时也一样）。
+   * 排在后面、还没开始的回复（如刚好到时间的提醒）照常进行
+   */
+  function interrupt() {
+    if (replyController && !replyController.signal.aborted) {
+      replyController.abort()
+      // 界面立即恢复，不必等请求真正结束
+      isStreaming.value = false
+      agentStatus.value = ''
+    }
+    // 正在等待授权或回答时，视为拒绝、跳过
+    settlePermission?.('deny')
+    settleQuestion?.(null)
+    onInterruptHooks.value.forEach(hook => hook())
   }
 
   // 一轮回复结束时结束执行过程；普通闲聊只有意图识别与生成回复，不保留
@@ -616,6 +676,10 @@ export const useChatStore = defineStore('chat', () => {
     return addHook(onErrorHooks, hook)
   }
 
+  function onInterrupt(hook: () => Promise<void>) {
+    return addHook(onInterruptHooks, hook)
+  }
+
 
   watch(currentSessionId, (newId) => {
     currentSession.value = sessions.value.find((s) => s.id === newId) ?? null
@@ -639,6 +703,7 @@ export const useChatStore = defineStore('chat', () => {
     renameSession,
 
     sendMessage,
+    interrupt,
     respondPermission,
     answerQuestion,
     undoRemembered,
@@ -648,6 +713,7 @@ export const useChatStore = defineStore('chat', () => {
     onChunk,
     onFinish,
     onError,
+    onInterrupt,
     clearMessages,
   }
 })

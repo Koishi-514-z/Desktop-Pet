@@ -137,7 +137,8 @@ const END_TAG = '<END/>'
 // 'speech' 为待合成语音的文本，'emotion'/'end' 为情绪标记/结束标记，
 // 二者会按原始顺序依次向下传递，最终在 audioPlayingQueue 中处理
 export type SpeechQueueItem =
-  | { type: 'speech', text: string }
+  // context：这一轮回复中这句话之前的内容，念的语言与显示的不同、需要翻译时用来保持译文连贯
+  | { type: 'speech', text: string, context?: string }
   | { type: 'emotion', emotion: string }
   | { type: 'end' }
 
@@ -154,7 +155,7 @@ const SENTENCE_END_REGEX = /[。！？；…!?;]+[”’"'」』）)\]]*/g
 
 // 一句话去掉标点与空白后不足这么多字时不单独输出，与下一句合并：
 // 避免语音合成收到「嗯。」「好的！」这样零碎的片段，读起来一顿一顿的
-export const MIN_SENTENCE_LENGTH = 36
+export const MIN_SENTENCE_LENGTH = 100
 
 /** 句子的长度：不算标点、符号与空白 */
 export function sentenceLength(text: string): number {

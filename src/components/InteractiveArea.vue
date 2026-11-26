@@ -7,6 +7,7 @@ import { isTauri } from '@/composables/desktop'
 import type { ChatMessage } from '@/stores/chat'
 import AgentTrace from '@/components/AgentTrace.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
+import ResizeHandles from '@/components/ResizeHandles.vue'
 import { categoryLabel } from '@/memory/types'
 import { useAgentStore } from '@/stores/agent'
 import { useAudioStore } from '@/stores/audio'
@@ -15,14 +16,13 @@ import { useChatStore } from '@/stores/chat'
 import { useMicrophoneStore } from '@/stores/microphone'
 import { usePersonaStore } from '@/stores/persona'
 import { useProvidersStore } from '@/stores/providers'
-import { useSceneStore } from '@/stores/scene'
+import { DEFAULT_CHAT_PANEL_SIZE, MIN_CHAT_PANEL_SIZE, useSceneStore } from '@/stores/scene'
 import { useTranscriptionStore } from '@/stores/transcription'
 import { getInitial, hashHue } from '@/utils/avatar'
 import { imageSrc } from '@/utils/images'
+import type { PanelRect } from '@/utils/panel-resize'
+import { FLOATING_BUTTONS_GAP, fitPanelSize, keepPanelInView, PANEL_MARGIN, viewportSize } from '@/utils/panel-resize'
 
-// 面板默认尺寸，窗口较小时由 CSS 自动收缩
-const PANEL_WIDTH = 600
-const PANEL_HEIGHT = 720
 // 输入框自动增高的上限
 const INPUT_MAX_HEIGHT = 140
 
@@ -67,9 +67,12 @@ const statusText = computed(() => {
 const dragging = ref(false)
 const dragOffset = ref({ x: 0, y: 0 })
 
+// 面板的位置与尺寸（尺寸是用户调整后记住的；窗口较小时 CSS 会再收缩）
 const panelStyle = computed(() => ({
   left: `${state.value.position.x}px`,
   top: `${state.value.position.y}px`,
+  width: `${sceneStore.chatPanelSize.width}px`,
+  height: `${sceneStore.chatPanelSize.height}px`,
 }))
 
 function startDrag(event: PointerEvent) {
@@ -102,6 +105,20 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onDrag)
   window.removeEventListener('pointerup', stopDrag)
 })
+
+// ===== 拖动边、角调整大小（记住调整后的尺寸，见 ResizeHandles）=====
+
+function applyPanelRect(rect: PanelRect) {
+  state.value.position = { x: rect.x, y: rect.y }
+  sceneStore.chatPanelSize = { width: rect.width, height: rect.height }
+}
+
+// 双击边、角恢复默认尺寸（左上角不动；放不下时往回挪，不挡住右下角的悬浮按钮）
+function resetPanelSize() {
+  const size = fitPanelSize(DEFAULT_CHAT_PANEL_SIZE, { min: MIN_CHAT_PANEL_SIZE, bounds: viewportSize(), margin: PANEL_MARGIN })
+  sceneStore.chatPanelSize = size
+  state.value.position = keepPanelInView(state.value.position, size, viewportSize(), FLOATING_BUTTONS_GAP)
+}
 
 // ===== 消息列表 =====
 
@@ -316,6 +333,18 @@ const canSend = computed(() => {
   return (!!inputText.value.trim() || captureStore.pendingImages.length > 0) && !chatStore.isStreaming && !addingImage.value
 })
 
+// 桌宠正在回复：正在生成回复，或者语音还没播完
+const petBusy = computed(() => chatStore.isStreaming || audioStore.isPlaying || audioStore.speechPending)
+// 桌宠正在回复、又没有可以发送的内容时，发送按钮变成打断按钮
+const showInterrupt = computed(() => petBusy.value && !canSend.value)
+
+// 在面板中按 Esc 打断。正在查看大图时 Esc 只关闭大图（由窗口上的监听处理）；
+// 不监听整个窗口，免得和划词工具栏等其他用 Esc 关闭的界面冲突
+function handlePanelEscape(event: KeyboardEvent) {
+  if (event.isComposing || previewImageId.value || !petBusy.value) return
+  chatStore.interrupt()
+}
+
 async function send(content: string) {
   content = content.trim()
   if (!canSend.value) return
@@ -377,10 +406,10 @@ const microphoneTitle = computed(() => {
 
 // 输入框下方的提示：语音输入打开时显示正在做什么
 const inputHint = computed(() => {
-  if (!microphoneStore.isListening) return 'Enter 发送 · Shift + Enter 换行 · 可以粘贴或拖入图片'
+  if (!microphoneStore.isListening) return petBusy.value ? '按 Esc 可以打断' : 'Enter 发送 · Shift + Enter 换行 · 可以粘贴或拖入图片'
   if (microphoneStore.userSpeaking) return '正在听你说…'
   if (transcriptionStore.isTranscribing) return '正在识别…'
-  if (audioStore.isPlaying || audioStore.speechPending) return `等 ${personaName.value} 说完再听…`
+  if (audioStore.isPlaying || audioStore.speechPending) return `等 ${personaName.value} 说完再听，按 Esc 可以打断`
   return '正在聆听，说完后会自动发送'
 })
 
@@ -408,11 +437,10 @@ function submitQuestionAnswer() {
 }
 
 onMounted(() => {
-  // 默认放在右下角悬浮按钮的左侧
-  state.value.position = {
-    x: Math.max(16, window.innerWidth - PANEL_WIDTH - 88),
-    y: Math.max(16, window.innerHeight - PANEL_HEIGHT - 24),
-  }
+  // 默认放在右下角悬浮按钮的左侧。按记住的尺寸算位置；窗口放不下时按收缩后的大小算
+  // （只是显示时由 CSS 收缩，记住的尺寸不变，回到大屏幕时还是原来的大小）
+  const size = fitPanelSize(sceneStore.chatPanelSize, { min: MIN_CHAT_PANEL_SIZE, bounds: viewportSize(), margin: PANEL_MARGIN })
+  state.value.position = keepPanelInView({ x: Infinity, y: Infinity }, size, viewportSize(), FLOATING_BUTTONS_GAP)
 })
 </script>
 
@@ -422,404 +450,420 @@ onMounted(() => {
   </button>
 
   <Transition name="panel">
-    <div
-      v-show="state.visible"
-      class="interactive-area"
-      :class="{ 'file-dragging': fileDragging }"
-      :style="panelStyle"
-      @dragover="handleDragOver"
-      @dragleave="handleDragLeave"
-      @drop="handleDrop"
-    >
-      <header class="panel-header" @pointerdown="startDrag">
-        <button
-          class="icon-button"
-          :class="{ active: !sidebarCollapsed }"
-          :title="sidebarCollapsed ? '展开会话列表' : '收起会话列表'"
-          @click="sidebarCollapsed = !sidebarCollapsed"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="4" width="18" height="16" rx="3" />
-            <path d="M9 4v16" />
-          </svg>
-        </button>
-
-        <div class="persona">
-          <span class="avatar" :style="avatarStyle">
-            {{ getInitial(personaName) }}
-            <i class="presence" :class="{ busy: chatStore.isStreaming }" />
-          </span>
-          <span class="persona-text">
-            <span class="persona-name">{{ personaName }}</span>
-            <span class="persona-status" :class="{ busy: chatStore.isStreaming }">{{ statusText }}</span>
-          </span>
-        </div>
-
-        <div class="header-actions">
+    <!-- 外框负责位置、尺寸与显示：调整大小的手柄跨在面板边缘（面板本身裁掉了溢出的内容，手柄放不进去） -->
+    <div v-show="state.visible" class="panel-frame" :style="panelStyle">
+      <div
+        class="interactive-area"
+        :class="{ 'file-dragging': fileDragging }"
+        @keydown.esc="handlePanelEscape"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+      >
+        <header class="panel-header" @pointerdown="startDrag">
           <button
             class="icon-button"
-            :class="{ danger: confirmingClear }"
-            :title="confirmingClear ? '再次点击确认清空' : '清空当前会话'"
-            :disabled="chatStore.isStreaming || chatStore.visibleMessages.length === 0"
-            @click="handleClear"
+            :class="{ active: !sidebarCollapsed }"
+            :title="sidebarCollapsed ? '展开会话列表' : '收起会话列表'"
+            @click="sidebarCollapsed = !sidebarCollapsed"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
-            </svg>
-            <span v-if="confirmingClear" class="confirm-text">确认清空？</span>
-          </button>
-          <button class="icon-button" title="关闭" @click="state.visible = false">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
+              <rect x="3" y="4" width="18" height="16" rx="3" />
+              <path d="M9 4v16" />
             </svg>
           </button>
-        </div>
-      </header>
 
-      <div class="panel-body">
-        <aside class="session-list" :class="{ collapsed: sidebarCollapsed }">
-          <button class="new-session" @click="chatStore.createNewSession()">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            新对话
-          </button>
-
-          <ul>
-            <li
-              v-for="session in chatStore.sessions"
-              :key="session.id"
-              class="session-item"
-              :class="{ active: session.id === chatStore.currentSessionId }"
-              @click="chatStore.switchSession(session.id)"
-            >
-              <span class="session-text">
-                <span class="title">{{ session.title }}</span>
-                <span class="time">{{ formatRelativeTime(session.updatedAt) }}</span>
-              </span>
-              <button class="remove" title="删除会话" @click.stop="chatStore.removeSession(session.id)">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 6l12 12M18 6 6 18" />
-                </svg>
-              </button>
-            </li>
-          </ul>
-        </aside>
-
-        <section class="chat-panel">
-          <div ref="messagesContainer" class="messages">
-            <div
-              v-for="(message, index) in chatStore.visibleMessages"
-              :key="`${chatStore.currentSessionId}-${index}`"
-              class="message"
-              :class="message.role"
-            >
-              <span v-if="message.role === 'assistant'" class="avatar small" :style="avatarStyle">
-                {{ getInitial(personaName) }}
-              </span>
-              <div class="message-body">
-                <button
-                  v-if="message.quote"
-                  class="quote"
-                  :class="{ expanded: expandedQuotes.has(`${chatStore.currentSessionId}-${index}`) }"
-                  :title="expandedQuotes.has(`${chatStore.currentSessionId}-${index}`) ? '收起' : '展开全文'"
-                  @click="toggleQuote(`${chatStore.currentSessionId}-${index}`)"
-                >
-                  {{ message.quote }}
-                </button>
-                <div v-if="message.images?.length" class="message-images">
-                  <button
-                    v-for="image in message.images"
-                    :key="image.id"
-                    class="message-image"
-                    title="查看大图"
-                    :style="{ aspectRatio: `${image.width} / ${image.height}` }"
-                    @click="previewImageId = image.id"
-                  >
-                    <img v-if="imageSrc(image.id)" :src="imageSrc(image.id)" alt="图片" />
-                  </button>
-                </div>
-                <AgentTrace
-                  v-if="message.trace && hasExecution(message.trace)"
-                  :trace="message.trace"
-                  :live="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1"
-                />
-                <div v-if="message.content || (chatStore.isStreaming && index === chatStore.visibleMessages.length - 1)" class="bubble">
-                  <span v-if="message.content">{{ message.content }}</span>
-                  <span v-else-if="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1" class="typing">
-                    <i></i><i></i><i></i>
-                    <span v-if="chatStore.agentStatus" class="agent-status">{{ chatStore.agentStatus }}</span>
-                  </span>
-                </div>
-                <div
-                  v-if="chatStore.pendingPermission && index === chatStore.visibleMessages.length - 1"
-                  :key="chatStore.pendingPermission.id"
-                  class="permission-card"
-                >
-                  <div class="permission-head">
-                    <span class="permission-icon">
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="2" y="3" width="20" height="14" rx="2" />
-                        <path d="M8 21h8M12 17v4" />
-                      </svg>
-                    </span>
-                    <div class="permission-text">
-                      <p class="permission-title">{{ personaName }} 想{{ chatStore.pendingPermission.request.title }}</p>
-                      <p class="permission-reason">{{ chatStore.pendingPermission.request.reason }}</p>
-                    </div>
-                  </div>
-                  <p
-                    v-if="chatStore.pendingPermission.request.target"
-                    class="permission-target"
-                    :class="{ code: chatStore.pendingPermission.request.targetFormat === 'code' }"
-                  >
-                    <span>{{ chatStore.pendingPermission.request.targetLabel ?? '对象' }}</span>{{ chatStore.pendingPermission.request.target }}
-                  </p>
-                  <p v-if="chatStore.pendingPermission.request.notice" class="permission-notice">
-                    {{ chatStore.pendingPermission.request.notice }}
-                  </p>
-                  <div class="permission-actions">
-                    <button class="permission-button" @click="chatStore.respondPermission('deny')">拒绝</button>
-                    <button
-                      v-if="chatStore.pendingPermission.request.allowAlways !== false"
-                      class="permission-button"
-                      @click="chatStore.respondPermission('always')"
-                    >
-                      始终允许
-                    </button>
-                    <button class="permission-button primary" @click="chatStore.respondPermission('once')">允许这一次</button>
-                  </div>
-                </div>
-                <div
-                  v-if="chatStore.pendingQuestion && index === chatStore.visibleMessages.length - 1"
-                  :key="chatStore.pendingQuestion.id"
-                  class="permission-card question-card"
-                >
-                  <div class="permission-head">
-                    <span class="permission-icon">
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01" />
-                      </svg>
-                    </span>
-                    <div class="permission-text">
-                      <p class="permission-title">{{ personaName }} 想问你</p>
-                      <p class="permission-reason">{{ chatStore.pendingQuestion.question.question }}</p>
-                    </div>
-                  </div>
-                  <div v-if="chatStore.pendingQuestion.question.options?.length" class="question-options">
-                    <button
-                      v-for="option in chatStore.pendingQuestion.question.options"
-                      :key="option"
-                      class="permission-button question-option"
-                      type="button"
-                      @click="chatStore.answerQuestion(option)"
-                    >
-                      {{ option }}
-                    </button>
-                  </div>
-                  <form v-if="questionHasInput" class="question-input" @submit.prevent="submitQuestionAnswer">
-                    <input
-                      ref="questionInputRef"
-                      v-model="questionAnswer"
-                      class="question-field"
-                      :placeholder="chatStore.pendingQuestion.question.placeholder
-                        || (chatStore.pendingQuestion.question.options?.length ? '或者输入其他回答' : '输入你的回答')"
-                    />
-                    <button class="permission-button primary" type="submit" :disabled="!questionAnswer.trim()">回答</button>
-                  </form>
-                  <div class="permission-actions">
-                    <span v-if="questionHasInput" class="question-hint">也可以直接在下方的输入框中回答</span>
-                    <button class="permission-button" type="button" @click="chatStore.answerQuestion(null)">跳过</button>
-                  </div>
-                </div>
-                <div
-                  v-for="(display, displayIndex) in message.displays ?? []"
-                  :key="displayIndex"
-                  class="result-card"
-                >
-                  <header class="result-head">
-                    <span class="result-title">{{ display.title }}</span>
-                    <button
-                      class="result-copy"
-                      :class="{ copied: copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}` }"
-                      @click="copyText(`${chatStore.currentSessionId}-${index}-${displayIndex}`, display.content)"
-                    >
-                      <svg v-if="copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}`" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M5 12l5 5L20 7" />
-                      </svg>
-                      <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="9" y="9" width="11" height="11" rx="2" />
-                        <path d="M5 15V6a2 2 0 0 1 2-2h9" />
-                      </svg>
-                      {{ copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}` ? '已复制' : '复制' }}
-                    </button>
-                  </header>
-                  <div class="result-content" :class="display.format"><LinkifiedText :text="display.content" /></div>
-                </div>
-                <div v-if="message.role === 'assistant' && (message.skills?.length || message.memories?.length || message.remembered?.length || message.proactive)" class="skill-tags">
-                  <span v-if="message.proactive" class="skill-tag proactive-tag" title="桌宠主动说的话">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
-                    </svg>
-                    主动 · {{ message.proactive.trigger }}
-                  </span>
-                  <button
-                    v-if="message.memories?.length"
-                    class="skill-tag memory-tag"
-                    :class="{ active: expandedQuotes.has(`memory-${chatStore.currentSessionId}-${index}`) }"
-                    title="这次回复时想起的事情"
-                    @click="toggleQuote(`memory-${chatStore.currentSessionId}-${index}`)"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.6.6.8 1.2.8 2V17h6v-1.4c0-.8.2-1.4.8-2 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6zM10 21h4" />
-                    </svg>
-                    想起了 {{ message.memories.length }} 件事
-                  </button>
-                  <button
-                    v-if="message.remembered?.length"
-                    class="skill-tag memory-tag remembered"
-                    :class="{ active: expandedQuotes.has(`remembered-${chatStore.currentSessionId}-${index}`) }"
-                    title="这一轮对话后记住的事情"
-                    @click="toggleQuote(`remembered-${chatStore.currentSessionId}-${index}`)"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.6.6.8 1.2.8 2V17h6v-1.4c0-.8.2-1.4.8-2 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6zM10 21h4M12 7v4M10 9h4" />
-                    </svg>
-                    记住了 {{ message.remembered.length }} 件事
-                  </button>
-                  <span v-for="id in message.skills ?? []" :key="id" class="skill-tag">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
-                    </svg>
-                    {{ agentStore.getSkillById(id)?.name ?? id }}
-                  </span>
-                </div>
-                <ul v-if="message.memories?.length && expandedQuotes.has(`memory-${chatStore.currentSessionId}-${index}`)" class="memory-list">
-                  <li v-for="memory in message.memories" :key="memory.id">
-                    <span class="memory-category">{{ categoryLabel(memory.category) }}</span>
-                    <span>{{ memory.content }}</span>
-                  </li>
-                </ul>
-                <ul v-if="message.remembered?.length && expandedQuotes.has(`remembered-${chatStore.currentSessionId}-${index}`)" class="memory-list remembered">
-                  <li v-for="(memory, memoryIndex) in message.remembered" :key="memoryIndex">
-                    <span class="memory-category">{{ memory.action === 'add' ? '新增' : '更新' }} · {{ categoryLabel(memory.category) }}</span>
-                    <span class="memory-change">
-                      <span>{{ memory.content }}</span>
-                      <s v-if="memory.previous" class="memory-previous">{{ memory.previous }}</s>
-                    </span>
-                  </li>
-                  <li v-if="message.rememberedBatch" class="memory-actions">
-                    <button class="memory-undo" type="button" title="撤销这一轮记忆的变动" @click="handleUndoRemembered(message)">
-                      撤销
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            </div>
+          <div class="persona">
+            <span class="avatar" :style="avatarStyle">
+              {{ getInitial(personaName) }}
+              <i class="presence" :class="{ busy: chatStore.isStreaming }" />
+            </span>
+            <span class="persona-text">
+              <span class="persona-name">{{ personaName }}</span>
+              <span class="persona-status" :class="{ busy: chatStore.isStreaming }">{{ statusText }}</span>
+            </span>
           </div>
 
-          <Transition name="fade">
-            <p v-if="errorMessage" class="error">
-              <span>{{ errorMessage }}</span>
-              <button class="error-close" title="关闭" @click="errorMessage = ''">×</button>
-            </p>
-          </Transition>
+          <div class="header-actions">
+            <button
+              class="icon-button"
+              :class="{ danger: confirmingClear }"
+              :title="confirmingClear ? '再次点击确认清空' : '清空当前会话'"
+              :disabled="chatStore.isStreaming || chatStore.visibleMessages.length === 0"
+              @click="handleClear"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+              </svg>
+              <span v-if="confirmingClear" class="confirm-text">确认清空？</span>
+            </button>
+            <button class="icon-button" title="关闭" @click="state.visible = false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+        </header>
 
-          <form class="input-area" @submit.prevent="handleSend">
-            <div v-if="captureStore.pendingQuote" class="pending-quote">
-              <span class="pending-quote-text">{{ captureStore.pendingQuote }}</span>
-              <button type="button" class="pending-quote-remove" title="移除划词内容" @click="captureStore.pendingQuote = ''">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-              </button>
+        <div class="panel-body">
+          <aside class="session-list" :class="{ collapsed: sidebarCollapsed }">
+            <button class="new-session" @click="chatStore.createNewSession()">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              新对话
+            </button>
+
+            <ul>
+              <li
+                v-for="session in chatStore.sessions"
+                :key="session.id"
+                class="session-item"
+                :class="{ active: session.id === chatStore.currentSessionId }"
+                @click="chatStore.switchSession(session.id)"
+              >
+                <span class="session-text">
+                  <span class="title">{{ session.title }}</span>
+                  <span class="time">{{ formatRelativeTime(session.updatedAt) }}</span>
+                </span>
+                <button class="remove" title="删除会话" @click.stop="chatStore.removeSession(session.id)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </li>
+            </ul>
+          </aside>
+
+          <section class="chat-panel">
+            <div ref="messagesContainer" class="messages">
+              <div
+                v-for="(message, index) in chatStore.visibleMessages"
+                :key="`${chatStore.currentSessionId}-${index}`"
+                class="message"
+                :class="message.role"
+              >
+                <span v-if="message.role === 'assistant'" class="avatar small" :style="avatarStyle">
+                  {{ getInitial(personaName) }}
+                </span>
+                <div class="message-body">
+                  <button
+                    v-if="message.quote"
+                    class="quote"
+                    :class="{ expanded: expandedQuotes.has(`${chatStore.currentSessionId}-${index}`) }"
+                    :title="expandedQuotes.has(`${chatStore.currentSessionId}-${index}`) ? '收起' : '展开全文'"
+                    @click="toggleQuote(`${chatStore.currentSessionId}-${index}`)"
+                  >
+                    {{ message.quote }}
+                  </button>
+                  <div v-if="message.images?.length" class="message-images">
+                    <button
+                      v-for="image in message.images"
+                      :key="image.id"
+                      class="message-image"
+                      title="查看大图"
+                      :style="{ aspectRatio: `${image.width} / ${image.height}` }"
+                      @click="previewImageId = image.id"
+                    >
+                      <img v-if="imageSrc(image.id)" :src="imageSrc(image.id)" alt="图片" />
+                    </button>
+                  </div>
+                  <AgentTrace
+                    v-if="message.trace && hasExecution(message.trace)"
+                    :trace="message.trace"
+                    :live="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1"
+                  />
+                  <div v-if="message.content || (chatStore.isStreaming && index === chatStore.visibleMessages.length - 1)" class="bubble">
+                    <span v-if="message.content">{{ message.content }}</span>
+                    <span v-else-if="chatStore.isStreaming && index === chatStore.visibleMessages.length - 1" class="typing">
+                      <i></i><i></i><i></i>
+                      <span v-if="chatStore.agentStatus" class="agent-status">{{ chatStore.agentStatus }}</span>
+                    </span>
+                  </div>
+                  <div
+                    v-if="chatStore.pendingPermission && index === chatStore.visibleMessages.length - 1"
+                    :key="chatStore.pendingPermission.id"
+                    class="permission-card"
+                  >
+                    <div class="permission-head">
+                      <span class="permission-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <rect x="2" y="3" width="20" height="14" rx="2" />
+                          <path d="M8 21h8M12 17v4" />
+                        </svg>
+                      </span>
+                      <div class="permission-text">
+                        <p class="permission-title">{{ personaName }} 想{{ chatStore.pendingPermission.request.title }}</p>
+                        <p class="permission-reason">{{ chatStore.pendingPermission.request.reason }}</p>
+                      </div>
+                    </div>
+                    <p
+                      v-if="chatStore.pendingPermission.request.target"
+                      class="permission-target"
+                      :class="{ code: chatStore.pendingPermission.request.targetFormat === 'code' }"
+                    >
+                      <span>{{ chatStore.pendingPermission.request.targetLabel ?? '对象' }}</span>{{ chatStore.pendingPermission.request.target }}
+                    </p>
+                    <p v-if="chatStore.pendingPermission.request.notice" class="permission-notice">
+                      {{ chatStore.pendingPermission.request.notice }}
+                    </p>
+                    <div class="permission-actions">
+                      <button class="permission-button" @click="chatStore.respondPermission('deny')">拒绝</button>
+                      <button
+                        v-if="chatStore.pendingPermission.request.allowAlways !== false"
+                        class="permission-button"
+                        @click="chatStore.respondPermission('always')"
+                      >
+                        始终允许
+                      </button>
+                      <button class="permission-button primary" @click="chatStore.respondPermission('once')">允许这一次</button>
+                    </div>
+                  </div>
+                  <div
+                    v-if="chatStore.pendingQuestion && index === chatStore.visibleMessages.length - 1"
+                    :key="chatStore.pendingQuestion.id"
+                    class="permission-card question-card"
+                  >
+                    <div class="permission-head">
+                      <span class="permission-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01" />
+                        </svg>
+                      </span>
+                      <div class="permission-text">
+                        <p class="permission-title">{{ personaName }} 想问你</p>
+                        <p class="permission-reason">{{ chatStore.pendingQuestion.question.question }}</p>
+                      </div>
+                    </div>
+                    <div v-if="chatStore.pendingQuestion.question.options?.length" class="question-options">
+                      <button
+                        v-for="option in chatStore.pendingQuestion.question.options"
+                        :key="option"
+                        class="permission-button question-option"
+                        type="button"
+                        @click="chatStore.answerQuestion(option)"
+                      >
+                        {{ option }}
+                      </button>
+                    </div>
+                    <form v-if="questionHasInput" class="question-input" @submit.prevent="submitQuestionAnswer">
+                      <input
+                        ref="questionInputRef"
+                        v-model="questionAnswer"
+                        class="question-field"
+                        :placeholder="chatStore.pendingQuestion.question.placeholder
+                          || (chatStore.pendingQuestion.question.options?.length ? '或者输入其他回答' : '输入你的回答')"
+                      />
+                      <button class="permission-button primary" type="submit" :disabled="!questionAnswer.trim()">回答</button>
+                    </form>
+                    <div class="permission-actions">
+                      <span v-if="questionHasInput" class="question-hint">也可以直接在下方的输入框中回答</span>
+                      <button class="permission-button" type="button" @click="chatStore.answerQuestion(null)">跳过</button>
+                    </div>
+                  </div>
+                  <div
+                    v-for="(display, displayIndex) in message.displays ?? []"
+                    :key="displayIndex"
+                    class="result-card"
+                  >
+                    <header class="result-head">
+                      <span class="result-title">{{ display.title }}</span>
+                      <button
+                        class="result-copy"
+                        :class="{ copied: copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}` }"
+                        @click="copyText(`${chatStore.currentSessionId}-${index}-${displayIndex}`, display.content)"
+                      >
+                        <svg v-if="copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}`" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M5 12l5 5L20 7" />
+                        </svg>
+                        <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                          <rect x="9" y="9" width="11" height="11" rx="2" />
+                          <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+                        </svg>
+                        {{ copiedKey === `${chatStore.currentSessionId}-${index}-${displayIndex}` ? '已复制' : '复制' }}
+                      </button>
+                    </header>
+                    <div class="result-content" :class="display.format"><LinkifiedText :text="display.content" /></div>
+                  </div>
+                  <div v-if="message.role === 'assistant' && (message.skills?.length || message.memories?.length || message.remembered?.length || message.proactive || message.interrupted)" class="skill-tags">
+                    <span v-if="message.interrupted" class="skill-tag interrupted-tag" title="这条回复被打断了，没有说完">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="6" y="6" width="12" height="12" rx="2" />
+                      </svg>
+                      已打断
+                    </span>
+                    <span v-if="message.proactive" class="skill-tag proactive-tag" title="桌宠主动说的话">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+                      </svg>
+                      主动 · {{ message.proactive.trigger }}
+                    </span>
+                    <button
+                      v-if="message.memories?.length"
+                      class="skill-tag memory-tag"
+                      :class="{ active: expandedQuotes.has(`memory-${chatStore.currentSessionId}-${index}`) }"
+                      title="这次回复时想起的事情"
+                      @click="toggleQuote(`memory-${chatStore.currentSessionId}-${index}`)"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.6.6.8 1.2.8 2V17h6v-1.4c0-.8.2-1.4.8-2 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6zM10 21h4" />
+                      </svg>
+                      想起了 {{ message.memories.length }} 件事
+                    </button>
+                    <button
+                      v-if="message.remembered?.length"
+                      class="skill-tag memory-tag remembered"
+                      :class="{ active: expandedQuotes.has(`remembered-${chatStore.currentSessionId}-${index}`) }"
+                      title="这一轮对话后记住的事情"
+                      @click="toggleQuote(`remembered-${chatStore.currentSessionId}-${index}`)"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.2 4.6.6.6.8 1.2.8 2V17h6v-1.4c0-.8.2-1.4.8-2 1-1 2.2-2.4 2.2-4.6a6 6 0 0 0-6-6zM10 21h4M12 7v4M10 9h4" />
+                      </svg>
+                      记住了 {{ message.remembered.length }} 件事
+                    </button>
+                    <span v-for="id in message.skills ?? []" :key="id" class="skill-tag">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
+                      </svg>
+                      {{ agentStore.getSkillById(id)?.name ?? id }}
+                    </span>
+                  </div>
+                  <ul v-if="message.memories?.length && expandedQuotes.has(`memory-${chatStore.currentSessionId}-${index}`)" class="memory-list">
+                    <li v-for="memory in message.memories" :key="memory.id">
+                      <span class="memory-category">{{ categoryLabel(memory.category) }}</span>
+                      <span>{{ memory.content }}</span>
+                    </li>
+                  </ul>
+                  <ul v-if="message.remembered?.length && expandedQuotes.has(`remembered-${chatStore.currentSessionId}-${index}`)" class="memory-list remembered">
+                    <li v-for="(memory, memoryIndex) in message.remembered" :key="memoryIndex">
+                      <span class="memory-category">{{ memory.action === 'add' ? '新增' : '更新' }} · {{ categoryLabel(memory.category) }}</span>
+                      <span class="memory-change">
+                        <span>{{ memory.content }}</span>
+                        <s v-if="memory.previous" class="memory-previous">{{ memory.previous }}</s>
+                      </span>
+                    </li>
+                    <li v-if="message.rememberedBatch" class="memory-actions">
+                      <button class="memory-undo" type="button" title="撤销这一轮记忆的变动" @click="handleUndoRemembered(message)">
+                        撤销
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </div>
-            <div v-if="captureStore.pendingImages.length || addingImage" class="pending-images">
-              <div v-for="image in captureStore.pendingImages" :key="image.id" class="pending-image">
-                <img v-if="imageSrc(image.id)" :src="imageSrc(image.id)" alt="待发送的图片" @click="previewImageId = image.id" />
-                <button type="button" class="pending-image-remove" title="移除图片" @click="captureStore.removePendingImage(image.id)">
+
+            <Transition name="fade">
+              <p v-if="errorMessage" class="error">
+                <span>{{ errorMessage }}</span>
+                <button class="error-close" title="关闭" @click="errorMessage = ''">×</button>
+              </p>
+            </Transition>
+
+            <form class="input-area" @submit.prevent="handleSend">
+              <div v-if="captureStore.pendingQuote" class="pending-quote">
+                <span class="pending-quote-text">{{ captureStore.pendingQuote }}</span>
+                <button type="button" class="pending-quote-remove" title="移除划词内容" @click="captureStore.pendingQuote = ''">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
                 </button>
               </div>
-              <div v-if="addingImage" class="pending-image loading" />
-            </div>
-            <div class="composer">
-              <div class="composer-tools">
-                <button
-                  type="button"
-                  class="tool-button"
-                  :title="canAddImage ? '添加图片（也可以直接粘贴或拖入）' : `一次最多发送 ${MAX_IMAGES} 张图片`"
-                  :disabled="!canAddImage"
-                  @click="fileInputRef?.click()"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="3" y="4" width="18" height="16" rx="3" />
-                    <circle cx="9" cy="10" r="2" />
-                    <path d="m21 16-5-5-9 9" />
-                  </svg>
-                </button>
-                <button
-                  v-if="isTauri"
-                  type="button"
-                  class="tool-button"
-                  title="截图"
-                  :disabled="!canAddImage"
-                  @click="handleScreenshot"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="tool-button mic-button"
-                  :class="{ active: microphoneStore.isListening, hearing: microphoneStore.userSpeaking }"
-                  :style="{ '--level': microphoneStore.level }"
-                  :title="microphoneTitle"
-                  :aria-pressed="microphoneStore.isListening"
-                  :disabled="microphoneStore.isStarting"
-                  @click="toggleMicrophone"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="9" y="3" width="6" height="11" rx="3" />
-                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-                  </svg>
-                </button>
-                <input ref="fileInputRef" type="file" accept="image/*" multiple hidden @change="handleFileChange" />
+              <div v-if="captureStore.pendingImages.length || addingImage" class="pending-images">
+                <div v-for="image in captureStore.pendingImages" :key="image.id" class="pending-image">
+                  <img v-if="imageSrc(image.id)" :src="imageSrc(image.id)" alt="待发送的图片" @click="previewImageId = image.id" />
+                  <button type="button" class="pending-image-remove" title="移除图片" @click="captureStore.removePendingImage(image.id)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                  </button>
+                </div>
+                <div v-if="addingImage" class="pending-image loading" />
               </div>
-              <textarea
-                ref="inputRef"
-                v-model="inputText"
-                class="input"
-                :placeholder="!chatStore.pendingQuestion ? `和 ${personaName} 说点什么…` : questionHasInput ? `回答 ${personaName} 的问题…` : '请在上方选择一个回答'"
-                rows="1"
-                @keydown="handleKeydown"
-                @paste="handlePaste"
-              />
-              <button class="send" type="submit" title="发送" :disabled="!canSend">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
-              </button>
-            </div>
-            <p class="input-hint" :class="{ listening: microphoneStore.isListening }">{{ inputHint }}</p>
-          </form>
-        </section>
-      </div>
-
-      <div v-if="fileDragging" class="drop-overlay">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="3" y="4" width="18" height="16" rx="3" />
-          <circle cx="9" cy="10" r="2" />
-          <path d="m21 16-5-5-9 9" />
-        </svg>
-        松开以添加图片
-      </div>
-
-      <Transition name="fade">
-        <div v-if="previewImageId" class="image-preview" title="点击关闭" @click="previewImageId = ''">
-          <img :src="imageSrc(previewImageId)" alt="图片预览" />
+              <div class="composer">
+                <div class="composer-tools">
+                  <button
+                    type="button"
+                    class="tool-button"
+                    :title="canAddImage ? '添加图片（也可以直接粘贴或拖入）' : `一次最多发送 ${MAX_IMAGES} 张图片`"
+                    :disabled="!canAddImage"
+                    @click="fileInputRef?.click()"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="16" rx="3" />
+                      <circle cx="9" cy="10" r="2" />
+                      <path d="m21 16-5-5-9 9" />
+                    </svg>
+                  </button>
+                  <button
+                    v-if="isTauri"
+                    type="button"
+                    class="tool-button"
+                    title="截图"
+                    :disabled="!canAddImage"
+                    @click="handleScreenshot"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="tool-button mic-button"
+                    :class="{ active: microphoneStore.isListening, hearing: microphoneStore.userSpeaking }"
+                    :style="{ '--level': microphoneStore.level }"
+                    :title="microphoneTitle"
+                    :aria-pressed="microphoneStore.isListening"
+                    :disabled="microphoneStore.isStarting"
+                    @click="toggleMicrophone"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="9" y="3" width="6" height="11" rx="3" />
+                      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+                    </svg>
+                  </button>
+                  <input ref="fileInputRef" type="file" accept="image/*" multiple hidden @change="handleFileChange" />
+                </div>
+                <textarea
+                  ref="inputRef"
+                  v-model="inputText"
+                  class="input"
+                  :placeholder="!chatStore.pendingQuestion ? `和 ${personaName} 说点什么…` : questionHasInput ? `回答 ${personaName} 的问题…` : '请在上方选择一个回答'"
+                  rows="1"
+                  @keydown="handleKeydown"
+                  @paste="handlePaste"
+                />
+                <button v-if="showInterrupt" class="send interrupt" type="button" title="打断（Esc）" @click="chatStore.interrupt()">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="7" y="7" width="10" height="10" rx="2" />
+                  </svg>
+                </button>
+                <button v-else class="send" type="submit" title="发送" :disabled="!canSend">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
+              <p class="input-hint" :class="{ listening: microphoneStore.isListening }">{{ inputHint }}</p>
+            </form>
+          </section>
         </div>
-      </Transition>
+
+        <div v-if="fileDragging" class="drop-overlay">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="3" />
+            <circle cx="9" cy="10" r="2" />
+            <path d="m21 16-5-5-9 9" />
+          </svg>
+          松开以添加图片
+        </div>
+
+        <Transition name="fade">
+          <div v-if="previewImageId" class="image-preview" title="点击关闭" @click="previewImageId = ''">
+            <img :src="imageSrc(previewImageId)" alt="图片预览" />
+          </div>
+        </Transition>
+      </div>
+
+      <!-- 拖动边、角调整大小，双击恢复默认尺寸 -->
+      <ResizeHandles :min="MIN_CHAT_PANEL_SIZE" @resize="applyPanelRect" @reset="resetPanelSize" />
     </div>
   </Transition>
 </template>

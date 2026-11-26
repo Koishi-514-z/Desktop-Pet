@@ -56,10 +56,29 @@ export interface Provider {
   // 手动输入的音色（音色 ID），与接口获取的声线一起供选择，刷新声线列表时不会丢失
   customVoices?: ProviderVoice[]
   selectedVoiceId?: string
+  // 用户给模型和声线打的分（1~5 星），键为模型 / 声线 id；刷新列表时不会丢失
+  ratings?: ProviderRatings
   listVoices?: () => Promise<ProviderVoice[]>
   // 支持自定义音色的 TTS provider 使用（如 index-tts）：上传音色参考音频 / 删除音色
   uploadVoice?: (file: Blob, name: string, options?: { overwrite?: boolean }) => Promise<ProviderVoice>
   deleteVoice?: (voiceId: string) => Promise<void>
+}
+
+export type RatingKind = 'models' | 'voices'
+export type ProviderRatings = Partial<Record<RatingKind, Record<string, number>>>
+export const MAX_RATING = 5
+
+/** 用户给这个模型 / 声线打的分，没打过分为 0 */
+export function getRating(provider: Pick<Provider, 'ratings'>, kind: RatingKind, itemId: string): number {
+  return provider.ratings?.[kind]?.[itemId] ?? 0
+}
+
+/** 按评分从高到低排列（评分相同、没打过分的保持原来的顺序），不改变原数组 */
+export function sortByRating<T extends { id: string }>(items: T[], provider: Pick<Provider, 'ratings'>, kind: RatingKind): T[] {
+  return items
+    .map((item, index) => ({ item, index, rating: getRating(provider, kind, item.id) }))
+    .sort((a, b) => b.rating - a.rating || a.index - b.index)
+    .map(({ item }) => item)
 }
 
 // 由协议决定的 provider 方法，不会被持久化，需要在加载后重新挂载
@@ -69,10 +88,10 @@ type ProviderHandlerKey = keyof ProviderHandlers
 // 缓存有效期：24 小时
 const PROVIDER_INFO_CACHE_TTL = 1000 * 60 * 60 * 24
 
-// 缓存的 provider 加载结果
+// 缓存的 provider 加载结果（每个 provider 一条）
 export interface ProviderInfoCache {
   id: string
-  // 由 protocol + baseUrl + apiKey 组成，用于判断凭据是否变化
+  // 由 protocol + baseUrl + apiKey 组成，用于判断这个 provider 的凭据是否变化
   key: string
   timestamp: number
   models: ProviderModel[]
@@ -138,14 +157,14 @@ const OPENAI_TTS_VOICES: ProviderVoice[] = [
 
 // ElevenLabs 语音合成接口提供的固定模型列表（ElevenLabsSpeechModelId）
 const ELEVENLABS_TTS_MODELS: ProviderModel[] = [
+  { id: 'eleven_v4', name: 'Eleven v4' },
+  { id: 'eleven_v4_turbo', name: 'Eleven v4 Turbo' },
   { id: 'eleven_v3', name: 'Eleven v3' },
   { id: 'eleven_multilingual_v2', name: 'Eleven Multilingual v2' },
   { id: 'eleven_flash_v2_5', name: 'Eleven Flash v2.5' },
   { id: 'eleven_flash_v2', name: 'Eleven Flash v2' },
   { id: 'eleven_turbo_v2_5', name: 'Eleven Turbo v2.5' },
   { id: 'eleven_turbo_v2', name: 'Eleven Turbo v2' },
-  { id: 'eleven_monolingual_v1', name: 'Eleven Monolingual v1' },
-  { id: 'eleven_multilingual_v1', name: 'Eleven Multilingual v1' },
 ]
 
 // LMNT 语音合成接口提供的固定模型列表（LMNTSpeechModelId）
@@ -229,8 +248,11 @@ const DEEPGRAM_ASR_MODELS: ProviderModel[] = [
 
 // ElevenLabs 语音识别接口提供的模型（ElevenLabsTranscriptionModelId）
 const ELEVENLABS_ASR_MODELS: ProviderModel[] = [
-  { id: 'scribe_v1', name: 'Scribe v1' },
-  { id: 'scribe_v1_experimental', name: 'Scribe v1 Experimental' },
+  { id: 'scribe_v3', name: 'Scribe v3' },
+  { id: 'scribe_v3_live', name: 'Scribe v3 Live' },
+  { id: 'scribe_v2', name: 'Scribe v2' },
+  { id: 'scribe_v2_medical', name: 'Scribe v2 Medical' },
+  { id: 'scribe_v2_realtime', name: 'Scribe v2 Realtime' },
 ]
 
 // OpenAI 兼容接口返回的模型中，用来识别语音的模型（如 whisper-1、gpt-4o-transcribe、SenseVoiceSmall）
@@ -776,6 +798,7 @@ export const useProvidersStore = defineStore('providers', () => {
     if (index === -1) return
 
     providers.value.splice(index, 1)
+    cachedProviders.value = cachedProviders.value.filter((p) => p.id !== id)
 
     for (const current of Object.values(currentProviderIds)) {
       if (current.value === id) current.value = ''
@@ -848,7 +871,8 @@ export const useProvidersStore = defineStore('providers', () => {
     const key = getProviderCacheKey(provider)
 
     if (!options.force) {
-      const availableCache = cachedProviders.value.find((p) => p.key === key && p.timestamp > Date.now() - PROVIDER_INFO_CACHE_TTL)
+      // 只用这个 provider 自己的缓存：配置相同的其他 provider（如同一个 Key 的千问 TTS 与 ASR）模型列表不同
+      const availableCache = cachedProviders.value.find((p) => p.id === id && p.key === key && p.timestamp > Date.now() - PROVIDER_INFO_CACHE_TTL)
       if (availableCache) {
         provider.isValid = availableCache.isValid
         provider.models = availableCache.models
@@ -920,6 +944,7 @@ export const useProvidersStore = defineStore('providers', () => {
     if (!provider?.deleteVoice) throw new Error('该 Provider 不支持删除音色')
 
     await provider.deleteVoice(voiceId)
+    setRating(id, 'voices', voiceId, 0)
     await reloadVoices(provider)
   }
 
@@ -945,10 +970,22 @@ export const useProvidersStore = defineStore('providers', () => {
     if (!provider?.customVoices) return
 
     provider.customVoices = provider.customVoices.filter((v) => v.id !== voiceId)
+    // 接口获取的列表里没有同一个音色时，评分也一并清掉
+    if (!provider.voices?.some((v) => v.id === voiceId)) setRating(id, 'voices', voiceId, 0)
     if (provider.selectedVoiceId === voiceId) {
       provider.selectedVoiceId = ''
       applyVoiceDefaults(provider)
     }
+  }
+
+  /** 给模型 / 声线打分（1~5 星），rating 为 0 时清除评分 */
+  function setRating(id: string, kind: RatingKind, itemId: string, rating: number) {
+    const provider = getProviderById(id)
+    if (!provider || !itemId) return
+
+    const value = Math.min(MAX_RATING, Math.max(0, Math.round(rating)))
+    const { [itemId]: _, ...rest } = provider.ratings?.[kind] ?? {}
+    provider.ratings = { ...provider.ratings, [kind]: value > 0 ? { ...rest, [itemId]: value } : rest }
   }
 
   function isDefaultProvider(id: string) {
@@ -979,7 +1016,7 @@ export const useProvidersStore = defineStore('providers', () => {
     // resetAllToDefault()
     providers.value.forEach(async (provider) => {
       setProviderHandlers(provider)
-      await loadProviderInfo(provider.id)
+      await loadProviderInfo(provider.id, { force: true })
     })
   })
 
@@ -1001,6 +1038,7 @@ export const useProvidersStore = defineStore('providers', () => {
     deleteProviderVoice,
     addCustomVoice,
     removeCustomVoice,
+    setRating,
     getLLMProviders,
     getTTSProviders,
     getASRProviders,

@@ -40,3 +40,5 @@ __screenshots__/
 
 test-results/
 playwright-report/
+# Local secrets written by `elevenlabs onboard`
+/.env
