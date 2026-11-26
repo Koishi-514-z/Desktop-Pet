@@ -53,6 +53,8 @@ export interface Provider {
   listModels: () => Promise<ProviderModel[]>
   // category 为 tts 时使用
   voices?: ProviderVoice[]
+  // 手动输入的音色（音色 ID），与接口获取的声线一起供选择，刷新声线列表时不会丢失
+  customVoices?: ProviderVoice[]
   selectedVoiceId?: string
   listVoices?: () => Promise<ProviderVoice[]>
   // 支持自定义音色的 TTS provider 使用（如 index-tts）：上传音色参考音频 / 删除音色
@@ -99,12 +101,24 @@ function applyModelDefaults(provider: Provider) {
     provider.selectedModelId = provider.models[0]!.id
 }
 
-// 根据已加载的 voices 修正 selectedVoice
-function applyVoiceDefaults(provider: Provider) {
-  if (!provider.voices || provider.voices.length === 0) return
+/** 可供选择的全部声线：手动输入的音色在前，之后是接口获取的声线（id 相同的只保留一个） */
+export function getProviderVoices(provider: Pick<Provider, 'voices' | 'customVoices'>): ProviderVoice[] {
+  const voices = [...(provider.customVoices ?? []), ...(provider.voices ?? [])]
+  const seen = new Set<string>()
+  return voices.filter((voice) => {
+    if (seen.has(voice.id)) return false
+    seen.add(voice.id)
+    return true
+  })
+}
 
-  if (!provider.selectedVoiceId || !provider.voices.some((v) => v.id === provider.selectedVoiceId))
-    provider.selectedVoiceId = provider.voices[0]!.id
+// 根据可选的声线修正 selectedVoice（手动输入的音色 ID 也算在内，不会被重置）
+function applyVoiceDefaults(provider: Provider) {
+  const voices = getProviderVoices(provider)
+  if (voices.length === 0) return
+
+  if (!provider.selectedVoiceId || !voices.some((v) => v.id === provider.selectedVoiceId))
+    provider.selectedVoiceId = voices[0]!.id
 }
 
 // OpenAI 语音合成接口提供的固定声线列表
@@ -909,6 +923,34 @@ export const useProvidersStore = defineStore('providers', () => {
     await reloadVoices(provider)
   }
 
+  /** 手动输入音色 ID 并选中，合成语音时会使用它；列表中已有这个音色时直接选中 */
+  function addCustomVoice(id: string, voice: { id: string, name?: string }): ProviderVoice | undefined {
+    const provider = getProviderById(id)
+    const voiceId = voice.id.trim()
+    if (!provider || !voiceId) return
+
+    let added = getProviderVoices(provider).find((v) => v.id === voiceId)
+    if (!added) {
+      const name = voice.name?.trim() || voiceId
+      added = { id: voiceId, name, description: name === voiceId ? '手动输入' : `手动输入 · ${voiceId}` }
+      provider.customVoices = [...(provider.customVoices ?? []), added]
+    }
+    provider.selectedVoiceId = voiceId
+    return added
+  }
+
+  /** 移除手动输入的音色；正在使用时改选列表中的第一个声线 */
+  function removeCustomVoice(id: string, voiceId: string) {
+    const provider = getProviderById(id)
+    if (!provider?.customVoices) return
+
+    provider.customVoices = provider.customVoices.filter((v) => v.id !== voiceId)
+    if (provider.selectedVoiceId === voiceId) {
+      provider.selectedVoiceId = ''
+      applyVoiceDefaults(provider)
+    }
+  }
+
   function isDefaultProvider(id: string) {
     return defaultProviders.some((p) => p.id === id)
   }
@@ -957,6 +999,8 @@ export const useProvidersStore = defineStore('providers', () => {
     refreshProviderInfo,
     uploadProviderVoice,
     deleteProviderVoice,
+    addCustomVoice,
+    removeCustomVoice,
     getLLMProviders,
     getTTSProviders,
     getASRProviders,

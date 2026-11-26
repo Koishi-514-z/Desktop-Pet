@@ -499,6 +499,15 @@ svg {
   gap: 8px;
 }
 
+/* 手动输入音色：ID 输入框宽一些 */
+.custom-voice-row .custom-voice-id {
+  flex: 2;
+}
+
+.custom-voice-row .custom-voice-name {
+  flex: 1;
+}
+
 .input-with-icon {
   position: relative;
 }

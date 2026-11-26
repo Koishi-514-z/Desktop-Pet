@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProviderModel, ProviderProtocol, ProviderVoice } from '@/stores/providers'
 import { computed, ref, watch } from 'vue'
-import { protocolRequiresApiKey, protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
+import { getProviderVoices, protocolRequiresApiKey, protocolRequiresBaseUrl, useProvidersStore } from '@/stores/providers'
 import {
   CATEGORY_LABELS,
   PROTOCOL_OPTIONS,
@@ -112,15 +112,32 @@ function selectModel(model: ProviderModel) {
   providersStore.updateProvider(provider.value.id, { selectedModelId: model.id })
 }
 
-// 声线
+// 声线：手动输入的音色在前，之后是接口获取的声线
 const voiceQuery = ref('')
-const voices = computed(() => provider.value?.voices ?? [])
+const voices = computed(() => (provider.value ? getProviderVoices(provider.value) : []))
 const filteredVoices = computed(() => voices.value.filter((v) => matches(v, voiceQuery.value)))
 const selectedVoice = computed(() => voices.value.find((v) => v.id === provider.value?.selectedVoiceId))
+const customVoiceIds = computed(() => new Set((provider.value?.customVoices ?? []).map((v) => v.id)))
 
 function selectVoice(voice: ProviderVoice) {
   if (!provider.value) return
   providersStore.updateProvider(provider.value.id, { selectedVoiceId: voice.id })
+}
+
+// 手动输入音色 ID：列表中没有想要的音色时使用（如 Fish Audio 声线库中的其他声线）
+const customVoiceId = ref('')
+const customVoiceName = ref('')
+
+function addCustomVoice() {
+  if (!provider.value || !customVoiceId.value.trim()) return
+  providersStore.addCustomVoice(provider.value.id, { id: customVoiceId.value, name: customVoiceName.value })
+  customVoiceId.value = ''
+  customVoiceName.value = ''
+  voiceQuery.value = ''
+}
+
+function removeCustomVoice(voice: ProviderVoice) {
+  if (provider.value) providersStore.removeCustomVoice(provider.value.id, voice.id)
 }
 
 function voiceAvatarStyle(voice: ProviderVoice) {
@@ -400,7 +417,16 @@ function remove() {
               <span v-else-if="voice.id !== voice.name" class="option-meta mono">{{ voice.id }}</span>
             </span>
             <button
-              v-if="provider.deleteVoice"
+              v-if="customVoiceIds.has(voice.id)"
+              type="button"
+              class="option-delete"
+              title="移除手动输入的音色"
+              @click.stop="removeCustomVoice(voice)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <button
+              v-else-if="provider.deleteVoice"
               type="button"
               class="option-delete"
               title="删除音色"
@@ -419,8 +445,29 @@ function remove() {
       </template>
 
       <p v-else class="empty-state">
-        {{ provider.uploadVoice ? '暂无声线，可在下方上传参考音频创建音色。' : '暂无可用声线。' }}
+        {{ provider.uploadVoice ? '暂无声线，可以手动输入音色 ID，或在下方上传参考音频创建音色。' : '暂无可用声线，可以手动输入音色 ID。' }}
       </p>
+
+      <div class="field-row custom-voice-row">
+        <input
+          v-model="customVoiceId"
+          class="custom-voice-id"
+          type="text"
+          placeholder="手动输入音色 ID"
+          @keydown.enter="addCustomVoice"
+        />
+        <input
+          v-model="customVoiceName"
+          class="custom-voice-name"
+          type="text"
+          placeholder="名称（可选）"
+          @keydown.enter="addCustomVoice"
+        />
+        <button class="action-button" type="button" :disabled="!customVoiceId.trim()" @click="addCustomVoice">
+          使用
+        </button>
+      </div>
+      <p class="panel-note">列表里没有想要的音色时，可以输入服务商提供的音色 ID，合成语音时会使用它。</p>
     </section>
 
     <!-- 上传自定义音色 -->

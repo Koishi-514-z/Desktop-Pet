@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { filterModelsByCategory, useProvidersStore } from '@/stores/providers'
+import { filterModelsByCategory, getProviderVoices, useProvidersStore } from '@/stores/providers'
 
 describe('provider 的模型筛选', () => {
   const ids = ['gpt-4o', 'whisper-1', 'gpt-4o-mini-transcribe', 'tts-1', 'FunAudioLLM/SenseVoiceSmall', 'TeleAI/TeleSpeechASR']
@@ -49,5 +49,43 @@ describe('provider 列表', () => {
 
     store.removeProvider('siliconflow_asr')
     expect(store.getCurrentASRProvider()).toBeNull()
+  })
+
+  it('可以手动输入音色 ID：刷新声线列表后仍然选中，移除后改选列表中的声线', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const store = useProvidersStore()
+    const id = await store.addProvider({
+      id: '', name: '我的 TTS', category: 'tts', protocol: 'openai', baseUrl: 'https://example.com/v1', apiKey: '',
+      models: [], selectedModelId: '', isValid: false, voices: [], selectedVoiceId: '',
+    })
+    const provider = store.getProviderById(id)!
+    // 不发出请求：替换掉验证与获取列表的方法
+    Object.assign(provider, {
+      apiKey: 'sk-test',
+      validator: async () => true,
+      listModels: async () => [],
+      listVoices: async () => [{ id: 'alloy', name: 'Alloy' }],
+    })
+    await store.refreshProviderInfo(id)
+    expect(provider.selectedVoiceId).toBe('alloy')
+
+    store.addCustomVoice(id, { id: ' my-voice ', name: '我的音色' })
+    expect(provider.selectedVoiceId).toBe('my-voice')
+    expect(getProviderVoices(provider)).toEqual([
+      { id: 'my-voice', name: '我的音色', description: '手动输入 · my-voice' },
+      { id: 'alloy', name: 'Alloy' },
+    ])
+    await store.refreshProviderInfo(id)
+    expect(provider.selectedVoiceId).toBe('my-voice')
+
+    // 列表中已有的音色直接选中，不重复添加
+    store.addCustomVoice(id, { id: 'alloy' })
+    expect(provider.selectedVoiceId).toBe('alloy')
+    expect(provider.customVoices).toHaveLength(1)
+
+    store.addCustomVoice(id, { id: 'my-voice' })
+    store.removeCustomVoice(id, 'my-voice')
+    expect(provider.customVoices).toEqual([])
+    expect(provider.selectedVoiceId).toBe('alloy')
   })
 })

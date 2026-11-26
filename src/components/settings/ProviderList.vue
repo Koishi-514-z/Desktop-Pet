@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Provider, ProviderCategory } from '@/stores/providers'
-import { useProvidersStore } from '@/stores/providers'
+import { getProviderVoices, useProvidersStore } from '@/stores/providers'
 import { CATEGORY_LABELS, CATEGORY_SHORT_LABELS, getInitial, getProtocolLabel } from '@/utils/provider-options'
 
 const emit = defineEmits<{
@@ -27,7 +27,7 @@ function setCurrent(provider: Provider) {
 // 卡片底部展示的当前模型 / 声线
 function getSelectionSummary(provider: Provider) {
   const model = provider.models.find((m) => m.id === provider.selectedModelId)
-  const voice = provider.voices?.find((v) => v.id === provider.selectedVoiceId)
+  const voice = getProviderVoices(provider).find((v) => v.id === provider.selectedVoiceId)
   return [model?.name, voice?.name].filter(Boolean).join(' · ')
 }
 
