@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const httpFetch = vi.hoisted(() => vi.fn<(input: string, init?: RequestInit) => Promise<Response>>())
 vi.mock('@/utils/http', () => ({ httpFetch }))
 
-import { createMiniMaxSpeechModel, listMiniMaxVoices, minimaxRoot, validateMiniMax } from '@/utils/minimax'
+import { createMiniMaxSpeechModel, deleteMiniMaxVoice, listMiniMaxVoices, minimaxRoot, validateMiniMax } from '@/utils/minimax'
 
 function provider(patch: Partial<Provider> = {}): Provider {
   return {
@@ -91,14 +91,14 @@ describe('MiniMax 语音合成', () => {
 })
 
 describe('MiniMax 声线', () => {
-  it('列出复刻、文生与系统音色，自己的音色排在前面', async () => {
+  it('列出复刻、文生与系统音色，自己的音色排在前面，记下类别、可以删除', async () => {
     httpFetch.mockResolvedValueOnce(json({
       system_voice: [
         { voice_id: 'male-qn-qingse', voice_name: '青涩青年音色', description: ['温润青年男声'] },
         { voice_id: 'Chinese (Mandarin)_Lyrical_Voice', voice_name: '抒情男声', description: [] },
       ],
       voice_cloning: [{ voice_id: 'my-voice', description: [], created_time: '2026-11-25' }],
-      voice_generation: null,
+      voice_generation: [{ voice_id: 'designed', description: ['活泼少女'], created_time: '2026-11-26' }],
       base_resp: OK,
     }))
     const voices = await listMiniMaxVoices(provider())
@@ -107,7 +107,8 @@ describe('MiniMax 声线', () => {
     expect(url).toBe('https://api.minimaxi.com/v1/get_voice')
     expect(JSON.parse(init?.body as string)).toEqual({ voice_type: 'all' })
     expect(voices).toEqual([
-      { id: 'my-voice', name: 'my-voice', description: '快速复刻的音色' },
+      { id: 'my-voice', name: 'my-voice', description: '快速复刻的音色', kind: 'voice_cloning', deletable: true },
+      { id: 'designed', name: 'designed', description: '文生音色：活泼少女', kind: 'voice_generation', deletable: true },
       { id: 'male-qn-qingse', name: '青涩青年音色', description: '温润青年男声' },
       { id: 'Chinese (Mandarin)_Lyrical_Voice', name: '抒情男声', description: undefined },
     ])
@@ -118,5 +119,23 @@ describe('MiniMax 声线', () => {
       base_resp: { status_code: 1004, status_msg: 'login fail: Please carry the API secret key in the \'Authorization\' field of the request header' },
     }))
     await expect(validateMiniMax(provider({ apiKey: '' }))).rejects.toThrow('MiniMax 接口出错（错误码 1004）：鉴权失败')
+  })
+
+  it('删除音色：带上列表中记下的类别', async () => {
+    httpFetch.mockResolvedValueOnce(json({ voice_id: 'designed', created_time: '1728962464', base_resp: OK }))
+    await deleteMiniMaxVoice(provider(), { id: 'designed', kind: 'voice_generation' })
+
+    const [url, init] = httpFetch.mock.calls[0]!
+    expect(url).toBe('https://api.minimaxi.com/v1/delete_voice')
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual({ voice_type: 'voice_generation', voice_id: 'designed' })
+  })
+
+  it('系统音色（没有类别）不发请求；接口出错时给出原因', async () => {
+    await expect(deleteMiniMaxVoice(provider(), { id: 'male-qn-qingse' })).rejects.toThrow('系统音色不能删除')
+    expect(httpFetch).not.toHaveBeenCalled()
+
+    httpFetch.mockResolvedValueOnce(json({ base_resp: { status_code: 2013, status_msg: 'invalid params, voice_id not exist' } }))
+    await expect(deleteMiniMaxVoice(provider(), { id: 'gone', kind: 'voice_cloning' })).rejects.toThrow('MiniMax 接口出错（错误码 2013）')
   })
 })

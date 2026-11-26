@@ -3,8 +3,9 @@ import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
 import { del, get, post } from '@/utils/web'
 import { dashscopeCompatibleUrl, dashscopeModels } from '@/utils/dashscope'
-import { FISH_AUDIO_ASR_MODELS, FISH_AUDIO_TTS_MODELS, listFishAudioVoices, validateFishAudio } from '@/utils/fish-audio'
-import { listMiniMaxVoices, MINIMAX_TTS_MODELS, validateMiniMax } from '@/utils/minimax'
+import { deleteElevenLabsVoice, listElevenLabsVoices } from '@/utils/elevenlabs'
+import { deleteFishAudioVoice, FISH_AUDIO_ASR_MODELS, FISH_AUDIO_TTS_MODELS, listFishAudioVoices, validateFishAudio } from '@/utils/fish-audio'
+import { deleteMiniMaxVoice, listMiniMaxVoices, MINIMAX_TTS_MODELS, validateMiniMax } from '@/utils/minimax'
 
 export type ProviderCategory = 'llm' | 'tts' | 'asr'
 
@@ -36,6 +37,11 @@ export interface ProviderVoice {
   id: string
   name: string
   description?: string
+  // 可以通过 provider.deleteVoice 删除：账号里自己的音色（IndexTTS 上传的、ElevenLabs / Fish Audio / MiniMax 自己创建的），
+  // 官方预置、公共声线库里的不能删
+  deletable?: boolean
+  // 服务商内部的音色类别，删除时要用（如 MiniMax 的 voice_cloning、voice_generation）
+  kind?: string
 }
 
 export interface Provider {
@@ -373,17 +379,19 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
     listModels: async function (this: Provider) {
       return this.category === 'asr' ? ELEVENLABS_ASR_MODELS : ELEVENLABS_TTS_MODELS
     },
+    // 官方预置的声线，以及 My Voices 里的音色（标注出来，可以删除）
     listVoices: async function (this: Provider) {
       try {
-        const { voices } = await get<{ voices: { voice_id: string, name: string }[] }>('https://api.elevenlabs.io/v1/voices', {
-          headers: { 'xi-api-key': this.apiKey },
-        })
-        return voices.map((voice): ProviderVoice => ({ id: voice.voice_id, name: voice.name }))
+        return await listElevenLabsVoices(this)
       }
       catch (error) {
         console.error(error)
         return []
       }
+    },
+    // 从账号的 My Voices 里删除音色。失败时抛出异常，由调用方提示用户
+    deleteVoice: async function (this: Provider, voiceId: string) {
+      await deleteElevenLabsVoice(this, voiceId)
     },
   },
   lmnt: {
@@ -523,6 +531,11 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
         return []
       }
     },
+    // 删除快速复刻、文生音色生成的音色（要带上列表中记下的类别）。失败时抛出异常，由调用方提示用户
+    deleteVoice: async function (this: Provider, voiceId: string) {
+      const voice = this.voices?.find((item) => item.id === voiceId)
+      await deleteMiniMaxVoice(this, { id: voiceId, kind: voice?.kind })
+    },
   },
   // Fish Audio：语音合成与语音识别使用自家的接口（见 utils/fish-audio.ts），声线从声线库查询，模型列表是固定的
   'fish-audio': {
@@ -547,6 +560,10 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
         console.error(error)
         return []
       }
+    },
+    // 删除自己创建的声线。失败时抛出异常，由调用方提示用户
+    deleteVoice: async function (this: Provider, voiceId: string) {
+      await deleteFishAudioVoice(this, voiceId)
     },
   },
   // 本地部署的 IndexTTS
@@ -580,7 +597,8 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
         const { voices } = await get<{ voices: { id: string, name: string }[] }>(`${this.baseUrl.replace(/\/$/, '')}/audio/voices`, {
           headers: indexTTSHeaders(this),
         })
-        return voices.map((voice): ProviderVoice => ({ id: voice.id, name: voice.name }))
+        // 上传的音色都可以删除
+        return voices.map((voice): ProviderVoice => ({ id: voice.id, name: voice.name, deletable: true }))
       }
       catch (error) {
         console.error(error)

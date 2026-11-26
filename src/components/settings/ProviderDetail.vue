@@ -234,21 +234,45 @@ async function uploadVoice() {
   }
 }
 
-async function deleteVoice(voice: ProviderVoice) {
-  if (!provider.value) return
-  if (!confirm(`确定删除音色「${voice.name}」吗？`)) return
+// 删除音色（IndexTTS 上传的音色、ElevenLabs 账号里自己的音色）：结果显示在声线面板里（不是每个 provider 都有上传区）
+const deletingVoiceId = ref('')
+const deleteMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null)
+const deleteMessageEl = ref<HTMLElement | null>(null)
 
+// 提示在声线面板最下面，可能正好被底部悬浮的操作栏挡住：出现时滚到能看到的地方
+watch(deleteMessage, async (message) => {
+  if (!message) return
+  await nextTick()
+  deleteMessageEl.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+})
+
+async function deleteVoice(voice: ProviderVoice) {
+  const p = provider.value
+  if (!p || deletingVoiceId.value) return
+  // 本地服务删的是上传的参考音频；服务商删的是账号里的音色，提醒一下删了就没了
+  const question = p.protocol === 'index-tts'
+    ? `确定删除音色「${voice.name}」吗？`
+    : `确定从 ${p.name} 删除音色「${voice.name}」吗？\n会通过接口从你的账号里删掉，自己创建的音色删除后无法恢复。`
+  if (!confirm(question)) return
+
+  deletingVoiceId.value = voice.id
+  deleteMessage.value = null
   try {
-    await providersStore.deleteProviderVoice(provider.value.id, voice.id)
-    voiceMessage.value = null
+    await providersStore.deleteProviderVoice(p.id, voice.id)
+    deleteMessage.value = { type: 'success', text: `已删除音色「${voice.name}」` }
   } catch (error) {
     console.error(error)
-    voiceMessage.value = {
+    deleteMessage.value = {
       type: 'error',
       text: `删除失败：${error instanceof Error ? error.message : String(error)}`,
     }
+  } finally {
+    deletingVoiceId.value = ''
   }
 }
+
+// 换到别的 provider 时，不再显示上一个的删除结果
+watch(() => props.providerId, () => { deleteMessage.value = null })
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -519,10 +543,12 @@ function remove() {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
             </button>
             <button
-              v-else-if="provider.deleteVoice"
+              v-else-if="provider.deleteVoice && voice.deletable"
               type="button"
               class="option-delete"
-              title="删除音色"
+              :class="{ deleting: deletingVoiceId === voice.id }"
+              :disabled="!!deletingVoiceId"
+              :title="deletingVoiceId === voice.id ? '正在删除…' : '删除音色'"
               @click.stop="deleteVoice(voice)"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -541,6 +567,9 @@ function remove() {
         {{ provider.uploadVoice ? '暂无声线，可以在上方手动输入音色 ID，或在下方上传参考音频创建音色。' : '暂无可用声线，可以在上方手动输入音色 ID。' }}
       </p>
 
+      <p v-if="deleteMessage" ref="deleteMessageEl" class="message" :class="deleteMessage.type">
+        {{ deleteMessage.text }}
+      </p>
     </section>
 
     <!-- 上传自定义音色 -->

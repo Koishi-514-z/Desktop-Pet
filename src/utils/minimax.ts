@@ -21,6 +21,7 @@ type SpeechModelV3 = Extract<SpeechModel, { specificationVersion: 'v3' }>
 
 const T2A_PATH = '/v1/t2a_v2'
 const VOICE_PATH = '/v1/get_voice'
+const DELETE_VOICE_PATH = '/v1/delete_voice'
 
 // 非流式合成一次最多 10000 字
 const TTS_MAX_TEXT = 10_000
@@ -167,7 +168,8 @@ export async function validateMiniMax(provider: Provider): Promise<void> {
 export async function listMiniMaxVoices(provider: Provider): Promise<ProviderVoice[]> {
   const json = await postMiniMax<GetVoiceResponse>(provider, VOICE_PATH, { voice_type: 'all' })
   const voices = new Map<string, ProviderVoice>()
-  const add = (items: VoiceInfo[] | null | undefined, label?: string) => {
+  // kind：可以删除的音色记下类别（删除时要用），系统音色没有
+  const add = (items: VoiceInfo[] | null | undefined, label?: string, kind?: MiniMaxDeletableVoiceType) => {
     for (const item of items ?? []) {
       if (!item?.voice_id || voices.has(item.voice_id)) continue
       const text = (item.description ?? []).filter(Boolean).join(' ')
@@ -175,11 +177,23 @@ export async function listMiniMaxVoices(provider: Provider): Promise<ProviderVoi
         id: item.voice_id,
         name: item.voice_name || item.voice_id,
         description: label ? (text ? `${label}：${text}` : label) : text || undefined,
+        ...(kind ? { kind, deletable: true } : {}),
       })
     }
   }
-  add(json.voice_cloning, '快速复刻的音色')
-  add(json.voice_generation, '文生音色')
+  add(json.voice_cloning, '快速复刻的音色', 'voice_cloning')
+  add(json.voice_generation, '文生音色', 'voice_generation')
   add(json.system_voice)
   return [...voices.values()]
+}
+
+// 能删除的音色类别：快速复刻、文生音色生成的（系统音色不能删）
+export type MiniMaxDeletableVoiceType = 'voice_cloning' | 'voice_generation'
+
+/** 删除快速复刻、文生音色生成的音色。删除后这个 voice_id 不能再用 */
+export async function deleteMiniMaxVoice(provider: Provider, voice: Pick<ProviderVoice, 'id' | 'kind'>): Promise<void> {
+  if (voice.kind !== 'voice_cloning' && voice.kind !== 'voice_generation') {
+    throw new Error('只能删除快速复刻、文生音色生成的音色，系统音色不能删除（如果是刚生成的音色，请先刷新声线列表）')
+  }
+  await postMiniMax(provider, DELETE_VOICE_PATH, { voice_type: voice.kind, voice_id: voice.id })
 }

@@ -217,7 +217,8 @@ export async function listFishAudioVoices(provider: Provider): Promise<ProviderV
     listVoiceModels(provider, 'page_size=100&language=zh&sort_by=task_count'),
   ])
   const voices = new Map<string, ProviderVoice>()
-  const add = (items: VoiceModel[], label?: string) => {
+  // own：自己创建的声线，可以删除
+  const add = (items: VoiceModel[], label?: string, own = false) => {
     for (const item of items) {
       if (!item?._id || voices.has(item._id)) continue
       // 只要能用来合成语音（不是变声模型）、已经训练好的声线
@@ -227,10 +228,16 @@ export async function listFishAudioVoices(provider: Provider): Promise<ProviderV
         id: item._id,
         name: item.title || item._id,
         description: label ? (text ? `${label}：${text}` : label) : text || undefined,
+        ...(own ? { deletable: true } : {}),
       })
     }
   }
-  add(own, '我的声线')
+  add(own, '我的声线', true)
   add(popular)
   return [...voices.values()]
+}
+
+/** 删除自己创建的声线（声线库里的公共声线不能删）。删除后无法恢复 */
+export async function deleteFishAudioVoice(provider: Provider, voiceId: string): Promise<void> {
+  await fishFetch(provider, `/model/${encodeURIComponent(voiceId)}`, { method: 'DELETE' })
 }

@@ -8,6 +8,7 @@ vi.mock('@/utils/http', () => ({ httpFetch }))
 import {
   createFishAudioSpeechModel,
   createFishAudioTranscriptionModel,
+  deleteFishAudioVoice,
   FISH_AUDIO_MAX_CONCURRENCY,
   listFishAudioVoices,
   validateFishAudio,
@@ -127,7 +128,7 @@ describe('Fish Audio 语音识别', () => {
 })
 
 describe('Fish Audio 声线与验证', () => {
-  it('自己的声线排在前面，之后是声线库中常用的中文声线；去掉变声模型与没训练好的声线', async () => {
+  it('自己的声线排在前面（可以删除），之后是声线库中常用的中文声线；去掉变声模型与没训练好的声线', async () => {
     httpFetch.mockImplementation(async (url) => url.includes('self=true')
       ? json({ total: 3, items: [
           { _id: 'mine', type: 'tts', state: 'trained', title: '我的声音', description: '', tags: [] },
@@ -145,7 +146,7 @@ describe('Fish Audio 声线与验证', () => {
       'https://api.fish.audio/model?self=true&page_size=100',
     ])
     expect(voices).toEqual([
-      { id: 'mine', name: '我的声音', description: '我的声线' },
+      { id: 'mine', name: '我的声音', description: '我的声线', deletable: true },
       { id: 'popular', name: '温柔女声', description: 'female、温柔' },
     ])
   })
@@ -157,5 +158,18 @@ describe('Fish Audio 声线与验证', () => {
     const [url, init] = httpFetch.mock.calls[0]!
     expect(url).toBe('https://api.fish.audio/wallet/self/api-credit')
     expect(headersOf(init).Authorization).toBe('Bearer wrong')
+  })
+
+  it('删除自己的声线：DELETE /model/{id}；没有权限时报错', async () => {
+    httpFetch.mockResolvedValueOnce(new Response(null, { status: 200 }))
+    await deleteFishAudioVoice(provider(), 'mine')
+
+    const [url, init] = httpFetch.mock.calls[0]!
+    expect(url).toBe('https://api.fish.audio/model/mine')
+    expect(init?.method).toBe('DELETE')
+    expect(headersOf(init).Authorization).toBe('Bearer sk-test')
+
+    httpFetch.mockResolvedValueOnce(json({ status: 401, message: 'No permission' }, 401))
+    await expect(deleteFishAudioVoice(provider(), 'popular')).rejects.toThrow('Fish Audio 接口出错（HTTP 401）')
   })
 })

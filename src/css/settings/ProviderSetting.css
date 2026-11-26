@@ -815,9 +815,26 @@ svg {
   opacity: 1;
 }
 
-.option-delete:hover {
+.option-delete:hover:not(:disabled) {
   color: #ff8080;
   background: rgb(255 90 90 / 15%);
+}
+
+.option-delete:disabled {
+  cursor: default;
+}
+
+/* 正在删除的那个：一直显示并闪烁 */
+.option-delete.deleting {
+  color: #ff8080;
+  opacity: 1;
+  animation: deleting-pulse 1s ease-in-out infinite;
+}
+
+@keyframes deleting-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* 上传音色 */
