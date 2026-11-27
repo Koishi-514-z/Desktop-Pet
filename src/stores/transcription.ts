@@ -1,5 +1,4 @@
 import type { Provider } from '@/stores/providers'
-import { createDeepgram } from '@ai-sdk/deepgram'
 import { createElevenLabs } from '@ai-sdk/elevenlabs'
 import { createOpenAI } from '@ai-sdk/openai'
 import { experimental_transcribe as transcribeAudio } from 'ai'
@@ -22,8 +21,6 @@ function resolveTranscriptionModel(provider: Provider) {
     case 'openai':
       // OpenAI 兼容的 /audio/transcriptions 接口，SiliconFlow、Groq、本地部署的 whisper 服务等也可以使用
       return createOpenAI({ apiKey, baseURL: baseUrl }).transcription(modelId || 'whisper-1')
-    case 'deepgram':
-      return createDeepgram({ apiKey }).transcription(modelId || 'nova-2')
     case 'elevenlabs':
       return createElevenLabs({ apiKey }).transcription(modelId || 'scribe_v1')
     case 'dashscope':

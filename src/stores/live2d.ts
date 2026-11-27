@@ -83,15 +83,15 @@ function presetModel(options: PresetModelOptions): Live2dModel {
 
 // 预置模型列表：第一个是第一次启动时使用的模型。预置模型不能在设置中删除
 export const defaultModels: Live2dModel[] = [
-  presetModel({ id: 'atri', name: 'ATRI', folder: 'ATRI', description: '默认桌宠模型', position: { x: 1482, y: 669 }, scale: 0.22, defaultExpression: 'expression1.exp3' }),
-  presetModel({ id: '05147e69-eb64-461b-9602-0b8dad275b22', name: 'AyachiNene', folder: 'AyachiNene', position: { x: 1493, y: 1048 }, scale: 0.3 }),
-  presetModel({ id: '316ca12c-efaf-43d1-8635-f24adafb1e43', name: 'CloverDays', folder: 'CloverDays', position: { x: 800, y: 500 }, scale: 0.3 }),
-  presetModel({ id: 'f1c02a3f-8caf-4ba7-bf7b-39531ace6f76', name: 'KumaMaid', folder: 'Kuma_Maid', position: { x: 1431, y: 727 }, scale: 0.2, defaultExpression: 'Click.exp3' }),
-  presetModel({ id: '49e261f4-41dc-44f0-b234-35bfa13ccda3', name: 'Murasame', folder: 'Murasame', position: { x: 781, y: 601 }, scale: 0.22 }),
-  presetModel({ id: 'bf5d2e1e-b17b-4a8f-a185-30d0fb2495e7', name: 'pudding', folder: 'pudding', position: { x: 1282, y: 607 }, scale: 0.2 }),
-  presetModel({ id: 'ccf16082-acf5-4e2e-b3ac-8d4c22b2560b', name: 'Virescent Fawn Witch', folder: 'Virescent Fawn Witch', position: { x: 1523, y: 737 }, scale: 0.2 }),
-  presetModel({ id: '5b7f2cc9-b9a8-4951-a1d3-37cc2d1b0e99', name: 'Ayane PUMK version', folder: 'Ayane PUMK version', position: { x: 1512, y: 646 }, scale: 0.26, persistentExpressions: ['Watermark Hide.exp3'] }),
-  presetModel({ id: '52f378b7-2b39-4354-af36-641a6f002d0f', name: 'Ayane sweater over sailor uniform', folder: 'Ayane sweater over sailor uniform', position: { x: 1504, y: 719 }, scale: 0.3, persistentExpressions: ['Watermark Hide.exp3'] }),
+  presetModel({ id: 'atri', name: 'ATRI', folder: 'ATRI', description: '默认桌宠模型', position: { x: 1513, y: 676 }, scale: 0.22 }),
+  presetModel({ id: 'ayachi-nene', name: 'AyachiNene', folder: 'AyachiNene', position: { x: 1493, y: 1048 }, scale: 0.3 }),
+  presetModel({ id: 'clover-days', name: 'CloverDays', folder: 'CloverDays', position: { x: 800, y: 500 }, scale: 0.3 }),
+  presetModel({ id: 'kuma-maid', name: 'KumaMaid', folder: 'Kuma_Maid', position: { x: 1510, y: 738 }, scale: 0.2, }),
+  presetModel({ id: 'murasame', name: 'Murasame', folder: 'Murasame', position: { x: 781, y: 601 }, scale: 0.22 }),
+  presetModel({ id: 'pudding', name: 'pudding', folder: 'pudding', position: { x: 1282, y: 607 }, scale: 0.2 }),
+  presetModel({ id: 'virescent-fawn-witch', name: 'Virescent Fawn Witch', folder: 'Virescent Fawn Witch', position: { x: 1494, y: 713 }, scale: 0.23 }),
+  presetModel({ id: 'ayane-pumk-version', name: 'Ayane PUMK version', folder: 'Ayane PUMK version', position: { x: 1524, y: 869 }, scale: 0.22, persistentExpressions: ['Watermark Hide.exp3'] }),
+  presetModel({ id: 'ayane-sweater-over-sailor-uniform', name: 'Ayane sweater over sailor uniform', folder: 'Ayane sweater over sailor uniform', position: { x: 1504, y: 719 }, scale: 0.3, persistentExpressions: ['Watermark Hide.exp3'] }),
 ]
 
 /**

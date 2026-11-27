@@ -10,10 +10,10 @@ import { deleteMiniMaxVoice, listMiniMaxVoices, MINIMAX_TTS_MODELS, validateMini
 export type ProviderCategory = 'llm' | 'tts' | 'asr'
 
 // provider 所使用的 API 协议，决定 ChatStore / SpeechStore / TranscriptionStore 中使用哪个 AI SDK 适配器与其通信
-export type ProviderProtocol = 'openai' | 'anthropic' | 'google' | 'elevenlabs' | 'lmnt' | 'hume' | 'deepgram' | 'index-tts' | 'dashscope' | 'minimax' | 'fish-audio'
+export type ProviderProtocol = 'openai' | 'anthropic' | 'google' | 'elevenlabs' | 'index-tts' | 'dashscope' | 'minimax' | 'fish-audio'
 
 // 不需要配置 baseUrl 的协议（使用固定的官方接口地址）
-const PROTOCOLS_WITHOUT_BASE_URL: ProviderProtocol[] = ['elevenlabs', 'lmnt', 'hume', 'deepgram', 'fish-audio']
+const PROTOCOLS_WITHOUT_BASE_URL: ProviderProtocol[] = ['elevenlabs', 'fish-audio']
 
 export function protocolRequiresBaseUrl(protocol: ProviderProtocol): boolean {
   return !PROTOCOLS_WITHOUT_BASE_URL.includes(protocol)
@@ -173,24 +173,6 @@ const ELEVENLABS_TTS_MODELS: ProviderModel[] = [
   { id: 'eleven_turbo_v2', name: 'Eleven Turbo v2' },
 ]
 
-// LMNT 语音合成接口提供的固定模型列表（LMNTSpeechModelId）
-const LMNT_TTS_MODELS: ProviderModel[] = [
-  { id: 'aurora', name: 'Aurora' },
-  { id: 'blizzard', name: 'Blizzard' },
-]
-
-// Deepgram 语音合成接口提供的固定模型列表（DeepgramSpeechModelId，每个模型对应固定声线）
-const DEEPGRAM_TTS_MODELS: ProviderModel[] = [
-  { id: 'aura-asteria-en', name: 'Aura Asteria (en)' },
-  { id: 'aura-2-asteria-en', name: 'Aura 2 Asteria (en)' },
-  { id: 'aura-2-thalia-en', name: 'Aura 2 Thalia (en)' },
-  { id: 'aura-2-helena-en', name: 'Aura 2 Helena (en)' },
-  { id: 'aura-2-orpheus-en', name: 'Aura 2 Orpheus (en)' },
-  { id: 'aura-2-zeus-en', name: 'Aura 2 Zeus (en)' },
-  { id: 'aura-luna-en', name: 'Aura Luna (en)' },
-  { id: 'aura-stella-en', name: 'Aura Stella (en)' },
-]
-
 // 千问语音合成（qwen3-tts-flash）的系统音色，见阿里云百炼文档「Qwen-TTS 音色列表」
 const QWEN_TTS_VOICES: ProviderVoice[] = [
   ['Cherry', '芊悦', '阳光积极、亲切自然小姐姐'],
@@ -242,15 +224,6 @@ const QWEN_TTS_VOICES: ProviderVoice[] = [
   ['Rocky', '粤语-阿强', '幽默陪聊（粤语）'],
   ['Kiki', '粤语-阿清', '甜美港妹（粤语）'],
 ].map(([id, name, description]) => ({ id: id!, name: `${name}（${id}）`, description }))
-
-// Deepgram 语音识别接口提供的模型（DeepgramTranscriptionModelId 中常用的几个）
-const DEEPGRAM_ASR_MODELS: ProviderModel[] = [
-  { id: 'nova-3', name: 'Nova 3', description: '最新，准确率最高' },
-  { id: 'nova-2', name: 'Nova 2', description: '支持的语言最多（含中文）' },
-  { id: 'nova-2-general', name: 'Nova 2 General' },
-  { id: 'enhanced', name: 'Enhanced' },
-  { id: 'base', name: 'Base' },
-]
 
 // ElevenLabs 语音识别接口提供的模型（ElevenLabsTranscriptionModelId）
 const ELEVENLABS_ASR_MODELS: ProviderModel[] = [
@@ -392,88 +365,6 @@ const PROTOCOL_HANDLERS: Record<ProviderProtocol, ProviderHandlers> = {
     // 从账号的 My Voices 里删除音色。失败时抛出异常，由调用方提示用户
     deleteVoice: async function (this: Provider, voiceId: string) {
       await deleteElevenLabsVoice(this, voiceId)
-    },
-  },
-  lmnt: {
-    validator: async function (this: Provider) {
-      try {
-        await get('https://api.lmnt.com/v1/account', {
-          headers: { 'X-API-Key': this.apiKey },
-        })
-        return true
-      }
-      catch (error) {
-        console.error(error)
-        return false
-      }
-    },
-    listModels: async function () {
-      return LMNT_TTS_MODELS
-    },
-    listVoices: async function (this: Provider) {
-      try {
-        const voices = await get<{ id: string, name: string }[]>('https://api.lmnt.com/v1/ai/voice/list', {
-          headers: { 'X-API-Key': this.apiKey },
-        })
-        return voices.map((voice): ProviderVoice => ({ id: voice.id, name: voice.name }))
-      }
-      catch (error) {
-        console.error(error)
-        return []
-      }
-    },
-  },
-  hume: {
-    validator: async function (this: Provider) {
-      try {
-        await get('https://api.hume.ai/v0/tts/voices', {
-          headers: { 'X-Hume-Api-Key': this.apiKey },
-          params: { provider: 'HUME_AI', page_size: 1 },
-        })
-        return true
-      }
-      catch (error) {
-        console.error(error)
-        return false
-      }
-    },
-    // Hume 的 speech() 接口不需要指定模型
-    listModels: async function () {
-      return []
-    },
-    listVoices: async function (this: Provider) {
-      try {
-        const { voices_page } = await get<{ voices_page: { id: string, name: string }[] }>('https://api.hume.ai/v0/tts/voices', {
-          headers: { 'X-Hume-Api-Key': this.apiKey },
-          params: { provider: 'HUME_AI', page_size: 100 },
-        })
-        return voices_page.map((voice): ProviderVoice => ({ id: voice.id, name: voice.name }))
-      }
-      catch (error) {
-        console.error(error)
-        return []
-      }
-    },
-  },
-  deepgram: {
-    validator: async function (this: Provider) {
-      try {
-        await get('https://api.deepgram.com/v1/projects', {
-          headers: { Authorization: `Token ${this.apiKey}` },
-        })
-        return true
-      }
-      catch (error) {
-        console.error(error)
-        return false
-      }
-    },
-    // 语音合成的声线已编码在模型 id 中（如 aura-asteria-en），无需单独的声线列表
-    listModels: async function (this: Provider) {
-      return this.category === 'asr' ? DEEPGRAM_ASR_MODELS : DEEPGRAM_TTS_MODELS
-    },
-    listVoices: async function () {
-      return []
     },
   },
   // 阿里云百炼（千问）：语音合成与语音识别使用原生接口（见 utils/dashscope.ts），模型列表来自 OpenAI 兼容接口
@@ -684,30 +575,15 @@ const defaultProviders: Provider[] = [
     name: 'SiliconFlow',
     category: 'llm',
     protocol: 'openai',
-    baseUrl: 'https://api.siliconflow.ai/v1',
+    baseUrl: 'https://api.siliconflow.cn/v1',
     apiKey: '',
-    description: 'SiliconFlow 提供的大语言模型。',
     isValid: false,
     models: [],
-    selectedModelId: '',
+    selectedModelId: 'qwen4-max',
     ...PROTOCOL_HANDLERS.openai,
   },
   {
-    id: 'my-api',
-    name: 'My API',
-    category: 'llm',
-    protocol: 'openai',
-    baseUrl: 'https://easymagic.ai/v1',
-    apiKey: '',
-    description: '自定义 API。',
-    isValid: false,
-    models: [],
-    selectedModelId: '',
-    ...PROTOCOL_HANDLERS.openai,
-  },
-  
-  {
-    id: 'openai_tts',
+    id: 'openai-tts',
     name: 'OpenAI TTS',
     category: 'tts',
     protocol: 'openai',
@@ -737,7 +613,7 @@ const defaultProviders: Provider[] = [
     ...PROTOCOL_HANDLERS['index-tts'],
   },
   {
-    id: 'openai_asr',
+    id: 'openai-asr',
     name: 'OpenAI 语音识别',
     category: 'asr',
     protocol: 'openai',
@@ -750,19 +626,105 @@ const defaultProviders: Provider[] = [
     ...PROTOCOL_HANDLERS.openai,
   },
   {
-    id: 'siliconflow_asr',
-    name: 'SiliconFlow 语音识别',
+    id: 'siliconflow-asr',
+    name: '硅基流动',
     category: 'asr',
     protocol: 'openai',
     baseUrl: 'https://api.siliconflow.cn/v1',
     apiKey: '',
-    description: 'SiliconFlow 提供的语音识别服务（如 SenseVoiceSmall，中文效果好）。',
+    isValid: false,
+    models: [],
+    selectedModelId: '',
+    ...PROTOCOL_HANDLERS.openai,
+  },
+  {
+    id: 'minimax',
+    name: 'MiniMax',
+    category: 'tts',
+    protocol: 'minimax',
+    baseUrl: 'https://api.minimax.cn/v1',
+    apiKey: '',
+    isValid: false,
+    models: [],
+    selectedModelId: '',
+    voices: [],
+    selectedVoiceId: '',
+    ...PROTOCOL_HANDLERS.minimax,
+  },
+  {
+    id: 'fish-audio',
+    name: 'Fish Audio',
+    category: 'tts',
+    protocol: 'fish-audio',
+    baseUrl: 'https://api.fish.audio/v1/tts',
+    apiKey: '',
+    isValid: false,
+    models: [],
+    selectedModelId: '',
+    voices: [],
+    customVoices: [],
+    selectedVoiceId: '',
+    ...PROTOCOL_HANDLERS['fish-audio'],
+  },
+  {
+    id: 'fish-audio-asr',
+    name: 'Fish Audio',
+    category: 'asr',
+    protocol: 'fish-audio',
+    baseUrl: '',
+    apiKey: '',
+    isValid: false,
+    models: [],
+    selectedModelId: 'transcribe-1',
+    ...PROTOCOL_HANDLERS['fish-audio'],
+  },
+  {
+    id: 'elevenlabs',
+    name: 'ElevenLabs',
+    category: 'tts',
+    protocol: 'elevenlabs',
+    baseUrl: 'https://api.elevenlabs.io/v1',
+    apiKey: '',
+    isValid: false,
+    models: [],
+    selectedModelId: 'eleven_v4',
+    voices: [],
+    selectedVoiceId: 'UdY5VDF5YJCZ1xZeFej4',
+    ...PROTOCOL_HANDLERS.elevenlabs,
+  },
+  {
+    id: 'siliconflow-llm',
+    name: 'SiliconFlow - Embedding',
+    category: 'llm',
+    protocol: 'openai',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    apiKey: '',
     isValid: false,
     models: [],
     selectedModelId: '',
     ...PROTOCOL_HANDLERS.openai,
   },
 ]
+
+// 新安装（或恢复默认）时每一类正在使用的 provider
+const DEFAULT_CURRENT_PROVIDER_IDS: Record<ProviderCategory, string> = {
+  llm: 'siliconflow', // 硅基流动
+  tts: 'elevenlabs', // ElevenLabs
+  asr: 'fish-audio-asr', // Fish Audio
+}
+
+/**
+ * provider 列表的副本：列表中的 provider 会被修改（填写 Key、选择模型等），不能改到预置的数据。
+ * provider 上带着 validator 等方法，structuredClone 无法复制函数，所以只复制数据，方法原样接上
+ */
+function cloneProviders(providers: Provider[]): Provider[] {
+  return providers.map((provider) => {
+    const entries = Object.entries(provider)
+    const data = Object.fromEntries(entries.filter(([, value]) => typeof value !== 'function'))
+    const methods = Object.fromEntries(entries.filter(([, value]) => typeof value === 'function'))
+    return { ...structuredClone(data), ...methods } as Provider
+  })
+}
 
 /** 读取保存的 provider 列表时，加上列表中还没有的预置 provider（如新增的语音识别）；预置的 provider 不能删除 */
 function mergeDefaultProviders(stored: Provider[], defaults: Provider[]): Provider[] {
@@ -772,7 +734,8 @@ function mergeDefaultProviders(stored: Provider[], defaults: Provider[]): Provid
 }
 
 export const useProvidersStore = defineStore('providers', () => {
-  const providers = useLocalStorage<Provider[]>('settings/providers', defaultProviders, {
+  // 用预置 provider 的副本，修改时不会改到预置的数据
+  const providers = useLocalStorage<Provider[]>('settings/providers', cloneProviders(defaultProviders), {
     mergeDefaults: mergeDefaultProviders,
   })
 
@@ -780,9 +743,9 @@ export const useProvidersStore = defineStore('providers', () => {
   const cachedProviders = useLocalStorage<ProviderInfoCache[]>('settings/providers/cached', [])
 
   // 当前选中的 LLM / TTS / 语音识别 provider id
-  const currentLLMProviderId = useLocalStorage<string>('settings/providers/currentLLM', 'my-api')
-  const currentTTSProviderId = useLocalStorage<string>('settings/providers/currentTTS', '')
-  const currentASRProviderId = useLocalStorage<string>('settings/providers/currentASR', '')
+  const currentLLMProviderId = useLocalStorage<string>('settings/providers/currentLLM', DEFAULT_CURRENT_PROVIDER_IDS.llm)
+  const currentTTSProviderId = useLocalStorage<string>('settings/providers/currentTTS', DEFAULT_CURRENT_PROVIDER_IDS.tts)
+  const currentASRProviderId = useLocalStorage<string>('settings/providers/currentASR', DEFAULT_CURRENT_PROVIDER_IDS.asr)
 
   const currentProviderIds = { llm: currentLLMProviderId, tts: currentTTSProviderId, asr: currentASRProviderId }
 
@@ -1016,11 +979,11 @@ export const useProvidersStore = defineStore('providers', () => {
   }
 
   function resetAllToDefault() {
-    providers.value = defaultProviders
+    providers.value = cloneProviders(defaultProviders)
     cachedProviders.value = []
-    currentLLMProviderId.value = 'my-api'
-    currentTTSProviderId.value = 'index-tts'
-    currentASRProviderId.value = ''
+    currentLLMProviderId.value = DEFAULT_CURRENT_PROVIDER_IDS.llm
+    currentTTSProviderId.value = DEFAULT_CURRENT_PROVIDER_IDS.tts
+    currentASRProviderId.value = DEFAULT_CURRENT_PROVIDER_IDS.asr
   }
 
   onMounted(async () => {

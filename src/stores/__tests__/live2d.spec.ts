@@ -112,6 +112,6 @@ describe('预置模型', () => {
     expect(store.models).toEqual(defaultModels)
     store.position = { x: 3, y: 4 }
     expect(store.currentModel!.position).toEqual({ x: 3, y: 4 })
-    expect(defaultModels[0]!.position).toEqual({ x: 1482, y: 669 })
+    expect(defaultModels[0]!.position).toEqual({ x: 1513, y: 676 })
   })
 })

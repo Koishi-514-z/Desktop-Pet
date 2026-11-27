@@ -1,9 +1,6 @@
 import type { GeneratedAudioFile } from 'ai'
 import type { Provider } from '@/stores/providers'
-import { createDeepgram } from '@ai-sdk/deepgram'
 import { createElevenLabs } from '@ai-sdk/elevenlabs'
-import { createHume } from '@ai-sdk/hume'
-import { createLMNT } from '@ai-sdk/lmnt'
 import { createOpenAI } from '@ai-sdk/openai'
 import { experimental_generateSpeech as generateSpeech } from 'ai'
 import { defineStore } from 'pinia'
@@ -25,12 +22,6 @@ function resolveSpeechModel(provider: Provider) {
       return createOpenAI({ apiKey, baseURL: baseUrl }).speech(modelId)
     case 'elevenlabs':
       return createElevenLabs({ apiKey }).speech(modelId)
-    case 'lmnt':
-      return createLMNT({ apiKey }).speech(modelId)
-    case 'hume':
-      return createHume({ apiKey }).speech()
-    case 'deepgram':
-      return createDeepgram({ apiKey }).speech(modelId)
     case 'index-tts':
       // server 提供 OpenAI 兼容的 /audio/speech 接口；本地服务可不设 apiKey
       return createOpenAI({ apiKey, baseURL: baseUrl, name: 'index-tts' }).speech(modelId || 'index-tts')

@@ -15,9 +15,6 @@ export const PROTOCOL_OPTIONS: Record<ProviderCategory, ProtocolOption[]> = {
   tts: [
     { value: 'openai', label: 'OpenAI 兼容' },
     { value: 'elevenlabs', label: 'ElevenLabs' },
-    { value: 'lmnt', label: 'LMNT' },
-    { value: 'hume', label: 'Hume' },
-    { value: 'deepgram', label: 'Deepgram' },
     { value: 'dashscope', label: '阿里云百炼（千问）' },
     { value: 'minimax', label: 'MiniMax' },
     { value: 'fish-audio', label: 'Fish Audio' },
@@ -25,7 +22,6 @@ export const PROTOCOL_OPTIONS: Record<ProviderCategory, ProtocolOption[]> = {
   ],
   asr: [
     { value: 'openai', label: 'OpenAI 兼容' },
-    { value: 'deepgram', label: 'Deepgram' },
     { value: 'elevenlabs', label: 'ElevenLabs' },
     { value: 'dashscope', label: '阿里云百炼（千问）' },
     { value: 'fish-audio', label: 'Fish Audio' },

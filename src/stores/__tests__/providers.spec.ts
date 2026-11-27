@@ -34,7 +34,20 @@ describe('provider 列表', () => {
     ]))
     const store = useProvidersStore()
     expect(store.getProviderById('openai')).toMatchObject({ name: '我的 OpenAI', apiKey: 'sk-test' })
-    expect(store.getASRProviders().map((provider) => provider.id)).toEqual(['openai_asr', 'siliconflow_asr'])
+    expect(store.getASRProviders().map((provider) => provider.id)).toEqual(['openai_asr', 'siliconflow_asr', '99a0a0af-0ca8-4026-80db-97b8b7b88a2c'])
+  })
+
+  it('恢复默认后回到预置的数据（方法保留），之后的修改不会改到预置的 provider', () => {
+    const store = useProvidersStore()
+    const id = store.providers[0]!.id
+    store.getProviderById(id)!.apiKey = 'sk-changed'
+    store.resetAllToDefault()
+    expect(store.getProviderById(id)!.apiKey).toBe('')
+    expect(typeof store.getProviderById(id)!.validator).toBe('function')
+
+    store.getProviderById(id)!.apiKey = 'sk-changed'
+    store.resetAllToDefault()
+    expect(store.getProviderById(id)!.apiKey).toBe('')
   })
 
   it('每一类各自记住正在使用的 provider，删除时一并清掉', () => {
@@ -45,7 +58,7 @@ describe('provider 列表', () => {
     expect(store.isCurrentProvider(asr)).toBe(true)
     expect(store.getCurrentASRProvider()?.id).toBe('siliconflow_asr')
     // 不影响其他种类
-    expect(store.currentLLMProviderId).toBe('my-api')
+    expect(store.currentLLMProviderId).toBe('ff32b31e-31d3-4148-aedc-3e1780e49abd')
 
     store.removeProvider('siliconflow_asr')
     expect(store.getCurrentASRProvider()).toBeNull()
