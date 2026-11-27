@@ -31,10 +31,11 @@ const texts = (events: QueueEvent[]) => events.filter((event) => event[0] === 't
 const long = (head: string, filler = '啊') => head + filler.repeat(Math.max(0, MIN_SENTENCE_LENGTH - sentenceLength(head)))
 
 describe('文本处理队列', () => {
-  it('句子的长度不算标点、符号与空白', () => {
+  it('句子的长度不算情绪标签、标点、符号与空白', () => {
     expect(sentenceLength('嗯。')).toBe(1)
     expect(sentenceLength('早上好呀～')).toBe(4)
     expect(sentenceLength('Hello, world!')).toBe(10)
+    expect(sentenceLength('[happy]嗯。[short pause]')).toBe(1)
   })
 
   it('够长的句子遇到句末标点就输出', async () => {
@@ -65,21 +66,37 @@ describe('文本处理队列', () => {
     expect(texts(await process(`${quoted}然后就走了出去。`))).toEqual([quoted, '然后就走了出去。'])
   })
 
-  it('流式分段到达、中间夹着表情标记时，按原来的顺序输出', async () => {
+  it('流式分段到达、中间夹着情绪标签时，按原来的顺序输出；标签留在语句中交给语音合成', async () => {
     const park = long('今天我们去公园散步吧')
     const rain = long('不过下雨了就算了吧')
-    expect(await process('<happy>嗯。', park.slice(0, 5), `${park.slice(5)}！<sad>${rain.slice(0, 2)}`, `${rain.slice(2)}。`)).toEqual([
+    expect(await process('[happy]嗯。', park.slice(0, 5), `${park.slice(5)}！[sad]${rain.slice(0, 2)}`, `${rain.slice(2)}。`)).toEqual([
       ['emotion', 'happy'],
-      ['text', `嗯。${park}！`],
+      ['text', `[happy]嗯。${park}！`],
       ['emotion', 'sad'],
-      ['text', `${rain}。`],
+      ['text', `[sad]${rain}。`],
+      ['end'],
+    ])
+  })
+
+  it('跨分段到达的标签也能识别，标签名统一为小写、单词之间一个空格', async () => {
+    const think = long('我想想')
+    expect(await process(`${think}[Sh`, 'ort  pa', `use ]还是算了吧。`)).toEqual([
+      ['emotion', 'short pause'],
+      ['text', `${think}[short pause]还是算了吧。`],
+      ['end'],
+    ])
+  })
+
+  it('方括号里不是英文单词的内容不算标签；模型输出的文字不会被当作结束', async () => {
+    expect(await process('见第[1]条。<END/>好的。')).toEqual([
+      ['text', '见第[1]条。<END/>好的。'],
       ['end'],
     ])
   })
 
   it('重置后丢掉还在等着合并的短句', async () => {
     const { queue, events } = setup()
-    queue.enQueue('<happy>嗯。<sad>')
+    queue.enQueue('[happy]嗯。[sad]')
     await settle()
     queue.resetQueue()
     queue.enQueue('今天我们去公园散步吧！')

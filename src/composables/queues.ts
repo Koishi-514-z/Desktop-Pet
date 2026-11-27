@@ -2,6 +2,7 @@ import { createQueue, createParallelSequencedQueue, type HandlerContext } from "
 import type { GeneratedAudioFile } from "ai"
 import { ref } from "vue"
 import { encodeWav, VOICE_SAMPLE_RATE, VoiceActivityDetector, type VoiceActivityOptions } from "@/utils/voice-activity"
+import { EMOTION_TAG_REGEX, normalizeEmotionTag, stripEmotionTags } from "@/utils/emotion-tags"
 
 /**
  * 桌宠的语音管线（由 Stage 组装）：
@@ -109,32 +110,11 @@ export function useTranscriptionQueue() {
 
 // ===== 输出：语音合成与播放 =====
 
-// 匹配形如 <happy> 或 <END/> 的标记，捕获其标签名
-const EMOTION_TAG_REGEX = /<(\w+)\/?>/
-
-// 与 EMOTION_TAG_REGEX 相同，但带 g 标志，用于从文本中移除所有标记
-export const EMOTION_TAG_REGEX_GLOBAL = /<(\w+)\/?>/g
-
-// 用于显示的宽松匹配：兼容闭合标记 </happy> 与带空格的 < happy >
-const DISPLAY_TAG_REGEX = /<\s*\/?\s*\w+\s*\/?\s*>/g
-// 流式输出时文本末尾尚未接收完整的标记，如 "<hap"、"</"
-const PARTIAL_TAG_AT_END_REGEX = /<\s*\/?\s*\w*\s*\/?\s*$/
-
-/**
- * 去掉文本中的情绪标记，供字幕等界面显示使用。
- * streaming 为 true 时，一并去掉末尾还没接收完整的半截标记
- */
-export function stripEmotionTags(text: string, streaming = false): string {
-  let result = text.replace(DISPLAY_TAG_REGEX, '')
-  if (streaming) result = result.replace(PARTIAL_TAG_AT_END_REGEX, '')
-  return result
-}
-
-// 标记消息回复结束的终止标记
-const END_TAG = '<END/>'
+// 回复结束的标记：由 endQueue 放进文本处理队列，不与回复的文字混在一起，模型输出什么都不会被当作结束
+const END_OF_REPLY = Symbol('end-of-reply')
 
 // 在 speechGeneratingQueue / audioPlayingQueue 中流转的条目：
-// 'speech' 为待合成语音的文本，'emotion'/'end' 为情绪标记/结束标记，
+// 'speech' 为待合成语音的文本（其中保留着情绪标签，合成前按服务商决定是否去掉），'emotion'/'end' 为情绪标签/结束标记，
 // 二者会按原始顺序依次向下传递，最终在 audioPlayingQueue 中处理
 export type SpeechQueueItem =
   // context：这一轮回复中这句话之前的内容，念的语言与显示的不同、需要翻译时用来保持译文连贯
@@ -157,19 +137,20 @@ const SENTENCE_END_REGEX = /[。！？；…!?;]+[”’"'」』）)\]]*/g
 // 避免语音合成收到「嗯。」「好的！」这样零碎的片段，读起来一顿一顿的
 export const MIN_SENTENCE_LENGTH = 100
 
-/** 句子的长度：不算标点、符号与空白 */
+/** 句子的长度：不算情绪标签、标点、符号与空白 */
 export function sentenceLength(text: string): number {
-  return text.replace(/[\s\p{P}\p{S}]/gu, '').length
+  return stripEmotionTags(text).replace(/[\s\p{P}\p{S}]/gu, '').length
 }
 
-// 文本处理队列：将流式接收到的文本按 <Emotion> 标记切分，
-// 再按句末标点将文本切分为完整语句（太短的与下一句合并），依次 emit 'text'（语句）与 'emotion'（标记中的情绪名称）事件。
-// 检测到终止标记后，输出剩余的所有文本（无论是否构成完整语句、是否够长）并 emit 'end'；
+// 文本处理队列：从流式接收到的文本中找出 [happy] 这样的情绪标签，
+// 再按句末标点将文本切分为完整语句（太短的与下一句合并），依次 emit 'text'（语句）与 'emotion'（标签名，英文小写）事件。
+// 标签在 emit 'emotion' 之后仍留在语句中，交给语音合成（支持标签的服务商据此调整语气、发出笑声或停顿）。
+// endQueue 之后，输出剩余的所有文本（无论是否构成完整语句、是否够长）并 emit 'end'
 export function useTextProcessingQueue() {
-  // 尚未处理的文本缓冲区，可能包含不完整的标记
+  // 尚未处理的文本缓冲区，可能包含不完整的标签
   const buffer = ref('')
 
-  // 已确定不属于标记、但尚未输出的文本缓冲区：还没凑成完整语句，或者是等着与下一句合并的短句
+  // 已确定标签完整、但尚未输出的文本缓冲区：还没凑成完整语句，或者是等着与下一句合并的短句
   const sentenceBuffer = ref('')
 
   // 按句末标点切分 sentenceBuffer 并依次 emit('text', ...)：够长的句子直接输出，
@@ -195,35 +176,34 @@ export function useTextProcessingQueue() {
     sentenceBuffer.value = rest
   }
 
-  const queue = createQueue<string>({
+  const queue = createQueue<string | typeof END_OF_REPLY>({
     handlers: [
       async ({ data, emit }) => {
-        buffer.value += data
+        if (data !== END_OF_REPLY) buffer.value += data
 
-        // 不断从缓冲区中提取完整的 <Emotion> 标记
+        // 不断从缓冲区中提取完整的标签
         let match = buffer.value.match(EMOTION_TAG_REGEX)
         while (match) {
           const tagStart = match.index!
-          const tagEnd = tagStart + match[0]!.length
-          const tagContent = match[1]!
+          const tag = normalizeEmotionTag(match[1]!)
 
-          // 之前的文本片段
-          const segment = buffer.value.slice(0, tagStart)
-          sentenceBuffer.value += segment
+          // 按句末标点输出标签之前已经完整的语句，再输出标签本身（切换表情、动作）；
+          // 标签以统一的写法留在后面的文字里，与它所修饰的话一起合成
+          sentenceBuffer.value += buffer.value.slice(0, tagStart)
+          flushSentences(emit, false)
+          emit('emotion', tag)
+          sentenceBuffer.value += `[${tag}]`
 
-          if (tagContent === 'END') {
-            // 终止标记：输出剩余的所有文本并结束本次回复
-            flushSentences(emit, true)
-            emit('end')
-          }
-          else {
-            // 普通情绪标记：按句末标点输出完整语句，再输出情绪标记本身
-            flushSentences(emit, false)
-            emit('emotion', tagContent)
-          }
-
-          buffer.value = buffer.value.slice(tagEnd)
+          buffer.value = buffer.value.slice(tagStart + match[0].length)
           match = buffer.value.match(EMOTION_TAG_REGEX)
+        }
+
+        if (data === END_OF_REPLY) {
+          // 回复结束：输出剩余的所有文本并结束本次回复
+          sentenceBuffer.value += buffer.value
+          buffer.value = ''
+          flushSentences(emit, true)
+          emit('end')
         }
       },
     ],
@@ -246,7 +226,7 @@ export function useTextProcessingQueue() {
   }
 
   function endQueue() {
-    queue.enqueue(END_TAG)
+    queue.enqueue(END_OF_REPLY)
   }
 
   function resetQueue() {

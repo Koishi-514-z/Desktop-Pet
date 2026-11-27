@@ -27,11 +27,11 @@ const textOf = (options: CallOptions, role: 'system' | 'user') =>
     .join('\n')
 
 describe('回复语言', () => {
-  it('指定显示语言时要求模型只用这种语言回复，情绪标记保持原样；不指定时不附加', () => {
+  it('指定显示语言时要求模型只用这种语言回复，情绪标签保持原样；不指定时不附加', () => {
     expect(buildReplyLanguagePrompt('')).toBe('')
     const prompt = buildReplyLanguagePrompt('ja')
     expect(prompt).toContain('只用日语')
-    expect(prompt).toContain('<happy>')
+    expect(prompt).toContain('[happy]')
     // 自己输入的语言原样使用
     expect(buildReplyLanguagePrompt('Italiano')).toContain('只用Italiano')
     expect(languageLabel('zh-TW')).toBe('繁體中文')
@@ -53,6 +53,8 @@ describe('回复语言', () => {
 
     expect(text).toBe('今日はいい天気だね！')
     expect(textOf(calls[0]!, 'system')).toContain('翻译成日语')
+    // 情绪标签要原样留在译文里，交给支持标签的语音合成
+    expect(textOf(calls[0]!, 'system')).toContain('[short pause]')
     const user = textOf(calls[0]!, 'user')
     expect(user).toContain('早上好呀。')
     expect(user).toContain('今天天气真好！')

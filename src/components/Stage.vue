@@ -234,8 +234,12 @@ textProcessingQueue.onEndProcessed(() => {
 speechGeneratingQueue.onItemReceived(async ({ data }) => {
   if (data.type !== 'speech') return data
 
+  // 语音合成服务商不理解情绪标签时先去掉标签；去掉后只剩下标点（如单独的一个 [sighs]）时没有要念的，跳过这一句
+  const speakable = speechStore.toSpeakableText(data.text)
+  if (!/[\p{L}\p{N}]/u.test(speakable)) throw new Error('这句话没有要念的内容')
+
   // 念的语言与显示的不同时，先翻译成要念的语言（屏幕上仍显示原文）
-  const text = await languageStore.toSpeechText(data.text, { context: data.context, abortSignal: speechController.signal })
+  const text = await languageStore.toSpeechText(speakable, { context: data.context, abortSignal: speechController.signal })
   const audio = await speechStore.speak(text)
   if (!audio) {
     throw new Error('Failed to generate speech')
@@ -255,7 +259,7 @@ audioPlayingQueue.onItemReceived(async ({ data }) => {
       await audioStore.play(data.audio)
       break
     case 'emotion':
-      if (data.emotion === 'neutral') break
+      // 播放带有同名标签的表情或动作；模型上没有这个标签（如停顿、说话方式类的标签）时什么也不做
       if (randBool(0.5)) {
         live2dStore.playExpressionByTag(data.emotion)
       }

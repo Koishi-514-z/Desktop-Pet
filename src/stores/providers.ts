@@ -879,10 +879,7 @@ export const useProvidersStore = defineStore('providers', () => {
     if ((protocolRequiresApiKey(provider.protocol) && !provider.apiKey) || (protocolRequiresBaseUrl(provider.protocol) && !provider.baseUrl)) {
       provider.isValid = false
       provider.models = []
-      if (provider.category === 'tts') provider.voices = []
-
-      console.log('loadProviderInfo: no baseUrl or apiKey')
-
+    if (provider.category === 'tts') provider.voices = []
       return
     }
 
@@ -901,8 +898,6 @@ export const useProvidersStore = defineStore('providers', () => {
           applyVoiceDefaults(provider)
         }
 
-        console.log('loadProviderInfo: cached', provider.isValid, provider.models, provider.selectedModelId)
-
         return
       }
     }
@@ -915,8 +910,6 @@ export const useProvidersStore = defineStore('providers', () => {
       provider.voices = await provider.listVoices!()
       applyVoiceDefaults(provider)
     }
-
-    console.log('loadProviderInfo: new', provider.isValid, provider.models, provider.selectedModelId)
 
     // 移除该 provider 的旧缓存，并清理其他 provider 的过期缓存
     cachedProviders.value = cachedProviders.value.filter((p) => p.id !== id && p.timestamp > Date.now() - PROVIDER_INFO_CACHE_TTL)
@@ -1034,7 +1027,7 @@ export const useProvidersStore = defineStore('providers', () => {
     // resetAllToDefault()
     providers.value.forEach(async (provider) => {
       setProviderHandlers(provider)
-      await loadProviderInfo(provider.id, { force: true })
+      await loadProviderInfo(provider.id)
     })
   })
 

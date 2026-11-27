@@ -10,6 +10,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useProvidersStore } from '@/stores/providers'
 import { createDashScopeSpeechModel } from '@/utils/dashscope'
+import { stripEmotionTags, supportsEmotionTags } from '@/utils/emotion-tags'
 import { createFishAudioSpeechModel } from '@/utils/fish-audio'
 import { addHook } from '@/utils/hooks'
 import { createMiniMaxSpeechModel } from '@/utils/minimax'
@@ -57,6 +58,12 @@ export const useSpeechStore = defineStore('speech', () => {
   const onFinishHooks = ref<((audio: GeneratedAudioFile) => Promise<void>)[]>([])
   const onErrorHooks = ref<((error: unknown) => Promise<void>)[]>([])
 
+  // 交给当前语音合成服务商的文字：服务商理解情绪标签（[laughs]、[short pause] 等）时原样保留，否则去掉，免得念出来
+  function toSpeakableText(text: string) {
+    const provider = providersStore.getCurrentTTSProvider()
+    return provider && supportsEmotionTags(provider) ? text : stripEmotionTags(text)
+  }
+
   // 将文本转换为语音，完成后返回生成的音频文件，并通过 hooks 回调通知调用方
   async function speak(text: string) {
     const provider = providersStore.getCurrentTTSProvider()
@@ -70,7 +77,7 @@ export const useSpeechStore = defineStore('speech', () => {
       const model = resolveSpeechModel(provider)
       const { audio } = await generateSpeech({
         model,
-        text,
+        text: supportsEmotionTags(provider) ? text : stripEmotionTags(text),
         voice: provider.selectedVoiceId || undefined,
         // index-tts 本地服务只输出 wav
         ...(provider.protocol === 'index-tts' ? { outputFormat: 'wav' } : {}),
@@ -98,6 +105,7 @@ export const useSpeechStore = defineStore('speech', () => {
 
   return {
     isGenerating,
+    toSpeakableText,
     speak,
     onFinish,
     onError,

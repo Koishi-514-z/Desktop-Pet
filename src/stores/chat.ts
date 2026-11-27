@@ -15,7 +15,7 @@ import { imageMarkers, MAX_IMAGES } from '@/agent/skills/image'
 import { attachQuote, MAX_TEXT_LENGTH } from '@/agent/skills/selection'
 import { applyAgentEvent, createTrace, finishTrace, hasExecution, startReply } from '@/agent/trace'
 import { errorMessage, formatDateTime, truncate } from '@/agent/utils'
-import { EMOTION_TAG_REGEX_GLOBAL } from '@/composables/queues'
+import { stripEmotionTags } from '@/utils/emotion-tags'
 import { useIndexedDBStorage } from '@/composables/storage'
 import { useAgentStore } from '@/stores/agent'
 import { useLanguageStore } from '@/stores/language'
@@ -536,8 +536,8 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         fullText += delta
-        // 过滤掉情绪标记，使其不显示在聊天界面中
-        session.messages[assistantIndex]!.content = fullText.replace(EMOTION_TAG_REGEX_GLOBAL, '')
+        // 过滤掉情绪标签（以及末尾还没接收完整的半截标签），使其不显示在聊天界面中
+        session.messages[assistantIndex]!.content = stripEmotionTags(fullText, true)
         session.updatedAt = Date.now()
         onChunkHooks.value.forEach(hook => hook(delta))
       }
@@ -548,6 +548,8 @@ export const useChatStore = defineStore('chat', () => {
 
       onFinishHooks.value.forEach(hook => hook(fullText))
 
+      console.warn('fullText', fullText)
+
       // 记忆写入：在后台从这一轮对话中提取值得记住的信息，不阻塞下一轮对话。
       // 划词、截图工具栏上的按钮是一次性的操作，不需要整理记忆；
       // 用户在查看或要求忘掉记忆时也不整理，避免刚忘掉的事又被记回去
@@ -555,7 +557,7 @@ export const useChatStore = defineStore('chat', () => {
       if (turn.type === 'user' && !turn.directCall && !usedMemorySkill) {
         rememberTurn(session, assistantIndex, model)
       }
-      return fullText.replace(EMOTION_TAG_REGEX_GLOBAL, '').trim()
+      return stripEmotionTags(fullText).trim()
     }
     catch (error) {
       const message = session.messages[assistantIndex]
@@ -565,7 +567,7 @@ export const useChatStore = defineStore('chat', () => {
         settleTrace(message, '已被打断')
         if (!fullText && !message?.displays && !message?.trace) session.messages.splice(assistantIndex, 1)
         else if (message) message.interrupted = true
-        return fullText.replace(EMOTION_TAG_REGEX_GLOBAL, '').trim()
+        return stripEmotionTags(fullText).trim()
       }
       settleTrace(message, errorMessage(error))
       // 未产生任何内容（文字、结果卡片与执行过程）时移除空的占位回复；

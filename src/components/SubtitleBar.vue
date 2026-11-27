@@ -5,7 +5,7 @@ import { useChatStore } from '@/stores/chat'
 import { usePersonaStore } from '@/stores/persona'
 import { useSceneStore } from '@/stores/scene'
 import { useDesktopCursor } from '@/composables/desktop'
-import { stripEmotionTags } from '@/composables/queues'
+import { stripEmotionTags } from '@/utils/emotion-tags'
 
 const chatStore = useChatStore()
 const personaStore = usePersonaStore()
@@ -14,7 +14,7 @@ const audioStore = useAudioStore()
 const desktopCursor = useDesktopCursor()
 
 // 字幕只在非空消息之间切换（流式回复的占位消息在收到首个字符前为空，不予显示；
-// 只有情绪标记、去掉后没有正文的消息同样视为空）
+// 只有情绪标签、去掉后没有正文的消息同样视为空）
 const messages = computed(() =>
   chatStore.visibleMessages.filter((message) => {
     const text = message.role === 'user' ? message.content : stripEmotionTags(message.content, true)
@@ -45,7 +45,7 @@ const isLive = computed(
     currentMessage.value === chatStore.visibleMessages.at(-1),
 )
 
-// 桌宠的回复去掉情绪标记后再显示（流式生成中还会去掉末尾未接收完整的半截标记）；用户消息原样显示
+// 桌宠的回复去掉情绪标签后再显示（流式生成中还会去掉末尾未接收完整的半截标签）；用户消息原样显示
 const displayText = computed(() => {
   const message = currentMessage.value
   if (!message) return ''

@@ -214,10 +214,8 @@ function isPlayingNonIdleMotion() {
 async function playMotion(group: string, index?: number, priority = MotionPriority.NORMAL) {
   if (!model.value) return
   if (isPlayingNonIdleMotion()) {
-    console.log("playMotion skipped, non-idle motion is playing", group, index)
     return
   }
-  console.log("playMotion", group, index)
   await model.value.motion(group, index, priority)
 }
 
@@ -226,7 +224,6 @@ async function playMotion(group: string, index?: number, priority = MotionPriori
  */
 async function playExpression(name: string) {
   if (!model.value) return
-  console.log("playExpression", name)
   if (!name) {
     // expression('') 找不到对应的表情，会直接忽略，需要手动重置
     const manager = model.value.internalModel.motionManager.expressionManager

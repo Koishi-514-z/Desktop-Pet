@@ -28,7 +28,7 @@ import { useProvidersStore } from '@/stores/providers'
 import { resolveEmbeddingModel, resolveLanguageModel, supportsEmbedding } from '@/utils/llm'
 
 // 生成查询向量的超时时间，超时后退化为关键词匹配，避免拖慢回复
-const EMBED_TIMEOUT = 5000
+const EMBED_TIMEOUT = 50000
 // 补全向量时每批处理的记忆数量
 const BACKFILL_BATCH = 32
 // 整理一轮对话的记忆（提取 + 合并）的超时时间

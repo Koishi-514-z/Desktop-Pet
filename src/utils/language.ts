@@ -52,7 +52,7 @@ export function buildReplyLanguagePrompt(language: string): string {
   const name = languagePromptName(language)
   return [
     `【回复语言】无论用户用什么语言说话、之前的对话用的是什么语言，你说的话都只用${name}。`,
-    '情绪标记（如 <happy>）保持原样，不要翻译。',
+    '情绪标签（如 [happy]、[short pause]）照原样写英文，不要翻译。',
     `用户明确要求的内容（如把一段话翻译成别的语言、教一句外语）可以使用要求的语言，但你自己说的话仍然用${name}。`,
   ].join('')
 }
@@ -83,6 +83,7 @@ export async function translateForSpeech({ model, text, language, context, abort
     '- 只输出译文本身，不要解释，不要加引号，不要注音或罗马音',
     '- 保持原来的语气、口吻和称呼，读起来要像自然的口语',
     `- 已经是${name}的部分原样保留；专有名词、代码、网址等不必翻译`,
+    '- 方括号括起来的英文标签（如 [laughs]、[short pause]）是给语音合成的语气提示，照原样保留在译文中对应的位置，不要翻译或删掉',
   ].join('\n')
   const trimmedContext = context?.trim().slice(-CONTEXT_LENGTH)
   const prompt = trimmedContext
