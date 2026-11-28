@@ -193,6 +193,7 @@ pub fn run() {
       files::files_snapshot_targets,
       files::files_settle_targets,
       files::office_support,
+      files::office_check,
       files::pdf_print_html,
       files::pdf_plan_compose,
       files::pdf_compose,

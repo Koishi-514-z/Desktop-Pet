@@ -127,6 +127,28 @@ const loadedOf = (events: AgentEvent[]) => events.flatMap((event) => (event.type
 describe('意图识别与按需加载技能', () => {
   const messages = [{ role: 'user' as const, content: '帮我写一份周报' }]
 
+  it('每一轮按这一轮的消息重新生成技能的使用说明（如调用过某个工具后附上更多内容）', async () => {
+    const dynamicSkill: Skill = {
+      id: 'dynamic',
+      name: '动态说明',
+      description: '使用说明随执行过程变化',
+      instructions: (context) => {
+        const pinged = context?.messages.some((message) => message.role === 'assistant' && Array.isArray(message.content)
+          && message.content.some((part) => part.type === 'tool-call' && part.toolName === 'ping'))
+        return `调用过 ping：${pinged ? '是' : '否'}`
+      },
+      tools: { ping: tool({ description: 'ping', inputSchema: z.object({}), execute: async () => 'pong' }) },
+    }
+    const { model, calls } = scriptedModel([
+      text('{"task": true, "skills": ["dynamic"], "reason": "测试"}'),
+      call('ping', {}),
+      text('完成'),
+    ])
+    await runAgent({ model, messages, skills: [dynamicSkill] })
+    expect(systemOf(calls[1]!)).toContain('调用过 ping：否')
+    expect(systemOf(calls[2]!)).toContain('调用过 ping：是')
+  })
+
   it('意图识别没有选出技能时，由执行模块根据技能目录用 load_skills 加载', async () => {
     writeDocument.mockClear()
     const { model, calls } = scriptedModel([
@@ -367,7 +389,7 @@ describe('执行中途向用户提问', () => {
   it('参数不明确时提问，用户回答后在同一次执行里继续完成', async () => {
     writeDocument.mockClear()
     const { createTrace, applyAgentEvent } = await import('@/agent/trace')
-    const askUser = vi.fn(async () => '本周工作总结')
+    const askUser = vi.fn<() => Promise<string>>(async () => '本周工作总结')
     const statuses: string[] = []
     const { model, calls } = scriptedModel([
       text('{"task": true, "reason": "要写文档"}'),

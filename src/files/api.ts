@@ -284,6 +284,18 @@ export function settleTargets(roots: string[], snapshots: TargetSnapshot[]): Pro
   return call('files_settle_targets', { roots, snapshots })
 }
 
+/** 自动检查生成的 Office 文件时发现的问题 */
+export interface QualityIssue {
+  /** 问题的类别，如 no-animation、white-background */
+  code: string
+  message: string
+}
+
+/** 自动检查生成的 Office 文件（目前检查演示文稿）；不支持检查的类型返回空列表 */
+export function checkOfficeFile(roots: string[], path: string): Promise<QualityIssue[]> {
+  return call('office_check', { roots, path })
+}
+
 /** 本机可以用来新建与修改 Office 文件的方式 */
 export interface OfficeSupport {
   /** 已安装的 Microsoft Office 程序 */

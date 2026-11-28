@@ -11,6 +11,7 @@ use std::{
   path::{Path, PathBuf},
 };
 
+use super::office_check::check_file;
 use super::read::read_text;
 use super::roots::Roots;
 use super::script::{office_processes, office_support, run_code, CodeRequest, RunResult};
@@ -175,12 +176,28 @@ fn office_examples_work_with_microsoft_office() {
   let result = run_example(&roots, &dir.0, "word", "powershell", WORD_EXAMPLE);
   assert_eq!(result.note, None, "Word 应当正常退出");
   let text = read_text(&dir.path("会议纪要.docx")).unwrap().content;
-  // 标题、项目符号、表格的结构（页脚中只有页码，不列出）
+  // 文档标题与一级标题、副标题、提示框、编号列表、表格、页眉（页脚中只有页码，不列出）
   assert_eq!(
     text,
-    "# 会议纪要\n时间：2026 年 11 月 24 日\n- 确定发布日期\n- 分配测试任务\n\n| 任务 | 负责人 |\n| --- | --- |\n| 测试 | 小王 |\n| 文档 | 小李 |"
+    "# 产品发布会议纪要\n2026年11月24日 · 产品部 · 记录人：小李\n\n# 会议结论\n确定12月15日正式发布，发布前完成全部测试与文档。\n\n# 讨论事项\n1. 确定发布日期\n2. 分配测试任务\n\n# 任务分工\n\n| 任务 | 负责人 | 截止日期 |\n| --- | --- | --- |\n| 测试 | 小王 | 12月10日 |\n| 文档 | 小李 | 12月12日 |\n| 发布 | 小张 | 12月15日 |\n\n【页眉】\n产品发布会议纪要"
   );
+  // 设计确实生效了：一级标题与表头是主题色（深蓝 1F4E79），提示框样式有浅色底与左侧竖线
+  let mut archive = zip::ZipArchive::new(Cursor::new(fs::read(dir.path("会议纪要.docx")).unwrap())).unwrap();
+  let mut read_entry = |name: &str| {
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name(name).unwrap(), &mut xml).unwrap();
+    xml
+  };
+  let styles = read_entry("word/styles.xml");
+  assert!(styles.contains(r#"<w:color w:val="1F4E79"/>"#), "{styles}");
+  let note = &styles[styles.find("提示框").expect("提示框样式")..];
+  let note = &note[..note.find("</w:style>").unwrap()];
+  assert!(note.contains(r#"w:fill="EAF1F8""#) && note.contains("<w:left "), "{note}");
+  let document = read_entry("word/document.xml");
+  assert!(document.contains(r#"w:fill="1F4E79""#), "表头没有深色底");
   assert!(read_text(&dir.path("会议纪要.pdf")).unwrap().content.contains("会议纪要"));
+  // 示例是 LLM 照着写的样板，生成的文档要能通过自动检查
+  assert_eq!(check_file(&dir.path("会议纪要.docx")).unwrap(), vec![]);
 
   // 第一次新建，第二次打开已有的工作簿修改
   for run in ["excel-new", "excel-open"] {
@@ -188,8 +205,11 @@ fn office_examples_work_with_microsoft_office() {
     assert_eq!(result.note, None, "Excel 应当正常退出");
   }
   let text = read_text(&dir.path("销售.xlsx")).unwrap().content;
-  assert!(text.contains("1 | 月份 | 金额\n2 | 一月 | 1200\n3 | 二月 | 1500.5\n4 | 三月 | 980\n5 | 合计 | 3680.5"), "{text}");
+  // 标题、说明、表头、数据（完成率由公式计算）、合计行
+  assert!(text.contains("1 | 2026 年第一季度销售 |  |  | \n2 | 单位：元 |  |  | \n3 | 月份 | 销售额 | 目标 | 完成率\n4 | 一月 | 1200 | 1000 | 1.2\n"), "{text}");
+  assert!(text.contains("7 | 合计 | 3680.5 | 3800 | 0.9685526316"), "{text}");
   assert!(has_chart(&dir.path("销售.xlsx")));
+  assert_eq!(check_file(&dir.path("销售.xlsx")).unwrap(), vec![]);
   // 英文写法的数字格式在中文版 Excel 中也设置成功了（直接赋值会报「不能设置类 Range 的 NumberFormat 属性」）
   let mut archive = zip::ZipArchive::new(Cursor::new(fs::read(dir.path("销售.xlsx")).unwrap())).unwrap();
   let mut styles = String::new();
@@ -199,25 +219,56 @@ fn office_examples_work_with_microsoft_office() {
   let mut chart = String::new();
   std::io::Read::read_to_string(&mut archive.by_name("xl/charts/chart1.xml").unwrap(), &mut chart).unwrap();
   assert!(chart.contains(r#"<c:showVal val="1"/>"#) && chart.contains("金额（元）"), "{chart}");
+  // 设计确实生效了：表头深色底（1F4E79），百分比格式，数据条，冻结表头、隐藏网格线；再次运行后只有一个图表
+  assert!(styles.contains("1F4E79") && styles.contains("0.0%"), "{styles}");
+  let mut sheet = String::new();
+  std::io::Read::read_to_string(&mut archive.by_name("xl/worksheets/sheet1.xml").unwrap(), &mut sheet).unwrap();
+  // 冻结窗格记为 frozen 或 frozenSplit
+  assert!(sheet.contains(r#"state="frozen"#) && sheet.contains(r#"showGridLines="0""#) && sheet.contains(r#"<cfRule type="dataBar""#), "{sheet}");
+  assert_eq!(archive.file_names().filter(|name| name.as_ref().is_ok_and(|name| name.starts_with("xl/charts/chart") && name.ends_with(".xml"))).count(), 1);
 
   let result = run_example(&roots, &dir.0, "powerpoint", "powershell", POWERPOINT_EXAMPLE);
   assert_eq!(result.note, None, "PowerPoint 应当正常退出");
   let text = read_text(&dir.path("年度总结.pptx")).unwrap().content;
+  // 封面的标题与副标题用占位符（装饰的圆放到了最底层，没有文字）
   assert!(text.contains("【第 1 页】\n2026 年度总结\n市场部"), "{text}");
-  assert!(text.contains("【第 2 页】\n主要成果\n销售额增长 20%\n新增客户 120 家\n推出 3 款新产品"), "{text}");
-  // 循环生成的要点页
-  assert!(text.contains("【第 3 页】\n明年计划\n开拓海外市场\n上线会员体系"), "{text}");
-  assert!(text.contains("【第 4 页】\n季度数据\n\n| 季度 | 销售额 |\n| --- | --- |\n| 一季度 | 120 万 |\n| 二季度 | 150 万 |"), "{text}");
+  // 每页按内容选择不同的版式：卡片、大数字、表格
+  assert!(text.contains("【第 2 页】\n主要成果\n01\n销售额增长 20%\n02\n新增客户 120 家\n03\n推出 3 款新产品"), "{text}");
+  assert!(text.contains("【第 3 页】\n关键数据\n270 万\n上半年销售额\n+25%\n二季度同比增长\n98%\n客户满意度"), "{text}");
+  assert!(
+    text.contains("【第 4 页】\n季度数据\n\n| 季度 | 销售额 | 同比 |\n| --- | --- | --- |\n| 一季度 | 120 万 | +12% |\n| 二季度 | 150 万 | +25% |"),
+    "{text}"
+  );
   // 空白页上添加的文本框
-  assert!(text.contains("【第 5 页】\n谢谢观看"), "{text}");
+  assert!(text.contains("【第 5 页】\n谢谢观看\n欢迎提问与交流"), "{text}");
   assert!(result.stdout.contains("共 5 页"), "{}", result.stdout);
-  // 标题的格式确实生效了：加粗、44 磅、中文字体（PowerPoint 的加粗要用 -1，用 $true 会报错）
+
+  // 设计确实生效了
   let mut archive = zip::ZipArchive::new(Cursor::new(fs::read(dir.path("年度总结.pptx")).unwrap())).unwrap();
-  let mut slide = String::new();
-  std::io::Read::read_to_string(&mut archive.by_name("ppt/slides/slide1.xml").unwrap(), &mut slide).unwrap();
-  assert!(slide.contains(r#"sz="4400""#) && slide.contains(r#"b="1""#) && slide.contains("微软雅黑"), "{slide}");
-  // 第二次调用辅助函数（不加粗、不同的颜色）也生效了：副标题为灰色（与默认值相同的字号、不加粗不会写入文件）
-  assert!(slide.contains(r#"<a:srgbClr val="595959"/>"#), "{slide}");
+  let mut read_entry = |name: &str| {
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut archive.by_name(name).unwrap(), &mut xml).unwrap();
+    xml
+  };
+  let slides: Vec<String> = (1..=5).map(|n| read_entry(&format!("ppt/slides/slide{n}.xml"))).collect();
+  for (index, slide) in slides.iter().enumerate() {
+    // 每页都有进入动画与切换效果
+    assert!(slide.contains("<p:timing>") && slide.contains(r#"presetClass="entr""#), "第 {} 页没有进入动画：{slide}", index + 1);
+    assert!(slide.contains("<p:transition"), "第 {} 页没有切换效果：{slide}", index + 1);
+  }
+  // 封面与结束页是渐变背景；内容页跟随母版的浅色背景，不是纯白
+  for index in [0, 4] {
+    assert!(slides[index].contains("<p:bg>") && slides[index].contains("<a:gradFill"), "第 {} 页：{}", index + 1, slides[index]);
+  }
+  let master = read_entry("ppt/slideMasters/slideMaster1.xml");
+  assert!(master.contains(r#"<a:srgbClr val="F6F7FB"/>"#), "{master}");
+  // 标题的格式：加粗、54 磅、白色，数字与中文都是微软雅黑（PowerPoint 的加粗要用 -1，用 $true 会报错）
+  assert!(slides[0].contains(r#"sz="5400""#) && slides[0].contains(r#"b="1""#), "{}", slides[0]);
+  assert!(slides[0].contains(r#"<a:latin typeface="微软雅黑""#) && slides[0].contains(r#"<a:ea typeface="微软雅黑""#), "{}", slides[0]);
+  // 卡片中第一段（编号）的格式单独设置为强调色
+  assert!(slides[1].contains(r#"<a:srgbClr val="FF6B57"/>"#), "{}", slides[1]);
+  // 示例是 LLM 照着写的样板，生成的文稿要能通过自动检查
+  assert_eq!(check_file(&dir.path("年度总结.pptx")).unwrap(), vec![]);
 }
 
 #[test]
@@ -228,11 +279,17 @@ fn python_example_works_with_python_libraries() {
   run_example(&roots, &dir.0, "python", "python", PYTHON_EXAMPLE);
 
   let text = read_text(&dir.path("会议纪要.docx")).unwrap().content;
-  assert_eq!(text, "# 会议纪要\n时间：2026 年 11 月 24 日\n- 确定发布日期\n\n| 任务 | 负责人 |\n| --- | --- |\n| 测试 | 小王 |\n| 文档 | 小李 |");
+  assert_eq!(
+    text,
+    "# 产品发布会议纪要\n2026年11月24日 · 产品部 · 记录人：小李\n\n# 讨论事项\n1. 确定发布日期\n2. 分配测试任务\n\n# 任务分工\n\n| 任务 | 负责人 | 截止日期 |\n| --- | --- | --- |\n| 测试 | 小王 | 12月10日 |\n| 文档 | 小李 | 12月12日 |\n\n【页眉】\n产品发布会议纪要"
+  );
   let text = read_text(&dir.path("销售.xlsx")).unwrap().content;
-  // openpyxl 不计算公式，合计没有计算结果
-  assert!(text.contains("1 | 月份 | 金额\n2 | 一月 | 1200\n3 | 二月 | 1500.5\n4 | 三月 | 980\n5 | 合计 | "), "{text}");
+  // openpyxl 不计算公式，完成率与合计没有计算结果
+  assert!(text.contains("3 | 月份 | 销售额 | 目标 | 完成率\n4 | 一月 | 1200 | 1000 | \n5 | 二月 | 1500.5 | 1600 | \n6 | 三月 | 980 | 1200 | \n7 | 合计 |"), "{text}");
   assert!(has_chart(&dir.path("销售.xlsx")));
+  // 示例生成的文档与表格要能通过自动检查
+  assert_eq!(check_file(&dir.path("会议纪要.docx")).unwrap(), vec![]);
+  assert_eq!(check_file(&dir.path("销售.xlsx")).unwrap(), vec![]);
   let text = read_text(&dir.path("年度总结.pptx")).unwrap().content;
   assert!(text.contains("【第 2 页】\n主要成果\n销售额增长 20%\n新增客户 120 家\n推出 3 款新产品"), "{text}");
 }

@@ -3,6 +3,9 @@
 //! 授权的文件夹由前端（设置中）传入，每次操作都会在 Rust 端重新规范化并校验路径，
 //! 不提供删除文件与打开（运行）文件的能力。
 
+mod office_check;
+mod office_check_docx;
+mod office_check_xlsx;
 mod office_text;
 mod ops;
 mod pdf;
@@ -23,6 +26,10 @@ mod script_tests;
 mod pdf_tests;
 #[cfg(test)]
 mod office_text_tests;
+#[cfg(test)]
+mod office_check_tests;
+#[cfg(test)]
+mod office_check_docs_tests;
 
 use std::path::PathBuf;
 
@@ -279,6 +286,12 @@ pub async fn pdf_plan_compose(roots: Vec<String>, outputs: Vec<PdfOutput>) -> Re
 #[tauri::command]
 pub async fn pdf_compose(roots: Vec<String>, outputs: Vec<PdfOutput>) -> Result<Vec<OutputResult>, String> {
   blocking(move || pdf::compose(&Roots::new(&roots)?, &outputs)).await
+}
+
+/// 自动检查生成的 Office 文件，返回发现的问题（目前检查演示文稿）；不支持检查的类型返回空列表
+#[tauri::command]
+pub async fn office_check(roots: Vec<String>, path: String) -> Result<Vec<office_check::QualityIssue>, String> {
+  blocking(move || office_check::check_file(&Roots::new(&roots)?.resolve(&path)?)).await
 }
 
 /// 本机可用的脚本解释器

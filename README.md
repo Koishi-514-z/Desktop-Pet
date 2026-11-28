@@ -259,15 +259,23 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 | **Microsoft Office**（优先） | 用 PowerShell 通过 COM 调用本机的 Word、Excel、PowerPoint。Office 能做的都能做：任意格式、图表、目录、公式计算、导出 PDF，并且原样保留文件中的其他内容 |
 | **Python 库**（其次） | 对应的 Office 程序没有安装时，使用 python-docx、openpyxl、python-pptx（`pip install python-docx openpyxl python-pptx`）。openpyxl 不计算公式，打开已有文件再保存可能丢失其中的图片与图表 |
 
-技能会检测本机装了哪些 Office 程序与 Python 库（可以在设置面板的 **Tools → Office 文档** 中查看与重新检测），写进使用说明，并只附上能用的示例代码（[office-examples/](src/agent/skills/office-examples/)）。
+技能会检测本机装了哪些 Office 程序与 Python 库（可以在设置面板的 **Tools → Office 文档** 中查看与重新检测），写进使用说明。示例代码（[office-examples/](src/agent/skills/office-examples/)）较长，只附上要处理的文件类型的：工具执行阶段每一轮都会按这一轮的消息重新生成技能的使用说明（`InstructionContext`），Office 技能据此判断——用户的请求要新建或修改文件时，看请求提到的类型（如「PPT」「Word 文档」「表格」）与最近几条消息中出现的文件（追问时，如「把标题改成红色」），再加上这次执行中 `run_office_script` 处理过的文件；只是阅读、总结文件时不附示例。判断不出来时，LLM 用 `office_example` 要对应的示例，下一轮的使用说明中就会附上（放在使用说明中而不是工具结果中，较早的工具结果会被精简）。对应的 Office 程序安装了（或者还没有检测）时附上 PowerShell 调用 Office 的示例；没有安装、装了 Python 库时附上 Python 示例中这种文件的部分。
 
 - **运行前**：检查 `files` 中列出的文件——必须在授权的文件夹中；正在 Office 中打开着的文件会提示先关闭（否则脚本会卡住或写入失败）。授权卡片列出要修改与新建的文件、调用方式与完整代码，每次都需要确认。同意后备份要修改的文件。
 - **运行后**：对比每个文件的内容，把改动（修改、新建，甚至被删除）记录到 **Tools → 文件操作记录**，可以一键撤销；再读取改动后的文件内容交给 LLM 确认结果，不符合要求时可以修改代码再运行一次（会再次请求同意）。
 - **调用 Office 的注意事项**（已写进使用说明与示例代码）：
   - 设置 `DisplayAlerts`，否则弹出的对话框会让脚本卡住；设置 `AutomationSecurity = 3`，禁止运行文档中的宏。
   - 出错时不保存；只在没有其他文档打开时退出 Office——PowerPoint 只有一个实例，可能正是你在用的那个。
+  - 退出前把引用 Office 对象的变量设为 `$null` 并回收（`[GC]::Collect()`）：留在变量里的引用会让 Office 后台进程迟迟不退出。生成很多对象时（如幻灯片中的形状与动画）把每页的代码放进函数，函数结束后引用就会释放。
   - 传给 Office 方法的值必须是普通的字符串或数字：`Join-Path` 等命令的输出直接传给 Office 会让它卡住，需要先转换；在循环中给同一个属性交替赋文字和数字会出错，Excel 写入多个单元格时用二维数组一次写入。
   - Word 的内置样式用编号，因为中文版 Office 的样式名是中文。
+- **自动检查**（[office_check.rs](src-tauri/src/files/office_check.rs)）：运行后检查生成或修改的文件，只读取文件本身（XML），不需要 Office：
+  - **演示文稿**：没有进入动画或切换效果；纯白背景（依次看幻灯片、版式、母版的背景，都没有设置时看主题的背景色）；三页以上、并且超过六成的页面都是「标题 + 要点」的默认版式（封面不算）；带文字的形状超出页面；字号小于 12 磅（表格小于 10 磅）；一页超过 300 字；空的占位符。
+  - **Word 文档**（[office_check_docx.rs](src-tauri/src/files/office_check_docx.rs)）：加粗或放大的短段落当标题、却没有用标题样式；长文档没有分节标题；用连续的空段落调整间距；手动输入的项目符号；表格没有边框（沿着表格样式的 basedOn 查找；一行或一列的排版表格不算）或比版心宽；小于 9 磅的文字；没有填写的占位内容（「XX 公司」「20XX 年」「请填写」等，XXL 这类尺码不算）；两千五百字以上没有页码。
+  - **Excel 表格**（[office_check_xlsx.rs](src-tauri/src/files/office_check_xlsx.rs)）：公式出错（如 #DIV/0!）；数字存成了文本（以 0 开头的编号不算）；列宽不够——设置了数字格式的数字会显示成 ####，文字超出列宽、右边又有内容时被截断（常规格式的数字会自动缩短、自动换行、合并单元格都不算）；表头没有加粗也没有底色；常规格式下超过 4 位小数；三十行以上的数据没有冻结表头；空的工作表（只放了图表的不算）。
+  - 发现问题时写进工具结果，要求 LLM 先修改代码再运行一次、修正后再回复你（用户明确要求的除外），授权卡片上会注明「修正」和要修正的问题；最多自动修正 2 次，之后如实告诉你还剩哪些问题。修正了几次是从发给模型的消息中之前的工具结果数出来的，不需要另外记录状态。用 Python 库处理时，不检查库本身做不到的（python-pptx 不能设置动画与切换效果，python-docx 不能插入页码域）。
+  - 所有示例生成的文件在测试中都要通过检查；检查规则也用 Office 生成的「粗糙」文档与表格验证过。
+- **示例决定了成品的样子**：LLM 写代码时会大量照搬示例，示例里没有的（动画、配色、版式变化）它通常也不会主动做。因此 PowerPoint 示例（[powerpoint.ps1](src/agent/skills/office-examples/powerpoint.ps1)）本身就是一份有设计感的文稿：统一的配色与字体，封面与结束页用深色渐变背景、内容页用浅色背景，每页写成「版式 + 内容」，按版式（封面、卡片、大数字、表格、结束页）生成，每个元素有进入动画、每页有切换效果。Word 示例（[word.ps1](src/agent/skills/office-examples/word.ps1)）统一了字体与配色，标题与一级标题用内置样式（一级标题下方有分隔线），间距写在样式中，结论放在自定义的「提示框」样式里（浅色底、左侧竖线），要点用编号列表，表格有深色表头、隔行底色与浅色边框并随页面调整宽度，页眉写标题、页脚有页码。Excel 示例（[excel.ps1](src/agent/skills/office-examples/excel.ps1)）有标题与说明、深色表头、隔行底色与细边框、千分位与百分比格式、合计行、数据条，冻结表头、隐藏网格线，图表用主题色并去掉多余的图例；再次运行时先删除旧的图表与条件格式，更新同一个文件。Python 示例的 Word 与 Excel 部分风格相同（python-docx 没有段落底色与页码的接口，没有提示框与页码）。测试中检查了这些设计确实生效。
 - **残留的 Office 进程**：通过 COM 启动的 Office 不是脚本的子进程，脚本出错或超时被结束时，Office 会残留在后台并一直占用文件。运行前会记下已有的 Office 进程，运行后结束新出现的、没有可见窗口的 Office 进程，不会影响你自己打开的 Office。
 - **错误输出**：PowerShell 以 `-EncodedCommand` 运行时错误输出是 CLIXML，会还原为普通文字再交给 LLM。
 - **验证**：示例代码在 Rust 端的测试（[office_tests.rs](src-tauri/src/files/office_tests.rs)）中用真实的 Office 与 Python 库运行，并读回生成的文件检查内容。这些测试需要安装 Office，默认跳过，手动运行：`cargo test --lib office_tests -- --ignored --test-threads=1`。
@@ -415,7 +423,7 @@ src-tauri/                   # Tauri 桌面端
 ├── src/capture.rs           # 划词与截图：全局快捷键、模拟复制读取选中内容、调起系统截图工具
 ├── src/screen.rs            # 看屏幕：记录用户最近使用的窗口、截取指定窗口
 ├── src/memory/              # 长期记忆：SQLite 存储、变动记录与撤销（db.rs）、综合排名（rank.rs）、遗忘曲线与整理分组（maintain.rs）
-├── src/files/               # 本地文件：授权文件夹校验（roots.rs）、查找 / 整理 / 移动（ops.rs）、读取文本、Office 文件与 PDF（read.rs），按结构提取 Word 与 PowerPoint 的文字（office_text.rs）、新建与修改文本文件、脚本改动的文件的备份与记录（write.rs）、运行脚本与 Office 后台进程的清理（script.rs）、生成与按页组合 PDF（pdf.rs）
+├── src/files/               # 本地文件：授权文件夹校验（roots.rs）、查找 / 整理 / 移动（ops.rs）、读取文本、Office 文件与 PDF（read.rs），按结构提取 Word 与 PowerPoint 的文字（office_text.rs）、自动检查生成的演示文稿、Word 文档与 Excel 表格（office_check*.rs）、新建与修改文本文件、脚本改动的文件的备份与记录（write.rs）、运行脚本与 Office 后台进程的清理（script.rs）、生成与按页组合 PDF（pdf.rs）
 ├── tauri.conf.json          # 窗口配置（无边框、透明、置顶等）
 └── capabilities/            # 前端可调用的权限（窗口、HTTP 请求等）
 src/

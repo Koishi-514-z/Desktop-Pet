@@ -32,33 +32,33 @@ enum Node {
 }
 
 impl Element {
-  fn attr(&self, name: &str) -> Option<&str> {
+  pub(super) fn attr(&self, name: &str) -> Option<&str> {
     self.attrs.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
   }
 
-  fn elements(&self) -> impl Iterator<Item = &Element> {
+  pub(super) fn elements(&self) -> impl Iterator<Item = &Element> {
     self.children.iter().filter_map(|child| match child {
       Node::Element(element) => Some(element),
       Node::Text(_) => None,
     })
   }
 
-  fn child(&self, name: &str) -> Option<&Element> {
+  pub(super) fn child(&self, name: &str) -> Option<&Element> {
     self.elements().find(|element| element.name == name)
   }
 
   /// 子元素 name 的属性 attr，如 <w:pStyle w:val="1"/> 的 w:val
-  fn child_attr(&self, name: &str, attr: &str) -> Option<&str> {
+  pub(super) fn child_attr(&self, name: &str, attr: &str) -> Option<&str> {
     self.child(name)?.attr(attr)
   }
 
   /// 深度优先查找第一个名为 name 的元素
-  fn find(&self, name: &str) -> Option<&Element> {
+  pub(super) fn find(&self, name: &str) -> Option<&Element> {
     self.elements().find_map(|element| if element.name == name { Some(element) } else { element.find(name) })
   }
 
   /// 直接包含的文字
-  fn text(&self) -> String {
+  pub(super) fn text(&self) -> String {
     self.children.iter().filter_map(|child| if let Node::Text(text) = child { Some(text.as_str()) } else { None }).collect()
   }
 
@@ -159,12 +159,12 @@ pub fn read_entry<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) 
 }
 
 /// 读取并解析压缩包中的 XML；不存在或无法解析时为 None
-fn read_xml<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) -> Option<Element> {
+pub(super) fn read_xml<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) -> Option<Element> {
   parse_xml(&read_entry(archive, name).ok()?).ok()
 }
 
 /// 压缩包中「前缀 + 编号 + 后缀」的文件，按编号排序，如 word/header1.xml、ppt/slides/slide2.xml
-fn numbered_entries<R: Read + Seek>(archive: &zip::ZipArchive<R>, prefix: &str, suffix: &str) -> Vec<String> {
+pub(super) fn numbered_entries<R: Read + Seek>(archive: &zip::ZipArchive<R>, prefix: &str, suffix: &str) -> Vec<String> {
   let mut entries: Vec<(usize, String)> = archive
     .file_names()
     .filter_map(|name| {
@@ -178,7 +178,7 @@ fn numbered_entries<R: Read + Seek>(archive: &zip::ZipArchive<R>, prefix: &str, 
 }
 
 /// 关系文件（.rels）中的关系：Id → (Type, Target)，外部链接除外
-fn relationships<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) -> HashMap<String, (String, String)> {
+pub(super) fn relationships<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) -> HashMap<String, (String, String)> {
   let Some(root) = read_xml(archive, name) else { return HashMap::new() };
   root
     .elements()
@@ -190,7 +190,7 @@ fn relationships<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) -
 }
 
 /// 关系中的 Target 相对于所在文件夹（如 ppt/slides）的完整路径
-fn resolve_target(base_dir: &str, target: &str) -> String {
+pub(super) fn resolve_target(base_dir: &str, target: &str) -> String {
   let mut parts: Vec<&str> = if let Some(absolute) = target.strip_prefix('/') {
     return absolute.to_string();
   }
@@ -387,12 +387,12 @@ fn format_number(value: u32, format: &str) -> String {
 
 /// 样式的标题级别与编号（word/styles.xml）
 #[derive(Default, Clone)]
-struct StyleInfo {
-  heading: Option<usize>,
-  numbering: Option<(String, usize)>,
+pub(super) struct StyleInfo {
+  pub(super) heading: Option<usize>,
+  pub(super) numbering: Option<(String, usize)>,
 }
 
-fn parse_styles(root: Option<&Element>) -> HashMap<String, StyleInfo> {
+pub(super) fn parse_styles(root: Option<&Element>) -> HashMap<String, StyleInfo> {
   let mut styles = HashMap::new();
   let Some(root) = root else { return styles };
   for style in root.elements().filter(|element| element.name == "w:style") {
@@ -848,7 +848,7 @@ fn slide_table(table: &Element) -> String {
 }
 
 /// 形状的占位符类型（如 title、body、sldNum）；不是占位符时为 None
-fn placeholder_type(shape: &Element) -> Option<&str> {
+pub(super) fn placeholder_type(shape: &Element) -> Option<&str> {
   let properties = shape.elements().find(|element| element.name.starts_with("p:nv"))?;
   let placeholder = properties.child("p:nvPr")?.child("p:ph")?;
   Some(placeholder.attr("type").unwrap_or("obj"))
@@ -884,7 +884,7 @@ fn shapes_text(tree: &Element, include: &dyn Fn(Option<&str>) -> bool, output: &
 }
 
 /// 幻灯片按演示文稿中的顺序排列（ppt/presentation.xml）；读取不到时按文件编号排序
-fn slide_order<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Vec<String> {
+pub(super) fn slide_order<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Vec<String> {
   let ordered = (|| {
     let presentation = read_xml(archive, "ppt/presentation.xml")?;
     let relationships = relationships(archive, "ppt/_rels/presentation.xml.rels");

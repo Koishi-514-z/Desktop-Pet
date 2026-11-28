@@ -115,6 +115,8 @@ export interface ExecutorPromptOptions {
   complex?: boolean
   /** 界面支持在执行中途向用户提问（ask_user） */
   canAskUser?: boolean
+  /** 这一轮交给模型的消息，生成技能的使用说明时参考 */
+  messages?: ModelMessage[]
 }
 
 /** 参数不明确时：能提问就用 ask_user 问用户，回答后继续；不能提问时说明还缺少什么 */
@@ -158,11 +160,11 @@ const LOAD_MORE_GUIDE = `上面的技能是根据请求预先加载的，下面�
  * 意图识别只区分闲聊与任务，需要哪些技能由执行模块根据技能目录自己加载
  */
 export function buildExecutorSystemPrompt(skills: Skill[], options: ExecutorPromptOptions = {}): string {
-  const { now = new Date(), steps = [], background = '', others = [], maxSteps, complex = false, canAskUser = false } = options
+  const { now = new Date(), steps = [], background = '', others = [], maxSteps, complex = false, canAskUser = false, messages = [] } = options
   const skillSections = skills.length
     ? skills
         .map((skill) => {
-          const instructions = typeof skill.instructions === 'function' ? skill.instructions() : skill.instructions
+          const instructions = typeof skill.instructions === 'function' ? skill.instructions({ messages }) : skill.instructions
           return `## ${skill.name}（${skill.id}）\n${instructions.trim()}`
         })
         .join('\n\n')

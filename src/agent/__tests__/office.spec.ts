@@ -1,5 +1,6 @@
 import type { PermissionRequest } from '@/agent/types'
-import type { FileContent, PdfOutput, PdfOutputPlan, PdfPrintRequest, RunCodeRequest, ScriptResult, TargetChange, TargetInfo } from '@/files/api'
+import type { ModelMessage } from 'ai'
+import type { FileContent, PdfOutput, PdfOutputPlan, PdfPrintRequest, QualityIssue, RunCodeRequest, ScriptResult, TargetChange, TargetInfo } from '@/files/api'
 import type { StoredDocument } from '@/utils/documents'
 import { MockLanguageModelV3 } from 'ai/test'
 import { createPinia, setActivePinia } from 'pinia'
@@ -7,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runAgent } from '@/agent'
 import { collectTools } from '@/agent/executor'
 import { filesSkill } from '@/agent/skills/files'
-import { EXTRACT_MODEL_CHARS, formatPages, officeSkill } from '@/agent/skills/office'
+import { EXTRACT_MODEL_CHARS, formatPages, MAX_AUTO_FIX_ROUNDS, neededExamples, officeSkill, previousChecks, pythonExampleFor } from '@/agent/skills/office'
 import { useToolsStore } from '@/stores/tools'
 
 const DESKTOP = 'C:\\Users\\me\\Desktop'
@@ -29,6 +30,8 @@ const api = vi.hoisted(() => ({
   documents: new Map<string, StoredDocument>(),
   extracted: [] as { name: string, size: number }[],
   extractContent: '',
+  quality: new Map<string, QualityIssue[]>(),
+  exitCode: 0 as number | null,
 }))
 
 vi.mock('@/utils/documents', async (importOriginal) => ({
@@ -83,7 +86,7 @@ vi.mock('@/files/api', async (importOriginal) => ({
     api.calls.push('run')
     api.runs.push(request)
     if (api.runError) throw new Error(api.runError)
-    return RESULT
+    return { ...RESULT, exitCode: api.exitCode }
   },
   settleTargets: async () => {
     api.calls.push('settle')
@@ -104,6 +107,10 @@ vi.mock('@/files/api', async (importOriginal) => ({
     api.composes.push(outputs)
     return api.plans.map((plan) => ({ path: plan.path, pages: plan.pages, size: 2048 }))
   },
+  checkOfficeFile: async (_roots: string[], path: string) => {
+    api.calls.push(`check-quality ${path.split('\\').pop()}`)
+    return api.quality.get(path) ?? []
+  },
   extractFileText: async (name: string, data: ArrayBuffer): Promise<FileContent> => {
     api.calls.push('extract')
     api.extracted.push({ name, size: data.byteLength })
@@ -115,6 +122,12 @@ vi.mock('@/files/api', async (importOriginal) => ({
     return { path, name: '', size: 0, content: `「${path.split('\\').pop()}」的内容`, truncated: false, totalChars: 10, format: 'text', encoding: null }
   },
 }))
+
+/** 用户提出这个请求时 Office 技能的使用说明 */
+function instructionsFor(request: string): string {
+  const instructions = officeSkill.instructions
+  return typeof instructions === 'function' ? instructions({ messages: [{ role: 'user', content: request }] }) : instructions
+}
 
 const CODE = '$excel = New-Object -ComObject Excel.Application\nWrite-Output "已保存"'
 
@@ -134,6 +147,8 @@ beforeEach(() => {
     plans: [],
     planError: null,
     documents: new Map(),
+    quality: new Map(),
+    exitCode: 0,
     extracted: [],
     extractContent: '# 合同\n| 甲方 | 乙方 |\n| --- | --- |\n| A | B |\n\n【批注】\n[批注1] 张三：核对金额',
   })
@@ -162,7 +177,8 @@ describe('Office 文档技能', () => {
     })
 
     // 同意之后才备份；运行后无论成功与否都对比文件
-    expect(api.calls).toEqual(['check', 'inspect', 'permission', 'snapshot', 'run', 'settle', 'read 销售.xlsx', 'read 销售.pdf'])
+    // 运行后读回内容，并自动检查改动过的 Office 文件（PDF 不检查）
+    expect(api.calls).toEqual(['check', 'inspect', 'permission', 'snapshot', 'run', 'settle', 'read 销售.xlsx', 'read 销售.pdf', 'check-quality 销售.xlsx'])
     expect(requests[0]).toMatchObject({ kind: 'script-run', title: '处理 2 个文件', targetLabel: '改动', targetFormat: 'code', allowAlways: false })
     expect(requests[0]!.target).toContain(`修改 ${XLSX}（2.0 KB，运行前会备份）\n  新建 ${PDF}`)
     expect(requests[0]!.target).toContain('方式：通过 PowerShell 调用 Microsoft Office')
@@ -212,21 +228,74 @@ describe('Office 文档技能', () => {
     expect(api.runs[0]).toMatchObject({ language: 'python', cleanupOffice: false })
   })
 
-  it('按本机的情况说明可用的方式，只展示能用的示例', () => {
+  it('按本机的情况说明可用的方式；只附上要处理的文件类型的示例，没有安装 Office 的类型用 Python 示例', () => {
     useToolsStore().officeSupport = { word: true, excel: false, powerpoint: false, pythonLibraries: ['openpyxl'], pdfBrowser: 'Microsoft Edge' }
-    const instructions = typeof officeSkill.instructions === 'function' ? officeSkill.instructions() : officeSkill.instructions
+    const instructions = instructionsFor('做一份会议纪要的 Word 文档，再把销售数据做成 Excel 表格')
     expect(instructions).toContain('Microsoft Office（language 为 powershell，通过 COM 调用）：已安装 Word')
     expect(instructions).toContain('Python 库（language 为 python）：已安装 openpyxl')
     expect(instructions).toContain('## 示例：Word（PowerShell 调用 Microsoft Office）')
-    expect(instructions).toContain('## 示例：Python 库')
-    expect(instructions).not.toContain('## 示例：Excel')
     // 示例来自与 Rust 端测试共用的文件
     expect(instructions).toContain('$word.AutomationSecurity = 3')
+    // Excel 没有安装：用 Python 示例中 Excel 的部分（带着共用的开头）
+    expect(instructions).toContain('## 示例：Excel（Python 库 openpyxl）')
+    expect(instructions).toContain('book = Workbook()')
+    expect(instructions).toContain("ACCENT, LIGHT, LINE, MUTED = '1F4E79'")
+    expect(instructions).not.toContain('doc = Document()')
+    expect(instructions).not.toContain('## 示例：PowerPoint')
+    expect(instructions).not.toContain('deck = Presentation()')
     expect(instructions).toContain('本机使用 Microsoft Edge 打印。')
 
     useToolsStore().officeSupport = { word: false, excel: false, powerpoint: false, pythonLibraries: [], pdfBrowser: null }
-    const without = typeof officeSkill.instructions === 'function' ? officeSkill.instructions() : officeSkill.instructions
+    const without = instructionsFor('做一个 PPT')
     expect(without).toContain('create_pdf 不可用')
+    // 都没有安装时不附示例，说明需要安装
+    expect(without).not.toContain('## 示例：')
+  })
+
+  it('判断要附上哪些示例：请求要新建或修改的文件类型、追问时最近提到的文件、这次执行中要过或处理过的', () => {
+    const kinds = (messages: ModelMessage[]) => [...neededExamples(messages)].sort()
+    const user = (content: string): ModelMessage => ({ role: 'user', content })
+    expect(kinds([user('帮我做一个介绍产品的 PPT')])).toEqual(['powerpoint'])
+    expect(kinds([user('把报告.docx 的标题改成红色，再导出 PDF')])).toEqual(['word'])
+    // 只是阅读、总结文件时不需要示例
+    expect(kinds([user('总结一下这个文档\n\n【附文件：doc_1｜合同.docx｜2.0 KB】')])).toEqual([])
+    // 追问：从最近的消息（包括之前的工具调用记录）中的文件判断
+    expect(kinds([user('做一个年度总结'), { role: 'assistant', content: '做好了：C:\\桌面\\年度总结.pptx' }, user('把标题改成红色')])).toEqual(['powerpoint'])
+    // 这次执行中：用 office_example 要过的，run_office_script 处理过的
+    const toolCall = (toolName: string, input: unknown): ModelMessage => ({ role: 'assistant', content: [{ type: 'tool-call', toolCallId: toolName, toolName, input }] })
+    expect(kinds([user('看看'), toolCall('office_example', { types: ['excel'] }), toolCall('run_office_script', { files: ['C:\\a\\b.docx', 'C:\\a\\b.pdf'] })])).toEqual(['excel', 'word'])
+  })
+
+  it('没有判断出文件类型时，说明先用 office_example 获取示例；获取后加入使用说明', async () => {
+    useToolsStore().officeSupport = { word: true, excel: true, powerpoint: true, pythonLibraries: [], pdfBrowser: 'Microsoft Edge' }
+    const instructions = instructionsFor('处理一下这个文件')
+    expect(instructions).not.toContain('## 示例：')
+    expect(instructions).toContain('先用 office_example 获取要处理的文件类型')
+
+    const res = await runAgent({
+      model: new MockLanguageModelV3(),
+      messages: [{ role: 'user', content: '处理一下这个文件' }],
+      skills: [officeSkill],
+      directCall: { skillId: 'office', toolName: 'office_example', input: { types: ['powerpoint'] } },
+    })
+    expect(res?.toolCalls[0]?.output).toMatchObject({ types: ['powerpoint'], message: 'PowerPoint 的示例已加入使用说明的「示例代码」一节，照着示例写代码' })
+    const after = officeSkill.instructions as (context: { messages: ModelMessage[] }) => string
+    const withExample = after({ messages: [{ role: 'user', content: '处理一下这个文件' }, { role: 'assistant', content: [{ type: 'tool-call', toolCallId: '1', toolName: 'office_example', input: { types: ['powerpoint'] } }] }] })
+    expect(withExample).toContain('## 示例：PowerPoint（PowerShell 调用 Microsoft Office）')
+    expect(withExample).toContain('还需要其他文件类型的示例时，用 office_example 获取')
+  })
+
+  it('Python 示例按文件类型截取', () => {
+    const word = pythonExampleFor(['word'])
+    expect(word).toContain('doc = Document()')
+    expect(word).not.toContain('book = Workbook()')
+    expect(word).not.toContain('deck = Presentation()')
+    expect(word.startsWith('# Python：')).toBe(true)
+    expect(word.trimEnd().endsWith("print('已保存', folder)")).toBe(true)
+    const both = pythonExampleFor(['excel', 'powerpoint'])
+    expect(both).toContain('book = Workbook()')
+    expect(both).toContain('deck = Presentation()')
+    expect(both).not.toContain('doc = Document()')
   })
 
   it('与「本地文件」技能共用 read_file，同时使用两个技能时不重复', () => {
@@ -396,5 +465,109 @@ describe('提取文档内容', () => {
     api.documents.clear()
     const missing = await extract({})
     expect(missing?.toolCalls[0]?.error).toContain('找不到文件 doc_2')
+  })
+})
+
+describe('自动检查生成的演示文稿', () => {
+  const PPTX = `${DESKTOP}\\年度总结.pptx`
+  const PROBLEMS = ['所有页面没有进入动画：……', '第 2–4 页都是「标题 + 要点」的默认版式：……']
+
+  /** 之前的一次 run_office_script 的结果（在发给模型的消息中） */
+  function previousResult(problems: string[]): ModelMessage {
+    return {
+      role: 'tool',
+      content: [{
+        type: 'tool-result',
+        toolCallId: `call-${Math.random()}`,
+        toolName: 'run_office_script',
+        output: { type: 'json', value: { ran: true, ...(problems.length ? { qualityCheck: { issues: [{ path: PPTX, problems }], round: 1, instruction: '' } } : {}) } },
+      }],
+    }
+  }
+
+  function runPptx(history: ModelMessage[] = [], requestPermission: (request: PermissionRequest) => Promise<boolean> = async () => true) {
+    return runAgent({
+      model: new MockLanguageModelV3(),
+      messages: [{ role: 'user', content: '做一个年度总结的 PPT' }, ...history],
+      skills: [officeSkill],
+      directCall: { skillId: 'office', toolName: 'run_office_script', input: { language: 'powershell', code: CODE, files: ['桌面/年度总结.pptx'], reason: '做 PPT' } },
+      requestPermission,
+    })
+  }
+
+  beforeEach(() => {
+    api.targets = [{ path: PPTX, exists: false, size: 0 }]
+    api.changes = [{ path: PPTX, changed: true, created: true, deleted: false, backupId: null, afterHash: 'h', error: null }]
+    api.quality.set(PPTX, PROBLEMS.map((message) => ({ code: 'x', message })))
+  })
+
+  it('发现问题时要求先修正再回复用户，并在结果卡片中列出', async () => {
+    const res = await runPptx()
+    expect(api.calls).toContain('check-quality 年度总结.pptx')
+    const output = res?.toolCalls[0]?.output as { qualityCheck: { issues: unknown, round: number, instruction: string } }
+    expect(output.qualityCheck.issues).toEqual([{ path: PPTX, problems: PROBLEMS }])
+    expect(output.qualityCheck.round).toBe(1)
+    expect(output.qualityCheck.instruction).toContain('请修改代码后再运行一次')
+    expect(res?.displays[0]?.content).toContain(`【自动检查】发现以下问题，正在修正\n- 年度总结.pptx：${PROBLEMS[0]}`)
+  })
+
+  it('修正时授权卡片说明要修正的问题；问题都修正后不再要求修改', async () => {
+    api.quality.set(PPTX, [])
+    const requests: PermissionRequest[] = []
+    const res = await runPptx([previousResult(PROBLEMS)], async (request) => {
+      requests.push(request)
+      return true
+    })
+    expect(requests[0]!.title).toBe('修正「年度总结.pptx」')
+    expect(requests[0]!.target).toContain(`自动检查发现的问题：\n  - ${PROBLEMS[0]}\n  - ${PROBLEMS[1]}\n\n文件：`)
+    expect(res?.toolCalls[0]?.output).not.toHaveProperty('qualityCheck')
+    expect(res?.displays[0]?.content).toContain('【自动检查】之前发现的问题都已修正')
+  })
+
+  it(`最多自动修正 ${MAX_AUTO_FIX_ROUNDS} 次，之后如实告诉用户`, async () => {
+    const history = Array.from({ length: MAX_AUTO_FIX_ROUNDS }, () => previousResult(PROBLEMS))
+    expect(previousChecks(history)).toEqual({ rounds: MAX_AUTO_FIX_ROUNDS, problems: PROBLEMS })
+    const res = await runPptx(history)
+    const output = res?.toolCalls[0]?.output as { qualityCheck: { round: number, instruction: string } }
+    expect(output.qualityCheck.round).toBe(MAX_AUTO_FIX_ROUNDS + 1)
+    expect(output.qualityCheck.instruction).toContain('不要再修改')
+    expect(res?.displays[0]?.content).toContain(`已经自动修正过 ${MAX_AUTO_FIX_ROUNDS} 次，仍有以下问题`)
+  })
+
+  it('用 Python 处理时，不检查 Python 库做不到的（动画、切换效果、页码）', async () => {
+    api.quality.set(PPTX, [
+      { code: 'no-animation', message: '没有进入动画' },
+      { code: 'no-transition', message: '没有切换效果' },
+      { code: 'white-background', message: '纯白背景' },
+    ])
+    const res = await runAgent({
+      model: new MockLanguageModelV3(),
+      messages: [{ role: 'user', content: '做一个 PPT' }],
+      skills: [officeSkill],
+      directCall: { skillId: 'office', toolName: 'run_office_script', input: { language: 'python', code: 'print(1)', files: ['桌面/年度总结.pptx'], reason: '做 PPT' } },
+      requestPermission: async () => true,
+    })
+    const output = res?.toolCalls[0]?.output as { qualityCheck: { issues: { problems: string[] }[] } }
+    expect(output.qualityCheck.issues[0]!.problems).toEqual(['纯白背景'])
+  })
+
+  it('只检查改动过的 Office 文件；脚本运行失败时不检查', async () => {
+    // 没有问题的一次运行不算作「发现过问题」
+    expect(previousChecks([previousResult([])])).toEqual({ rounds: 0, problems: [] })
+
+    // 改动的是 PDF，不检查；表格要检查
+    api.targets = [{ path: XLSX, exists: true, size: 2048 }, { path: PDF, exists: false, size: 0 }]
+    api.changes = [
+      { path: XLSX, changed: true, created: false, deleted: false, backupId: 'b1', afterHash: 'h1', error: null },
+      { path: PDF, changed: true, created: true, deleted: false, backupId: null, afterHash: 'h2', error: null },
+    ]
+    await call({}, async () => true)
+    expect(api.calls.filter((item) => item.startsWith('check-quality'))).toEqual(['check-quality 销售.xlsx'])
+    api.changes = [{ path: PPTX, changed: true, created: true, deleted: false, backupId: null, afterHash: 'h', error: null }]
+
+    api.calls = []
+    api.exitCode = 1
+    await runPptx()
+    expect(api.calls.filter((item) => item.startsWith('check-quality'))).toEqual([])
   })
 })

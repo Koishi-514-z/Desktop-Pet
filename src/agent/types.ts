@@ -4,6 +4,14 @@ import type { AudioRef } from '@/utils/audios'
 import type { ImageRef } from '@/utils/images'
 
 /**
+ * 生成技能使用说明时的上下文：工具执行阶段每一轮都会重新生成，messages 为这一轮交给模型的消息
+ * （对话与之前几轮的工具调用），技能可以据此只附上需要的内容（如只附上要处理的文件类型的示例代码）
+ */
+export interface InstructionContext {
+  messages: ModelMessage[]
+}
+
+/**
  * Skill（技能）：面向同一类用户意图的一组能力，由「使用说明 + 工具」组成。
  *
  * 采用渐进式披露：
@@ -23,7 +31,7 @@ export interface Skill {
   examples?: string[]
   /** 技能被激活后注入给工具执行阶段 LLM 的使用说明 */
   /** 也可以是函数，在执行时生成（如写入当前授权访问的文件夹） */
-  instructions: string | (() => string)
+  instructions: string | ((context?: InstructionContext) => string)
   /** 技能提供的工具，工具名在所有技能之间必须唯一；多个技能可以共用同一个工具对象（如 read_file） */
   tools: ToolSet
 }

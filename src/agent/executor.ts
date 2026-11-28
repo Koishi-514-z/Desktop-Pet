@@ -1,4 +1,4 @@
-import type { StepResult, TextStreamPart, ToolSet } from 'ai'
+import type { ModelMessage, StepResult, TextStreamPart, ToolSet } from 'ai'
 import type { PlanStep } from '@/agent/plan'
 import type { AgentEvent, AgentResult, AgentRunOptions, DirectToolCall, RouteDecision, Skill, SkillContext, ToolCallRecord, ToolDisplay } from '@/agent/types'
 import { stepCountIs, streamText, tool } from 'ai'
@@ -201,9 +201,9 @@ export async function executeSkills(
     // 背景信息准备失败不影响执行
     const background = await Promise.resolve(options.background).catch(() => '')
     const now = new Date()
-    // truncated：之前的输出因为超过长度上限被截断过，提醒模型精简
-    const system = (truncated: boolean) => [
-      buildExecutorSystemPrompt(loadedSkills(), { now, steps: plannedSteps, background, others: otherSkills(), maxSteps, complex, canAskUser }),
+    // truncated：之前的输出因为超过长度上限被截断过，提醒模型精简；stepMessages 为这一轮交给模型的消息（技能据此生成使用说明）
+    const system = (truncated: boolean, stepMessages: ModelMessage[]) => [
+      buildExecutorSystemPrompt(loadedSkills(), { now, steps: plannedSteps, background, others: otherSkills(), maxSteps, complex, canAskUser, messages: stepMessages }),
       truncated ? TRUNCATED_OUTPUT_NOTE : '',
     ].filter(Boolean).join('\n\n')
 
@@ -215,7 +215,7 @@ export async function executeSkills(
     for (let retries = 0; ; retries++) {
       const result = streamText({
         model,
-        system: system(truncated),
+        system: system(truncated, history),
         messages: history,
         tools,
         activeTools: activeTools(),
@@ -223,7 +223,7 @@ export async function executeSkills(
         // 上下文超过预算时，精简较早的工具结果（只影响这一步交给模型的消息）
         prepareStep: ({ steps: previous, messages: stepMessages }) => {
           if (previous.at(-1)?.finishReason === 'length') truncated = true
-          return { system: system(truncated), activeTools: activeTools(), messages: compactToolMessages(stepMessages) }
+          return { system: system(truncated, stepMessages), activeTools: activeTools(), messages: compactToolMessages(stepMessages) }
         },
         stopWhen: stepCountIs(maxSteps - steps.length),
         temperature: 0,
