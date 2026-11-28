@@ -113,6 +113,7 @@ dependencies = [
  "enigo",
  "image",
  "log",
+ "lopdf",
  "pdf-extract",
  "rusqlite",
  "serde",

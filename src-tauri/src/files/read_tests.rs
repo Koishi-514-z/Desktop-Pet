@@ -102,7 +102,7 @@ fn minimal_pdf(content: &str) -> Vec<u8> {
 fn reads_pdf_text() {
   let dir = TempDir::new("pdf");
   let text = read_text(&dir.write("a.pdf", &minimal_pdf("BT /F1 24 Tf 72 700 Td (Hello PDF) Tj ET"))).unwrap().content;
-  assert!(text.starts_with("【第 1 页】\n"), "{text}");
+  assert!(text.starts_with("（共 1 页）\n\n【第 1 页】\n"), "{text}");
   assert!(text.contains("Hello PDF"), "{text}");
 
   // 没有文字（如扫描件）、损坏的文件：给出提示而不是崩溃

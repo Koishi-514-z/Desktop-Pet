@@ -281,10 +281,85 @@ export interface OfficeSupport {
   powerpoint: boolean
   /** 已安装的 Python 库：python-docx、openpyxl、python-pptx */
   pythonLibraries: string[]
+  /** 用来把 HTML 打印成 PDF 的浏览器（Edge、Chrome）；没有时为 null */
+  pdfBrowser: string | null
 }
 
 export function getOfficeSupport(): Promise<OfficeSupport> {
   return call('office_support')
+}
+
+export interface PdfPrintRequest {
+  /** 运行 id，用于取消（与脚本共用 cancelScript） */
+  runId: string
+  /** 要生成的 PDF 的完整路径 */
+  path: string
+  html: string
+  timeoutSeconds?: number
+}
+
+export interface PdfPrintResult {
+  path: string
+  pages: number
+  size: number
+  /** 用来打印的浏览器 */
+  browser: string
+  durationMs: number
+  cancelled: boolean
+  timedOut: boolean
+}
+
+/** 把 HTML 打印成 PDF。调用前必须已经征得用户同意，并备份要覆盖的文件 */
+export function printHtmlToPdf(roots: string[], request: PdfPrintRequest): Promise<PdfPrintResult> {
+  return call('pdf_print_html', { roots, request })
+}
+
+/** 新 PDF 中的一部分：某个 PDF 的若干页 */
+export interface PdfPart {
+  path: string
+  /** 页码，如「1-3,5,8-」「10-1」（倒序）；省略时为全部页面 */
+  pages?: string
+  /** 顺时针旋转的角度（90 的倍数） */
+  rotate?: number
+}
+
+/** 要生成的一个 PDF：依次由几部分组成 */
+export interface PdfOutput {
+  path: string
+  parts: PdfPart[]
+}
+
+export interface PdfPartPlan {
+  path: string
+  /** 源文件的总页数 */
+  totalPages: number
+  /** 选中的页码，按新文件中的顺序 */
+  pages: number[]
+  rotate: number
+}
+
+export interface PdfOutputPlan {
+  path: string
+  /** 文件已经存在（将被覆盖） */
+  exists: boolean
+  pages: number
+  parts: PdfPartPlan[]
+}
+
+export interface PdfOutputResult {
+  path: string
+  pages: number
+  size: number
+}
+
+/** 检查按页重新组合 PDF 的计划（不会改动文件） */
+export function planPdfCompose(roots: string[], outputs: PdfOutput[]): Promise<PdfOutputPlan[]> {
+  return call('pdf_plan_compose', { roots, outputs })
+}
+
+/** 按页重新组合 PDF：合并、拆分、提取、删除、调整顺序、旋转页面。调用前必须已经征得用户同意，并备份要覆盖的文件 */
+export function composePdf(roots: string[], outputs: PdfOutput[]): Promise<PdfOutputResult[]> {
+  return call('pdf_compose', { roots, outputs })
 }
 
 /** 本机可用的脚本解释器 */

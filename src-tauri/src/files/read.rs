@@ -205,7 +205,8 @@ fn read_pdf(path: &Path) -> Result<String, String> {
   if output.is_empty() {
     return Err("这个 PDF 中没有可以提取的文字（可能是扫描件或图片），可以截图后让我识别图中的文字".into());
   }
-  Ok(output.join("\n\n"))
+  // 没有文字的页面不显示，先写明总页数，便于按页码处理
+  Ok(format!("（共 {} 页）\n\n{}", pages.len(), output.join("\n\n")))
 }
 
 /// 列号转为字母：0 → A，25 → Z，26 → AA

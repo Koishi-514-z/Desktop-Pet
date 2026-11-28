@@ -82,7 +82,7 @@ impl ScriptKind {
 
 /// 在 PATH 中查找程序，跳过 Windows 应用商店的占位程序（WindowsApps 中的 python.exe 只会打开应用商店）
 /// 与 WSL 的 bash（System32\bash.exe）
-fn find_in_path(names: &[&str]) -> Option<PathBuf> {
+pub(super) fn find_in_path(names: &[&str]) -> Option<PathBuf> {
   let path = std::env::var_os("PATH")?;
   for dir in std::env::split_paths(&path) {
     let lowered = dir.to_string_lossy().to_lowercase();
@@ -588,10 +588,10 @@ fn read_output(mut reader: impl Read + Send + 'static) -> mpsc::Receiver<Capture
 }
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(super) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 结束脚本及它启动的所有子进程
-fn kill_tree(child: &mut Child) {
+pub(super) fn kill_tree(child: &mut Child) {
   #[cfg(windows)]
   {
     use std::os::windows::process::CommandExt;
@@ -612,10 +612,10 @@ fn kill_tree(child: &mut Child) {
 }
 
 /// 运行期间登记取消标记，结束时自动移除
-struct Registration(String);
+pub(super) struct Registration(String);
 
 impl Registration {
-  fn new(run_id: &str) -> Result<(Self, Arc<AtomicBool>), String> {
+  pub(super) fn new(run_id: &str) -> Result<(Self, Arc<AtomicBool>), String> {
     let flag = Arc::new(AtomicBool::new(false));
     let mut running = RUNNING.lock().map_err(|_| "内部错误".to_string())?;
     if running.contains_key(run_id) {
@@ -872,6 +872,8 @@ pub struct OfficeSupport {
   pub powerpoint: bool,
   /// 已安装的 Python 库：python-docx、openpyxl、python-pptx
   pub python_libraries: Vec<&'static str>,
+  /// 用来把 HTML 打印成 PDF 的浏览器（Edge、Chrome）；没有时为空
+  pub pdf_browser: Option<&'static str>,
 }
 
 /// Office 程序是否注册了 COM 接口（如 Word.Application）
@@ -919,5 +921,6 @@ pub fn office_support() -> OfficeSupport {
     excel: com_registered("Excel.Application"),
     powerpoint: com_registered("PowerPoint.Application"),
     python_libraries: python_libraries(),
+    pdf_browser: super::pdf::browser_name(),
   }
 }

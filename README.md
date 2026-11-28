@@ -17,7 +17,7 @@
 - **图片理解**：发送图片或截图，即可解释图片内容、提取或翻译图中文字、分析报错。
 - **待办与提醒**：用自然语言创建、查询、修改待办或设置提醒（如「明天下午三点交周报，提前半小时提醒我」「十分钟后提醒我喝水」），支持优先级、标签、重复与提醒，到时桌宠主动开口；也可以在待办面板中直接管理。
 - **本地文件**：在授权的文件夹中查找文件、阅读文件内容（文本、代码、Word、PowerPoint、PDF、Excel），新建或修改文本文件，按类型或月份整理文件夹；写入与移动前都需要确认，并且可以撤销，不会删除文件。
-- **Office 文档**：新建或修改 Word、Excel、PowerPoint 文件并导出 PDF：由 LLM 写一段代码，经你同意后通过本机的 Microsoft Office（优先）或 Python 库完成；修改前自动备份，可以撤销。
+- **Office 文档**：新建或修改 Word、Excel、PowerPoint 文件并导出 PDF：由 LLM 写一段代码，经你同意后通过本机的 Microsoft Office（优先）或 Python 库完成；还可以直接生成 PDF，以及合并、拆分、提取、删除、旋转 PDF 的页面（不需要 Office）；修改前自动备份，可以撤销。
 - **应用与窗口**（仅 Windows）：用自然语言打开开始菜单中的应用，切换、最小化、最大化、关闭窗口，或按布局排列窗口，如「帮我进入开发模式，打开 VS Code、终端和浏览器，并将窗口排列好」；关闭窗口前需要确认，不会强制结束程序（[apps.rs](src-tauri/src/apps.rs)、[apps.ts](src/agent/skills/apps.ts)）。
 - **系统诊断**：读取 CPU、GPU、内存、显存、磁盘、网络、电池与各进程的实时状态，按阈值标出明显的异常，由 LLM 分析卡顿、发热、耗电、显存占用高等问题的原因，如「为什么我的电脑突然变得这么卡？」「哪个进程占用了这么多显存？」；只读取状态，不会结束程序（[diagnostics.rs](src-tauri/src/diagnostics.rs)、[diagnostics.ts](src/agent/skills/diagnostics.ts)）。GPU 占用与显存来自 Windows 的性能计数器。
 - **音频理解**：把音频文件拖入、粘贴到对话框（或给出授权文件夹中的路径），即可转成带时间点的文字稿、总结内容、整理会议纪要、回答关于录音内容的问题，以及分析声音本身（音乐、环境声、语气情绪等）。转录时在停顿处切成约一分钟的片段，交给当前的语音识别服务并发转录，结果保存下来供追问使用；分析声音需要能接收音频的模型，可以在 **Skills** 页单独指定（[src/audio/](src/audio/)、[audio.ts](src/agent/skills/audio.ts)）。
@@ -137,7 +137,7 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 | 记忆管理 `memory` | `list_memories`、`search_memories`、`forget_memories` | 用户问「你都记得我什么」或要求「把这件事忘了」时查看、忘掉记忆（忘掉前请用户确认），见下文「记忆管理」 |
 | 待办 `tasks` | `create_task`、`list_tasks`、`update_task`、`complete_task`、`delete_tasks` | 创建、查询、修改、完成待办，设置定时提醒，重复任务自动生成下一次；删除前请用户确认，见下文「待办与提醒」 |
 | 本地文件 `files` | `search_files`、`list_folder`、`read_file`、`write_file`、`edit_file`、`organize_folder`、`move_files`、`create_folder`、`reveal_file` | 在授权的文件夹中查找、阅读（包括 Office 文件与 PDF）、新建与修改文本文件、整理文件；写入与移动前请用户确认，可以撤销，见下文「本地文件」 |
-| Office 文档 `office` | `run_office_script`（与「本地文件」共用 `read_file`、`reveal_file`） | 运行代码新建或修改 Word、Excel、PowerPoint，优先调用 Microsoft Office，其次使用 Python 库；运行前请用户同意并备份，可以撤销，见下文「Office 文档」 |
+| Office 文档 `office` | `run_office_script`、`create_pdf`、`edit_pdf`（与「本地文件」共用 `read_file`、`reveal_file`） | 运行代码新建或修改 Word、Excel、PowerPoint，优先调用 Microsoft Office，其次使用 Python 库；把 HTML 生成为 PDF，按页合并、拆分、旋转 PDF；运行前请用户同意并备份，可以撤销，见下文「Office 文档」与「PDF」 |
 | 网页搜索 `web` | `web_search`、`read_webpage` | 搜索互联网，阅读网页原文后回答并注明来源，见下文「网页搜索」 |
 | 运行脚本 `scripts` | `run_script`、`run_code` | 运行授权文件夹中的脚本，或直接运行一段临时的代码，并返回输出；每次运行前都请用户同意，见下文「运行脚本」 |
 
@@ -200,7 +200,7 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 - **查找**：按文件名关键词、扩展名、修改时间（如「上周」）、文件内容查找，结果按修改时间从新到旧排列。会跳过隐藏文件与 `node_modules`、`.git` 等目录，单次最多扫描 5 万项、耗时 5 秒。
 - **阅读**：支持纯文本与代码文件（自动识别 UTF-8 / UTF-16 / GBK 编码）、Word（`.docx`）、PowerPoint（`.pptx`，按页列出）、PDF（按页列出，使用 [pdf-extract](https://github.com/jrmuizel/pdf-extract)）与表格（`.xlsx` / `.xls` / `.xlsb` / `.ods`，使用 [calamine](https://github.com/tafia/calamine)），最多读取前 12000 字。表格按工作表列出，第一行是列字母，每行开头是行号（每个工作表最多 1000 行、50 列），便于按「B3」这样的位置修改；公式显示计算结果。扫描件 PDF 没有文字，读不出内容（可以截图后交给「图片理解」）；暂不支持旧版的 `.doc` / `.ppt`。
 - **整理**：把文件夹第一层的文件按 **类型**（图片 / 文档 / 表格 / 演示文稿 / 压缩包 / 音频 / 视频 / 安装程序 / 代码 / 电子书 / 字体 / 其他）、**月份**（按修改时间，如 `2026-11`）或 **扩展名** 归入子文件夹，快捷方式与隐藏文件保持不动。也可以按要求移动、重命名指定的文件，或新建文件夹。
-- **新建与修改**（[write.rs](src-tauri/src/files/write.rs)）：`write_file` 新建文件（所在文件夹不存在时自动创建），文件已存在时默认不覆盖；`edit_file` 修改已有文件——把文件中的一段原文替换为新内容（原文必须与文件内容完全一致，并且只出现一次，避免改错位置），或在末尾追加内容。修改时保持原文件的编码（UTF-8、UTF-8 BOM、UTF-16、GBK）与换行符（CRLF / LF）。纯文本类文件（txt、md、csv、json、yaml、html、代码等）最大 4 MB。可以写入脚本（`.py`、`.js`、`.ps1`、`.bat`、`.cmd`、`.sh`），新建时自动使用解释器需要的格式：批处理用系统编码（中文 Windows 上为 GBK）与 CRLF 换行，内容中有系统编码无法表示的字符（如 emoji）时会报错；PowerShell 用带 BOM 的 UTF-8（否则 Windows PowerShell 5.1 读取中文会乱码）；Shell 用 UTF-8 与 LF 换行。Word、Excel、PowerPoint 文件由「Office 文档」技能新建与修改；不能写入 PDF，以及隐藏的文件或文件夹（如 `.git` 中的文件）；不能把文件内容清空。
+- **新建与修改**（[write.rs](src-tauri/src/files/write.rs)）：`write_file` 新建文件（所在文件夹不存在时自动创建），文件已存在时默认不覆盖；`edit_file` 修改已有文件——把文件中的一段原文替换为新内容（原文必须与文件内容完全一致，并且只出现一次，避免改错位置），或在末尾追加内容。修改时保持原文件的编码（UTF-8、UTF-8 BOM、UTF-16、GBK）与换行符（CRLF / LF）。纯文本类文件（txt、md、csv、json、yaml、html、代码等）最大 4 MB。可以写入脚本（`.py`、`.js`、`.ps1`、`.bat`、`.cmd`、`.sh`），新建时自动使用解释器需要的格式：批处理用系统编码（中文 Windows 上为 GBK）与 CRLF 换行，内容中有系统编码无法表示的字符（如 emoji）时会报错；PowerShell 用带 BOM 的 UTF-8（否则 Windows PowerShell 5.1 读取中文会乱码）；Shell 用 UTF-8 与 LF 换行。Word、Excel、PowerPoint 文件与 PDF 由「Office 文档」技能新建与修改；这里不能写入 PDF，以及隐藏的文件或文件夹（如 `.git` 中的文件）；不能把文件内容清空。
 - **确认与撤销**：写入与移动前一定会弹出授权卡片，每次都需要确认（没有「始终允许」）：移动时列出完整的移动计划；写入时显示改动预览（`-` 为删除的行，`+` 为新增的行，并标出行号）。写入时会校验文件在确认期间没有被改动过，否则不写入。移动时重名会自动加上「 (1)」这样的编号，不会覆盖已有文件。所有操作记录在 **Tools → 文件操作记录** 中（最近 20 次），可以一键撤销：移动的文件移回原处；修改前的原文件备份在应用数据目录的 `file-backups` 中（最近 50 份），撤销时恢复原内容；新建的文件撤销时删除。「Office 文档」技能通过脚本改动的文件也记录在这里。文件在之后又被改动过时不会撤销，避免丢失之后的修改。
 - **在文件夹中显示**：在资源管理器中选中找到的文件，由用户自己打开。
 
@@ -269,6 +269,17 @@ IndexTTS Provider 默认地址为 `http://localhost:8000/v1`，服务端需要�
 - **残留的 Office 进程**：通过 COM 启动的 Office 不是脚本的子进程，脚本出错或超时被结束时，Office 会残留在后台并一直占用文件。运行前会记下已有的 Office 进程，运行后结束新出现的、没有可见窗口的 Office 进程，不会影响你自己打开的 Office。
 - **错误输出**：PowerShell 以 `-EncodedCommand` 运行时错误输出是 CLIXML，会还原为普通文字再交给 LLM。
 - **验证**：示例代码在 Rust 端的测试（[office_tests.rs](src-tauri/src/files/office_tests.rs)）中用真实的 Office 与 Python 库运行，并读回生成的文件检查内容。这些测试需要安装 Office，默认跳过，手动运行：`cargo test --lib office_tests -- --ignored --test-threads=1`。
+
+### PDF
+
+「Office 文档」技能中还有两个不需要 Office 的 PDF 工具（[pdf.rs](src-tauri/src/files/pdf.rs)），用法与上面相同：先检查，再展示内容请你同意，覆盖已有文件前备份，完成后可以在 **Tools → 文件操作记录** 中撤销。
+
+- **生成 PDF**（`create_pdf`）：如「把这份总结生成一个 PDF」「做一份 PDF 简历」。LLM 把内容写成一份 HTML（排版写在 `<style>` 中），在后台无界面运行本机的 Microsoft Edge（Windows 自带；也可以是 Google Chrome）打印成 PDF，一般一两秒就能完成。默认 A4、微软雅黑，可以用 CSS 的 `@page` 修改纸张、页边距，在页边距中加页码（如「第 1 页，共 3 页」），用 `break-before: page` 分页。生成后读回 PDF 的文字确认结果。
+  - **安全**：HTML 由 LLM 编写，可能受到文档或网页内容的影响。HTML 最前面加上内容安全策略，只允许内联的样式与 `data:` 图片，不运行脚本，不加载任何网络资源；浏览器的网络请求也都发往一个不存在的代理；浏览器使用临时的独立用户数据文件夹，不接触你自己的浏览器数据。HTML 中的本机图片必须写成 `file:///` 网址，并且位于授权的文件夹中，生成前转为 `data:` 内联。
+  - 已有的 Word、Excel、PowerPoint 文件转 PDF 仍由 Office 导出，格式保留最完整。
+- **按页组合 PDF**（`edit_pdf`）：如「把这两个 PDF 合并成一个」「把合同.pdf 的第 3 页删掉」「扫描件第 2 页是倒着的，帮我转过来」「把这本书拆成每章一个文件」。合并、拆分、提取、删除、调整顺序、旋转都是同一个操作：指定要生成的每个文件依次由哪些 PDF 的哪些页（如 `1-3,5,8-`，可以倒序）组成，以及是否旋转。使用 [lopdf](https://github.com/J-F-Liu/lopdf)：页面从页面树继承的大小、资源与旋转会写到每一页上，没有用到的页面与资源会被去掉。所有源文件先读入内存，因此可以直接覆盖源文件；任何一个文件出错时都不改动文件。不能处理加密的 PDF，书签与表单不会保留。
+- 阅读 PDF 时开头会写明总页数（没有文字的页面不显示），便于按页码操作。
+- **验证**：[pdf_tests.rs](src-tauri/src/files/pdf_tests.rs) 中生成测试用的 PDF 进行合并、拆分、旋转、覆盖，并用本机的 Edge 实际打印一份 HTML，检查页数、文字、页码，以及脚本没有运行（本机没有 Edge 或 Chrome 时跳过）。
 
 ### 新增技能
 
@@ -386,7 +397,7 @@ src-tauri/                   # Tauri 桌面端
 ├── src/capture.rs           # 划词与截图：全局快捷键、模拟复制读取选中内容、调起系统截图工具
 ├── src/screen.rs            # 看屏幕：记录用户最近使用的窗口、截取指定窗口
 ├── src/memory/              # 长期记忆：SQLite 存储、变动记录与撤销（db.rs）、综合排名（rank.rs）、遗忘曲线与整理分组（maintain.rs）
-├── src/files/               # 本地文件：授权文件夹校验（roots.rs）、查找 / 整理 / 移动（ops.rs）、读取文本、Office 文件与 PDF（read.rs）、新建与修改文本文件、脚本改动的文件的备份与记录（write.rs）、运行脚本与 Office 后台进程的清理（script.rs）
+├── src/files/               # 本地文件：授权文件夹校验（roots.rs）、查找 / 整理 / 移动（ops.rs）、读取文本、Office 文件与 PDF（read.rs）、新建与修改文本文件、脚本改动的文件的备份与记录（write.rs）、运行脚本与 Office 后台进程的清理（script.rs）、生成与按页组合 PDF（pdf.rs）
 ├── tauri.conf.json          # 窗口配置（无边框、透明、置顶等）
 └── capabilities/            # 前端可调用的权限（窗口、HTTP 请求等）
 src/

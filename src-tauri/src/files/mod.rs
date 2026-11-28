@@ -4,6 +4,7 @@
 //! 不提供删除文件与打开（运行）文件的能力。
 
 mod ops;
+mod pdf;
 mod read;
 mod roots;
 mod script;
@@ -17,6 +18,8 @@ mod read_tests;
 mod office_tests;
 #[cfg(test)]
 mod script_tests;
+#[cfg(test)]
+mod pdf_tests;
 
 use std::path::PathBuf;
 
@@ -24,6 +27,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_opener::OpenerExt;
 
+use pdf::{OutputPlan, OutputResult, PdfOutput, PrintRequest, PrintResult};
 use ops::{FileEntry, FileMove, MoveReport, OrganizeBy, SearchRequest, SearchResult};
 use roots::Roots;
 use script::{CodeRequest, OfficeSupport, RunRequest, RunResult, Runtime, ScriptInfo};
@@ -232,6 +236,24 @@ pub async fn files_settle_targets(app: AppHandle, roots: Vec<String>, snapshots:
 #[tauri::command]
 pub async fn office_support() -> Result<OfficeSupport, String> {
   blocking(|| Ok(script::office_support())).await
+}
+
+/// 把 HTML 打印成 PDF（前端在调用前已经征得用户同意，并备份了要覆盖的文件）
+#[tauri::command]
+pub async fn pdf_print_html(roots: Vec<String>, request: PrintRequest) -> Result<PrintResult, String> {
+  blocking(move || pdf::print_html(&Roots::new(&roots)?, &request)).await
+}
+
+/// 检查按页重新组合 PDF 的计划：每个新文件由哪些页面组成（不会改动文件）
+#[tauri::command]
+pub async fn pdf_plan_compose(roots: Vec<String>, outputs: Vec<PdfOutput>) -> Result<Vec<OutputPlan>, String> {
+  blocking(move || pdf::plan_compose(&Roots::new(&roots)?, &outputs)).await
+}
+
+/// 按页重新组合 PDF：合并、拆分、提取、删除、调整顺序、旋转页面（前端在调用前已经征得用户同意）
+#[tauri::command]
+pub async fn pdf_compose(roots: Vec<String>, outputs: Vec<PdfOutput>) -> Result<Vec<OutputResult>, String> {
+  blocking(move || pdf::compose(&Roots::new(&roots)?, &outputs)).await
 }
 
 /// 本机可用的脚本解释器

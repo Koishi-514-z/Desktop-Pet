@@ -41,8 +41,8 @@ export function createRunId(): string {
   return `script-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-/** 运行脚本；用户中止这一轮对话时结束它 */
-export async function runWithCancel(context: SkillContext, runId: string, run: () => Promise<ScriptResult>): Promise<ScriptResult> {
+/** 运行脚本（或其他按 runId 取消的操作，如打印 PDF）；用户中止这一轮对话时结束它 */
+export async function runWithCancel<T = ScriptResult>(context: SkillContext, runId: string, run: () => Promise<T>): Promise<T> {
   const signal = context.abortSignal
   if (signal?.aborted) throw new Error('已取消')
   const onAbort = () => void files.cancelScript(runId)

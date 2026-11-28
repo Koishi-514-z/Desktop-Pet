@@ -99,6 +99,11 @@ const officeItems = computed(() => {
       const available = support.pythonLibraries.includes(library.name)
       return { name: `Python 库 ${library.name}`, available, status: available ? `已安装（没有 ${library.use} 时使用）` : '没有安装' }
     }),
+    {
+      name: '生成 PDF',
+      available: support.pdfBrowser !== null,
+      status: support.pdfBrowser ? `使用 ${support.pdfBrowser}` : '没有找到 Microsoft Edge 或 Google Chrome',
+    },
   ]
 })
 
@@ -288,7 +293,7 @@ onMounted(async () => {
       </header>
 
       <span class="setting-desc">
-        「Office 文档」技能通过运行代码新建或修改 Word、Excel、PowerPoint 文件：优先调用本机的 Microsoft Office，其次使用 Python 库。运行前会展示要改动的文件与代码，经你同意后才会运行；修改的文件会先备份，可以在上面的「文件操作记录」中撤销。
+        「Office 文档」技能通过运行代码新建或修改 Word、Excel、PowerPoint 文件：优先调用本机的 Microsoft Office，其次使用 Python 库；还可以直接生成 PDF，以及合并、拆分、旋转 PDF 的页面（不需要 Office）。运行前会展示要改动的文件与代码，经你同意后才会运行；修改的文件会先备份，可以在上面的「文件操作记录」中撤销。
       </span>
       <ul v-if="toolsStore.officeSupport" class="roots">
         <li v-for="item in officeItems" :key="item.name" class="root">
