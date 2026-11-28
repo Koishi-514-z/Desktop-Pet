@@ -1,12 +1,13 @@
 import type { PermissionRequest } from '@/agent/types'
-import type { PdfOutput, PdfOutputPlan, PdfPrintRequest, RunCodeRequest, ScriptResult, TargetChange, TargetInfo } from '@/files/api'
+import type { FileContent, PdfOutput, PdfOutputPlan, PdfPrintRequest, RunCodeRequest, ScriptResult, TargetChange, TargetInfo } from '@/files/api'
+import type { StoredDocument } from '@/utils/documents'
 import { MockLanguageModelV3 } from 'ai/test'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runAgent } from '@/agent'
 import { collectTools } from '@/agent/executor'
 import { filesSkill } from '@/agent/skills/files'
-import { formatPages, officeSkill } from '@/agent/skills/office'
+import { EXTRACT_MODEL_CHARS, formatPages, officeSkill } from '@/agent/skills/office'
 import { useToolsStore } from '@/stores/tools'
 
 const DESKTOP = 'C:\\Users\\me\\Desktop'
@@ -25,6 +26,18 @@ const api = vi.hoisted(() => ({
   composes: [] as PdfOutput[][],
   plans: [] as PdfOutputPlan[],
   planError: null as string | null,
+  documents: new Map<string, StoredDocument>(),
+  extracted: [] as { name: string, size: number }[],
+  extractContent: '',
+}))
+
+vi.mock('@/utils/documents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/documents')>()),
+  loadDocument: async (id: string) => api.documents.get(id),
+  saveExtracted: async (id: string, extracted: StoredDocument['extracted']) => {
+    const document = api.documents.get(id)
+    if (document) api.documents.set(id, { ...document, extracted })
+  },
 }))
 
 const RESULT: ScriptResult = {
@@ -91,6 +104,12 @@ vi.mock('@/files/api', async (importOriginal) => ({
     api.composes.push(outputs)
     return api.plans.map((plan) => ({ path: plan.path, pages: plan.pages, size: 2048 }))
   },
+  extractFileText: async (name: string, data: ArrayBuffer): Promise<FileContent> => {
+    api.calls.push('extract')
+    api.extracted.push({ name, size: data.byteLength })
+    const content = api.extractContent
+    return { path: '', name, size: data.byteLength, content, truncated: false, totalChars: content.length, format: 'docx', encoding: null }
+  },
   readFile: async (_roots: string[], path: string) => {
     api.calls.push(`read ${path.split('\\').pop()}`)
     return { path, name: '', size: 0, content: `「${path.split('\\').pop()}」的内容`, truncated: false, totalChars: 10, format: 'text', encoding: null }
@@ -114,6 +133,9 @@ beforeEach(() => {
     composes: [],
     plans: [],
     planError: null,
+    documents: new Map(),
+    extracted: [],
+    extractContent: '# 合同\n| 甲方 | 乙方 |\n| --- | --- |\n| A | B |\n\n【批注】\n[批注1] 张三：核对金额',
   })
   localStorage.clear()
   setActivePinia(createPinia())
@@ -307,5 +329,72 @@ describe('PDF', () => {
     const res = await pdfCall('edit_pdf', { outputs: [{ path: A, parts: [{ path: A, pages: '9' }] }] }, requestPermission)
     expect(res?.toolCalls[0]?.error).toContain('只有 5 页')
     expect(requestPermission).not.toHaveBeenCalled()
+  })
+})
+
+describe('提取文档内容', () => {
+  const withDocument = '翻译一下\n\n【附文件：doc_2｜合同.docx｜2.0 KB】'
+
+  function extract(input: Record<string, unknown>, content = withDocument) {
+    return runAgent({
+      model: new MockLanguageModelV3(),
+      messages: [{ role: 'user', content: '先看看这个\n\n【附文件：doc_1｜旧.docx｜1.0 KB】' }, { role: 'assistant', content: '好的' }, { role: 'user', content }],
+      skills: [officeSkill],
+      directCall: { skillId: 'office', toolName: 'extract_document', input },
+    })
+  }
+
+  beforeEach(() => {
+    for (const id of ['doc_1', 'doc_2']) {
+      api.documents.set(id, { id, name: id === 'doc_1' ? '旧.docx' : '合同.docx', mediaType: '', size: 4, data: new Blob(['data']), createdAt: 0 })
+    }
+  })
+
+  it('对话中发送的文件：发给 Rust 端提取一次并保存结果，完整的内容以卡片展示', async () => {
+    const res = await extract({})
+    // 默认处理最近一条消息中的文件
+    expect(api.extracted).toEqual([{ name: '合同.docx', size: 4 }])
+    expect(res?.displays[0]).toEqual({ title: '文档内容：合同.docx', content: api.extractContent, format: 'text' })
+    expect(res?.toolCalls[0]?.output).toMatchObject({ name: '合同.docx', format: 'docx', content: api.extractContent, shownToUser: true })
+    expect(api.documents.get('doc_2')?.extracted?.content).toBe(api.extractContent)
+
+    // 再次读取时使用保存的结果；只为了回答问题而读取时不展示卡片
+    const again = await extract({ display: false })
+    expect(api.extracted).toHaveLength(1)
+    expect(again?.displays).toEqual([])
+    expect(again?.toolCalls[0]?.output).toMatchObject({ content: api.extractContent })
+    expect(again?.toolCalls[0]?.output).not.toHaveProperty('display')
+
+    // 指定更早的文件
+    await extract({ documentId: 'doc_1' })
+    expect(api.extracted.at(-1)).toEqual({ name: '旧.docx', size: 4 })
+  })
+
+  it('内容较长时分段返回，卡片仍然展示完整的内容', async () => {
+    api.extractContent = 'x'.repeat(EXTRACT_MODEL_CHARS + 500)
+    const res = await extract({})
+    const output = res?.toolCalls[0]?.output as Record<string, unknown>
+    expect((output.content as string).length).toBe(EXTRACT_MODEL_CHARS)
+    expect(output.nextOffset).toBe(EXTRACT_MODEL_CHARS)
+    expect(res?.displays[0]?.content.length).toBe(EXTRACT_MODEL_CHARS + 500)
+
+    const next = await extract({ offset: EXTRACT_MODEL_CHARS })
+    expect(next?.toolCalls[0]?.output).toMatchObject({ content: 'x'.repeat(500) })
+    expect(next?.toolCalls[0]?.output).not.toHaveProperty('nextOffset')
+    // 继续读取时不再重复展示卡片
+    expect(next?.displays).toEqual([])
+  })
+
+  it('授权文件夹中的文件按路径读取；最新的消息没有文件时处理最近一条带文件的消息中的文件', async () => {
+    const res = await extract({ path: '桌面/销售.xlsx' }, '读一下销售表')
+    expect(api.calls).toEqual(['read 销售.xlsx'])
+    expect(res?.toolCalls[0]?.output).toMatchObject({ name: '', path: XLSX, content: '「销售.xlsx」的内容' })
+
+    const earlier = await extract({}, '再读一下')
+    expect(earlier?.toolCalls[0]?.output).toMatchObject({ name: '旧.docx' })
+
+    api.documents.clear()
+    const missing = await extract({})
+    expect(missing?.toolCalls[0]?.error).toContain('找不到文件 doc_2')
   })
 })

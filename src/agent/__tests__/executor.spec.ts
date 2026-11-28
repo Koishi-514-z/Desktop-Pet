@@ -191,11 +191,12 @@ describe('意图识别与按需加载技能', () => {
 
   it('预先加载：意图识别选出的技能，加上消息中的图片、音频、划词标记需要的技能', () => {
     const skill = (id: string): Skill => ({ id, name: id, description: id, instructions: '', tools: {} })
-    const skills = ['image', 'audio', 'selection', 'weather', 'tasks'].map(skill)
+    const skills = ['image', 'audio', 'selection', 'office', 'weather', 'tasks'].map(skill)
     const ids = (text: string, decided?: string[]) => preloadedSkills({ messages: [{ role: 'user', content: text }], skills }, { skills: decided }).map((item) => item.id)
 
     expect(ids('翻译一下\n\n【附音频：aud_1｜a.mp3｜0:10】', ['selection'])).toEqual(['audio', 'selection'])
     expect(ids('看看\n\n【附图：img_1】')).toEqual(['image'])
+    expect(ids('翻译成英文\n\n【附文件：doc_1｜合同.docx｜2.0 KB】', ['selection'])).toEqual(['selection', 'office'])
     expect(ids('查天气并记到待办', ['weather', 'tasks', 'unknown'])).toEqual(['weather', 'tasks'])
     expect(ids('你好')).toEqual([])
   })

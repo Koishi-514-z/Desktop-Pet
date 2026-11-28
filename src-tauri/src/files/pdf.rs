@@ -124,7 +124,7 @@ fn image_media_type(path: &Path) -> Option<&'static str> {
 }
 
 /// 解码网址中的 %XX
-fn percent_decode(text: &str) -> String {
+pub(super) fn percent_decode(text: &str) -> String {
   let bytes = text.as_bytes();
   let hex = |byte: u8| (byte as char).to_digit(16).map(|value| value as u8);
   let mut output = Vec::with_capacity(bytes.len());

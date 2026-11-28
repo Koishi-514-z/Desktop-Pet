@@ -175,7 +175,11 @@ fn office_examples_work_with_microsoft_office() {
   let result = run_example(&roots, &dir.0, "word", "powershell", WORD_EXAMPLE);
   assert_eq!(result.note, None, "Word 应当正常退出");
   let text = read_text(&dir.path("会议纪要.docx")).unwrap().content;
-  assert_eq!(text, "会议纪要\n时间：2026 年 11 月 24 日\n确定发布日期\n分配测试任务\n任务\n负责人\n测试\n小王\n文档\n小李");
+  // 标题、项目符号、表格的结构（页脚中只有页码，不列出）
+  assert_eq!(
+    text,
+    "# 会议纪要\n时间：2026 年 11 月 24 日\n- 确定发布日期\n- 分配测试任务\n\n| 任务 | 负责人 |\n| --- | --- |\n| 测试 | 小王 |\n| 文档 | 小李 |"
+  );
   assert!(read_text(&dir.path("会议纪要.pdf")).unwrap().content.contains("会议纪要"));
 
   // 第一次新建，第二次打开已有的工作簿修改
@@ -203,7 +207,7 @@ fn office_examples_work_with_microsoft_office() {
   assert!(text.contains("【第 2 页】\n主要成果\n销售额增长 20%\n新增客户 120 家\n推出 3 款新产品"), "{text}");
   // 循环生成的要点页
   assert!(text.contains("【第 3 页】\n明年计划\n开拓海外市场\n上线会员体系"), "{text}");
-  assert!(text.contains("【第 4 页】\n季度数据\n季度\n销售额\n一季度\n120 万"), "{text}");
+  assert!(text.contains("【第 4 页】\n季度数据\n\n| 季度 | 销售额 |\n| --- | --- |\n| 一季度 | 120 万 |\n| 二季度 | 150 万 |"), "{text}");
   // 空白页上添加的文本框
   assert!(text.contains("【第 5 页】\n谢谢观看"), "{text}");
   assert!(result.stdout.contains("共 5 页"), "{}", result.stdout);
@@ -224,7 +228,7 @@ fn python_example_works_with_python_libraries() {
   run_example(&roots, &dir.0, "python", "python", PYTHON_EXAMPLE);
 
   let text = read_text(&dir.path("会议纪要.docx")).unwrap().content;
-  assert_eq!(text, "会议纪要\n时间：2026 年 11 月 24 日\n确定发布日期\n任务\n负责人\n测试\n小王\n文档\n小李");
+  assert_eq!(text, "# 会议纪要\n时间：2026 年 11 月 24 日\n- 确定发布日期\n\n| 任务 | 负责人 |\n| --- | --- |\n| 测试 | 小王 |\n| 文档 | 小李 |");
   let text = read_text(&dir.path("销售.xlsx")).unwrap().content;
   // openpyxl 不计算公式，合计没有计算结果
   assert!(text.contains("1 | 月份 | 金额\n2 | 一月 | 1200\n3 | 二月 | 1500.5\n4 | 三月 | 980\n5 | 合计 | "), "{text}");

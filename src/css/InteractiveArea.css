@@ -1141,24 +1141,29 @@ svg {
 }
 
 /* 输入框上方待发送的图片 */
-/* 音频附件：文件名与时长 */
+/* 音频与文档附件：文件名与时长（大小） */
 .pending-audios,
-.message-audios {
+.message-audios,
+.pending-documents,
+.message-documents {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.pending-audios {
+.pending-audios,
+.pending-documents {
   margin-bottom: 8px;
 }
 
-.message-audios {
+.message-audios,
+.message-documents {
   justify-content: flex-end;
   margin-bottom: 6px;
 }
 
-.audio-chip {
+.audio-chip,
+.file-chip {
   display: inline-flex;
   gap: 6px;
   align-items: center;
@@ -1171,29 +1176,34 @@ svg {
   border-radius: 999px;
 }
 
-.audio-chip.loading {
+.audio-chip.loading,
+.file-chip.loading {
   color: rgb(255 255 255 / 45%);
 }
 
-.audio-chip svg {
+.audio-chip svg,
+.file-chip svg {
   flex-shrink: 0;
   width: 14px;
   height: 14px;
 }
 
-.audio-name {
+.audio-name,
+.file-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.audio-duration {
+.audio-duration,
+.file-size {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
   color: rgb(255 255 255 / 45%);
 }
 
-.audio-remove {
+.audio-remove,
+.file-remove {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1208,12 +1218,14 @@ svg {
   border-radius: 50%;
 }
 
-.audio-remove:hover {
+.audio-remove:hover,
+.file-remove:hover {
   color: #fff;
   background: rgb(255 255 255 / 12%);
 }
 
-.audio-remove svg {
+.audio-remove svg,
+.file-remove svg {
   width: 10px;
   height: 10px;
 }

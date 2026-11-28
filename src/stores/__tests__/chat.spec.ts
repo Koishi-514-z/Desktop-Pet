@@ -229,3 +229,20 @@ describe('音频附件', () => {
   })
 })
 
+describe('文档附件', () => {
+  it('附带的文档保存在用户消息上，发给模型时附上文件标记（文件名与大小）；只发文档时也能发送', async () => {
+    const model = streamingModel([{ deltas: ['好的'] }])
+    mocks.model = model
+    const chat = useChatStore()
+    vi.spyOn(useMemoryStore(), 'recall').mockResolvedValue(null)
+
+    const documents = [{ id: 'doc_1', name: '合同.docx', size: 2048 }]
+    await chat.sendMessage('', { documents })
+    const user = chat.currentSession!.messages.find((message) => message.role === 'user')!
+    expect(user.documents).toEqual(documents)
+    expect(chat.currentSession!.title).toBe('合同.docx')
+
+    const sent = mocks.runAgent.mock.calls[0]![0].messages.at(-1)!
+    expect(sent.content).toBe('（发送了 1 个文件）\n\n【附文件：doc_1｜合同.docx｜2.0 KB】')
+  })
+})

@@ -115,6 +115,7 @@ dependencies = [
  "log",
  "lopdf",
  "pdf-extract",
+ "quick-xml 0.42.0",
  "rusqlite",
  "serde",
  "serde_json",

@@ -3,6 +3,7 @@
 //! 授权的文件夹由前端（设置中）传入，每次操作都会在 Rust 端重新规范化并校验路径，
 //! 不提供删除文件与打开（运行）文件的能力。
 
+mod office_text;
 mod ops;
 mod pdf;
 mod read;
@@ -20,6 +21,8 @@ mod office_tests;
 mod script_tests;
 #[cfg(test)]
 mod pdf_tests;
+#[cfg(test)]
+mod office_text_tests;
 
 use std::path::PathBuf;
 
@@ -35,6 +38,8 @@ use write::{TargetChange, TargetInfo, TargetSnapshot, WritePreview, WriteRequest
 
 /// 读取文件内容时默认最多返回的字数
 const DEFAULT_MAX_CHARS: usize = 24_000;
+/// 拖进对话框的文件（直接发送内容）的最大大小
+const MAX_EXTRACT_BYTES: usize = 60 * 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +56,7 @@ pub struct ListResult {
   total: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadResult {
   path: String,
@@ -118,22 +123,42 @@ pub async fn files_read(roots: Vec<String>, path: String, max_chars: Option<usiz
     }
     let size = path.metadata().map(|m| m.len()).unwrap_or(0);
     let text = read::read_text(&path)?;
-    let total_chars = text.content.chars().count();
-    let max_chars = max_chars.unwrap_or(DEFAULT_MAX_CHARS);
-    let truncated = total_chars > max_chars;
-    let content = if truncated { text.content.chars().take(max_chars).collect() } else { text.content };
-    Ok(ReadResult {
-      name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-      path: path.display().to_string(),
-      size,
-      content,
-      truncated,
-      total_chars,
-      format: text.format,
-      encoding: text.encoding,
-    })
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(read_result(path.display().to_string(), name, size, text, max_chars.unwrap_or(DEFAULT_MAX_CHARS)))
   })
   .await
+}
+
+fn read_result(path: String, name: String, size: u64, text: read::FileText, max_chars: usize) -> ReadResult {
+  let total_chars = text.content.chars().count();
+  let truncated = total_chars > max_chars;
+  let content = if truncated { text.content.chars().take(max_chars).collect() } else { text.content };
+  ReadResult { name, path, size, content, truncated, total_chars, format: text.format, encoding: text.encoding }
+}
+
+/// 读取拖进对话框的文件的文字（前端拿不到文件在电脑上的位置，只能把内容发过来）。
+/// 请求体为文件内容的原始字节；文件名（URL 编码）与最多返回的字数放在请求头 x-file-name、x-max-chars 中
+#[tauri::command]
+pub async fn files_extract_bytes(request: tauri::ipc::Request<'_>) -> Result<ReadResult, String> {
+  let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+    return Err("需要发送文件的内容".into());
+  };
+  let header = |name: &str| request.headers().get(name).and_then(|value| value.to_str().ok()).map(str::to_string);
+  let (name, max_chars) = (header("x-file-name"), header("x-max-chars"));
+  let bytes = bytes.clone();
+  blocking(move || extract_bytes(name.as_deref(), max_chars.as_deref(), &bytes)).await
+}
+
+/// files_extract_bytes 的处理：name 为 URL 编码的文件名（只保留文件名，用来判断文件类型），max_chars 为最多返回的字数
+fn extract_bytes(name: Option<&str>, max_chars: Option<&str>, bytes: &[u8]) -> Result<ReadResult, String> {
+  let name = name.map(pdf::percent_decode).ok_or("缺少文件名")?;
+  let name = name.rsplit(['/', '\\']).next().unwrap_or_default().to_string();
+  let max_chars = max_chars.and_then(|value| value.parse().ok()).unwrap_or(DEFAULT_MAX_CHARS);
+  if bytes.len() > MAX_EXTRACT_BYTES {
+    return Err(format!("文件太大（超过 {} MB）", MAX_EXTRACT_BYTES >> 20));
+  }
+  let text = read::read_bytes(&name, bytes)?;
+  Ok(read_result(String::new(), name, bytes.len() as u64, text, max_chars))
 }
 
 /// 「音频理解」读取授权文件夹中的音频文件：原样返回字节（前端收到 ArrayBuffer），最大 max_bytes

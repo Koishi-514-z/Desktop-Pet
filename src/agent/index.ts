@@ -7,6 +7,7 @@ import { IMAGE_SKILL_ID, parseImageIds } from '@/agent/skills/image'
 import { QUOTE_MARKER, SELECTION_SKILL_ID } from '@/agent/skills/selection'
 import { errorMessage, messageText } from '@/agent/utils'
 import { AUDIO_SKILL_ID, parseAudioIds } from '@/utils/audios'
+import { OFFICE_SKILL_ID, parseDocumentIds } from '@/utils/documents'
 
 export type * from '@/agent/types'
 export { getSkillContext } from '@/agent/context'
@@ -77,7 +78,7 @@ export async function runProactiveAgent(options: AgentRunOptions): Promise<Agent
  * 开始执行时预先加载的技能，省去加载技能的调用，也避免多步骤的请求只加载了第一步的技能：
  * - 意图识别选出的技能（只保留可用的）；
  * - 从消息中明确的标记就能确定的技能：附带了图片时需要图片理解才能看到图片的内容，附带了音频时需要音频理解，
- *   附带了划词内容时需要文字处理读取全文
+ *   附带了文档时需要 Office 文档技能提取内容，附带了划词内容时需要文字处理读取全文
  */
 export function preloadedSkills(options: Pick<AgentRunOptions, 'messages' | 'skills'>, decision?: Pick<RouteDecision, 'skills'>): Skill[] {
   const needed = new Set<string>(decision?.skills ?? [])
@@ -86,6 +87,7 @@ export function preloadedSkills(options: Pick<AgentRunOptions, 'messages' | 'ski
     const text = messageText(latest)
     if (parseImageIds(text).length) needed.add(IMAGE_SKILL_ID)
     if (parseAudioIds(text).length) needed.add(AUDIO_SKILL_ID)
+    if (parseDocumentIds(text).length) needed.add(OFFICE_SKILL_ID)
     if (text.includes(QUOTE_MARKER)) needed.add(SELECTION_SKILL_ID)
   }
   return options.skills.filter((skill) => needed.has(skill.id))

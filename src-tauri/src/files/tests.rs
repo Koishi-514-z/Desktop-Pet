@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::ops::{apply_moves, create_folder, list, plan_organize, search, FileMove, OrganizeBy, SearchRequest};
-use super::read::{decode, extract_xml_text, read_text};
+use super::read::{decode, read_text};
 use super::roots::{validate_root, Roots};
 use super::write::{self, TextEdit, WriteRequest};
 
@@ -175,12 +175,13 @@ fn reads_office_documents() {
   )]);
   let text = read_text(&docx).unwrap();
   assert_eq!(text.format, "docx");
-  assert_eq!(text.content, "第一段 A & B\n第二段");
+  assert_eq!(text.content, "第一段\t A & B\n第二段");
 
   let pptx = dir.path("汇报.pptx");
+  let slide = |text: &str| format!("<p:sld><p:cSld><p:spTree><p:sp><p:txBody>{text}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>");
   write_zip(&pptx, &[
-    ("ppt/slides/slide2.xml", "<p:sld><a:p><a:r><a:t>总结</a:t></a:r></a:p></p:sld>"),
-    ("ppt/slides/slide1.xml", "<p:sld><a:p><a:r><a:t>标题</a:t></a:r></a:p><a:p><a:r><a:t>副标题</a:t></a:r></a:p></p:sld>"),
+    ("ppt/slides/slide2.xml", &slide("<a:p><a:r><a:t>总结</a:t></a:r></a:p>")),
+    ("ppt/slides/slide1.xml", &slide("<a:p><a:r><a:t>标题</a:t></a:r></a:p><a:p><a:r><a:t>副标题</a:t></a:r></a:p>")),
   ]);
   assert_eq!(read_text(&pptx).unwrap().content, "【第 1 页】\n标题\n副标题\n\n【第 2 页】\n总结");
 
@@ -188,13 +189,6 @@ fn reads_office_documents() {
   assert!(read_text(&pdf).is_err());
   let binary = dir.write("data.bin", &[0, 1, 2, 3]);
   assert!(read_text(&binary).is_err());
-}
-
-#[test]
-fn extracts_xml_text() {
-  assert_eq!(extract_xml_text("<a:p><a:t>1 &lt; 2</a:t></a:p><a:p><a:t/></a:p>", "a:t", "a:p"), "1 < 2");
-  // 不会把 <w:tbl>、<w:tab/> 当成 <w:t>
-  assert_eq!(extract_xml_text("<w:tbl><w:p><w:t>格</w:t><w:tab/></w:p></w:tbl>", "w:t", "w:p"), "格");
 }
 
 // ===== 整理与移动 =====

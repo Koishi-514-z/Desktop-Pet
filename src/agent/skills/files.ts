@@ -221,7 +221,7 @@ export const filesSkill: Skill = {
     return `- 只能访问下面这些授权的文件夹及其子文件夹：
 ${roots}
 - 路径使用完整路径，也可以用授权文件夹的名称开头，如「下载/发票」。用户说「桌面」「下载」等时对应上面的文件夹。
-- 查找文件用 search_files（可按文件名关键词、类型、修改时间、文本内容查找，结果按修改时间从新到旧）；查看文件夹用 list_folder；阅读文件内容用 read_file（支持文本、代码、Word、PowerPoint、PDF、Excel；扫描件 PDF 没有文字，读不出内容；旧版 .doc / .ppt 不支持）。Excel 读出来是表格：第一行是列字母，每行开头是行号，可以据此定位单元格（如 B3）。
+- 查找文件用 search_files（可按文件名关键词、类型、修改时间、文本内容查找，结果按修改时间从新到旧）；查看文件夹用 list_folder；阅读文件内容用 read_file（支持文本、代码、Word、PowerPoint、PDF、Excel；Word 的标题以 # 开头、表格写成 Markdown 表格，并附上页眉页脚、脚注与批注，PowerPoint 附上每页的演讲者备注；扫描件 PDF 没有文字，读不出内容；旧版 .doc / .ppt 不支持）。Excel 读出来是表格：第一行是列字母，每行开头是行号，可以据此定位单元格（如 B3）。
 - 想了解一个文件夹或项目的整体情况时，先用 folder_tree 查看多层的目录结构（会跳过 node_modules 等依赖文件夹），再挑关键的文件阅读（如 README、package.json、入口文件），不要逐个阅读所有文件。
 - read_file 一次默认读取前 ${READ_DEFAULT_CHARS} 字。长文件没读完时结果中会说明，需要后面的内容时用 offset 接着读取；只想了解大概时可以把 maxChars 设小一些（如 5000）。
 - 整理文件夹用 organize_folder（只整理文件夹里直接包含的文件，按类型、月份或扩展名分到子文件夹）；移动或重命名用 move_files；新建文件夹用 create_folder。

@@ -27,6 +27,8 @@ import { useSceneStore } from '@/stores/scene'
 import { useMemoryStore } from '@/stores/memory'
 import { addHook } from '@/utils/hooks'
 import { audioMarkers, deleteAudios, MAX_AUDIOS } from '@/utils/audios'
+import type { DocumentRef } from '@/utils/documents'
+import { deleteDocuments, documentMarkers, MAX_DOCUMENTS } from '@/utils/documents'
 import { deleteImages } from '@/utils/images'
 import { resolveLanguageModel } from '@/utils/llm'
 import { toMemoryDialog } from '@/memory/writer'
@@ -68,6 +70,8 @@ export interface ChatMessage {
   images?: ImageRef[]
   // user 消息：附带的音频文件（数据保存在 IndexedDB 中，见 utils/audios.ts）
   audios?: AudioRef[]
+  // user 消息：附带的文档（Word、PowerPoint、Excel、PDF，数据保存在 IndexedDB 中，见 utils/documents.ts）
+  documents?: DocumentRef[]
 }
 
 export interface SendMessageOptions {
@@ -77,6 +81,8 @@ export interface SendMessageOptions {
   images?: ImageRef[]
   // 附带的音频，需先通过 addAudio 保存
   audios?: AudioRef[]
+  // 附带的文档，需先通过 addDocument 保存
+  documents?: DocumentRef[]
   // 意图明确时直接调用指定工具，跳过意图识别（如划词工具栏上的按钮）
   directCall?: DirectToolCall
 }
@@ -141,8 +147,13 @@ function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: bool
     if (message.role === 'user') {
       const images = message.images ?? []
       const audios = message.audios ?? []
+      const documents = message.documents ?? []
       let content = message.content
-        || [images.length && `（发送了 ${images.length} 张图片）`, audios.length && `（发送了 ${audios.length} 个音频）`].filter(Boolean).join('')
+        || [
+          images.length && `（发送了 ${images.length} 张图片）`,
+          audios.length && `（发送了 ${audios.length} 个音频）`,
+          documents.length && `（发送了 ${documents.length} 个文件）`,
+        ].filter(Boolean).join('')
       if (message.quote) {
         content = attachQuote(content, index === latestQuoteIndex ? message.quote : truncate(message.quote, HISTORY_ATTACHMENT_LENGTH))
       }
@@ -151,6 +162,9 @@ function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: bool
       }
       if (audios.length) {
         content = `${content}\n\n${audioMarkers(audios)}`
+      }
+      if (documents.length) {
+        content = `${content}\n\n${documentMarkers(documents)}`
       }
       return [{ role: 'user', content }]
     }
@@ -294,12 +308,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // 删除消息中引用的图片与音频数据
+  // 删除消息中引用的图片、音频与文档数据
   function removeImagesOf(messages: ChatMessage[]) {
     const ids = messages.flatMap((message) => message.images?.map((image) => image.id) ?? [])
     deleteImages(ids).catch((error) => console.warn('[chat] 删除图片失败：', error))
     const audioIds = messages.flatMap((message) => message.audios?.map((audio) => audio.id) ?? [])
     deleteAudios(audioIds).catch((error) => console.warn('[chat] 删除音频失败：', error))
+    const documentIds = messages.flatMap((message) => message.documents?.map((document) => document.id) ?? [])
+    deleteDocuments(documentIds).catch((error) => console.warn('[chat] 删除文档失败：', error))
   }
 
   // 重命名会话
@@ -416,15 +432,18 @@ export const useChatStore = defineStore('chat', () => {
       const quote = turn.quote?.trim()
       const images = turn.images?.slice(0, MAX_IMAGES)
       const audios = turn.audios?.slice(0, MAX_AUDIOS)
+      const documents = turn.documents?.slice(0, MAX_DOCUMENTS)
       session.messages.push({
         role: 'user',
         content: turn.content,
         ...(quote ? { quote: quote.slice(0, MAX_TEXT_LENGTH) } : {}),
         ...(images?.length ? { images } : {}),
         ...(audios?.length ? { audios } : {}),
+        ...(documents?.length ? { documents } : {}),
       })
       if (session.title === '新对话' && !session.messages.some((m) => m.role === 'assistant')) {
-        session.title = (turn.content || (images?.length ? '图片' : audios?.length ? audios[0]!.name : '新对话')).slice(0, SESSION_TITLE_LENGTH)
+        const attachmentTitle = images?.length ? '图片' : audios?.length ? audios[0]!.name : documents?.length ? documents[0]!.name : '新对话'
+        session.title = (turn.content || attachmentTitle).slice(0, SESSION_TITLE_LENGTH)
       }
     }
     else {

@@ -25,7 +25,8 @@
         "maximizable": false,
         "minimizable": false,
         "fullscreen": false,
-        "visible": false
+        "visible": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

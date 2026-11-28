@@ -43,6 +43,8 @@ pdf-extract = "0.12"
 calamine = { version = "0.38", features = ["dates"] }
 # PDF：按页重新组合（合并、拆分、旋转）。pdf-extract 已经依赖同一版本，不启用默认特性以免多编译
 lopdf = { version = "0.42", default-features = false }
+# Word / PowerPoint：解析 XML（calamine 已经依赖同一版本与特性）
+quick-xml = { version = "0.42", features = ["encoding"] }
 # 把表格中的日期格式化为文字（calamine 的 dates 特性使用 chrono，格式化需要 alloc 特性）
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 # 系统诊断：CPU、内存、进程、网络、磁盘的状态

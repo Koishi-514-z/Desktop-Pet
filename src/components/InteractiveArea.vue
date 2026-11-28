@@ -20,6 +20,8 @@ import { DEFAULT_CHAT_PANEL_SIZE, MIN_CHAT_PANEL_SIZE, useSceneStore } from '@/s
 import { useTranscriptionStore } from '@/stores/transcription'
 import { getInitial, hashHue } from '@/utils/avatar'
 import { formatDuration, isAudioFile, MAX_AUDIOS } from '@/utils/audios'
+import { DOCUMENT_EXTENSIONS, isDocumentFile, MAX_DOCUMENTS } from '@/utils/documents'
+import { formatSize } from '@/files/api'
 import { imageSrc } from '@/utils/images'
 import type { PanelRect } from '@/utils/panel-resize'
 import { FLOATING_BUTTONS_GAP, fitPanelSize, keepPanelInView, PANEL_MARGIN, viewportSize } from '@/utils/panel-resize'
@@ -272,17 +274,50 @@ async function addAudios(files: File[]) {
   }
 }
 
-/** 把文件分成图片与音频分别添加；返回是否有可以添加的文件 */
+// ===== 添加文档：Word、PowerPoint、Excel、PDF（交给「Office 文档」技能提取内容）=====
+
+const addingDocument = ref(false)
+// 选择文件时可以选的类型
+const FILE_ACCEPT = ['image/*', 'audio/*', '.m4a', '.amr', '.opus', ...DOCUMENT_EXTENSIONS.map((extension) => `.${extension}`)].join(',')
+
+async function addDocuments(files: File[]) {
+  if (files.length === 0) return
+  errorMessage.value = ''
+  addingDocument.value = true
+  try {
+    for (const file of files) {
+      if (captureStore.pendingDocuments.length >= MAX_DOCUMENTS) {
+        errorMessage.value = `一次最多发送 ${MAX_DOCUMENTS} 个文件`
+        break
+      }
+      await captureStore.addPendingDocument(file)
+    }
+  }
+  catch (error) {
+    errorMessage.value = `添加文件失败：${error instanceof Error ? error.message : String(error)}`
+  }
+  finally {
+    addingDocument.value = false
+  }
+}
+
+/** 把文件分成图片、音频与文档分别添加；返回是否有可以添加的文件 */
 function addFiles(items: Iterable<File> | null | undefined): boolean {
   const files = [...(items ?? [])]
   const images = imageFilesOf(files)
   const audios = files.filter((file) => !images.includes(file) && isAudioFile(file))
+  const documents = files.filter((file) => !images.includes(file) && !audios.includes(file) && isDocumentFile(file))
   addImages(images)
   addAudios(audios)
-  return images.length + audios.length > 0
+  addDocuments(documents)
+  const added = images.length + audios.length + documents.length
+  if (added === 0 && files.length > 0) {
+    errorMessage.value = '只能添加图片、音频，以及 Word、PowerPoint、Excel、PDF 文件'
+  }
+  return added > 0
 }
 
-// 粘贴图片（如 Win + Shift + S 截图后直接粘贴）或音频文件；只有文字时交给输入框默认处理
+// 粘贴图片（如 Win + Shift + S 截图后直接粘贴）、音频或文档；只有文字时交给输入框默认处理
 function handlePaste(event: ClipboardEvent) {
   if (addFiles(event.clipboardData?.files)) event.preventDefault()
 }
@@ -360,8 +395,9 @@ watch(inputText, () => nextTick(resizeInput))
 const canSend = computed(() => {
   const question = chatStore.pendingQuestion?.question
   if (question) return (!question.options?.length || question.allowCustom !== false) && !!inputText.value.trim()
-  return (!!inputText.value.trim() || captureStore.pendingImages.length > 0 || captureStore.pendingAudios.length > 0)
-    && !chatStore.isStreaming && !addingImage.value && !addingAudio.value
+  const hasAttachment = captureStore.pendingImages.length > 0 || captureStore.pendingAudios.length > 0 || captureStore.pendingDocuments.length > 0
+  return (!!inputText.value.trim() || hasAttachment)
+    && !chatStore.isStreaming && !addingImage.value && !addingAudio.value && !addingDocument.value
 })
 
 // 桌宠正在回复：正在生成回复，或者语音还没播完
@@ -386,10 +422,15 @@ async function send(content: string) {
     return
   }
 
-  const { quote, images, audios } = captureStore.takePending()
+  const { quote, images, audios, documents } = captureStore.takePending()
   inputText.value = ''
   errorMessage.value = ''
-  await chatStore.sendMessage(content, { ...(quote ? { quote } : {}), ...(images.length ? { images } : {}), ...(audios.length ? { audios } : {}) })
+  await chatStore.sendMessage(content, {
+    ...(quote ? { quote } : {}),
+    ...(images.length ? { images } : {}),
+    ...(audios.length ? { audios } : {}),
+    ...(documents.length ? { documents } : {}),
+  })
 }
 
 // 发送当前输入框中的内容
@@ -437,7 +478,7 @@ const microphoneTitle = computed(() => {
 
 // 输入框下方的提示：语音输入打开时显示正在做什么
 const inputHint = computed(() => {
-  if (!microphoneStore.isListening) return petBusy.value ? '按 Esc 可以打断' : 'Enter 发送 · Shift + Enter 换行 · 可以粘贴或拖入图片'
+  if (!microphoneStore.isListening) return petBusy.value ? '按 Esc 可以打断' : 'Enter 发送 · Shift + Enter 换行 · 可以粘贴或拖入图片、音频和文档'
   if (microphoneStore.userSpeaking) return '正在听你说…'
   if (transcriptionStore.isTranscribing) return '正在识别…'
   if (audioStore.isPlaying || audioStore.speechPending) return `等 ${personaName.value} 说完再听，按 Esc 可以打断`
@@ -600,6 +641,13 @@ onMounted(() => {
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                       <span class="audio-name">{{ audio.name }}</span>
                       <span v-if="audio.duration" class="audio-duration">{{ formatDuration(audio.duration) }}</span>
+                    </span>
+                  </div>
+                  <div v-if="message.documents?.length" class="message-documents">
+                    <span v-for="document in message.documents" :key="document.id" class="file-chip" :title="document.name">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></svg>
+                      <span class="file-name">{{ document.name }}</span>
+                      <span class="file-size">{{ formatSize(document.size) }}</span>
                     </span>
                   </div>
                   <AgentTrace
@@ -822,12 +870,23 @@ onMounted(() => {
                 </span>
                 <span v-if="addingAudio" class="audio-chip loading">正在添加音频…</span>
               </div>
+              <div v-if="captureStore.pendingDocuments.length || addingDocument" class="pending-documents">
+                <span v-for="document in captureStore.pendingDocuments" :key="document.id" class="file-chip" :title="document.name">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></svg>
+                  <span class="file-name">{{ document.name }}</span>
+                  <span class="file-size">{{ formatSize(document.size) }}</span>
+                  <button type="button" class="file-remove" title="移除文件" @click="captureStore.removePendingDocument(document.id)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                  </button>
+                </span>
+                <span v-if="addingDocument" class="file-chip loading">正在添加文件…</span>
+              </div>
               <div class="composer">
                 <div class="composer-tools">
                   <button
                     type="button"
                     class="tool-button"
-                    :title="canAddImage ? '添加图片或音频（也可以直接粘贴或拖入）' : `一次最多发送 ${MAX_IMAGES} 张图片`"
+                    :title="canAddImage ? '添加图片、音频或文档（也可以直接粘贴或拖入）' : `一次最多发送 ${MAX_IMAGES} 张图片`"
                     :disabled="!canAddImage"
                     @click="fileInputRef?.click()"
                   >
@@ -864,7 +923,7 @@ onMounted(() => {
                       <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
                     </svg>
                   </button>
-                  <input ref="fileInputRef" type="file" accept="image/*,audio/*,.m4a,.amr,.opus" multiple hidden @change="handleFileChange" />
+                  <input ref="fileInputRef" type="file" :accept="FILE_ACCEPT" multiple hidden @change="handleFileChange" />
                 </div>
                 <textarea
                   ref="inputRef"
@@ -897,7 +956,7 @@ onMounted(() => {
             <circle cx="9" cy="10" r="2" />
             <path d="m21 16-5-5-9 9" />
           </svg>
-          松开以添加图片或音频
+          松开以添加图片、音频或文档
         </div>
 
         <Transition name="fade">

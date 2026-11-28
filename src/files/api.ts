@@ -49,7 +49,7 @@ export interface FileContent {
   content: string
   truncated: boolean
   totalChars: number
-  format: 'text' | 'docx' | 'pptx'
+  format: 'text' | 'docx' | 'pptx' | 'pdf' | 'spreadsheet'
   encoding: string | null
 }
 
@@ -135,12 +135,23 @@ export function readFile(roots: string[], path: string, maxChars?: number): Prom
   return call('files_read', { roots, path, maxChars: maxChars ?? null })
 }
 
-/** 生成整理计划（不会移动文件） */
 /** 读取授权文件夹中的文件的原始字节（如音频），超过 maxBytes 时报错 */
 export async function readFileBytes(roots: string[], path: string, maxBytes: number): Promise<Uint8Array> {
   return new Uint8Array(await call<ArrayBuffer>('files_read_bytes', { roots, path, maxBytes }))
 }
 
+/**
+ * 读取拖进对话框的文件的文字（不知道它在电脑上的位置，只能把内容发给 Rust 端）。
+ * 内容以原始字节发送，不经过 JSON；name 用来判断文件类型。返回结果中的 path 为空
+ */
+export function extractFileText(name: string, data: ArrayBuffer, maxChars?: number): Promise<FileContent> {
+  if (!isTauri) return Promise.reject(new Error('提取文档内容需要在桌面应用中使用'))
+  return invoke<FileContent>('files_extract_bytes', new Uint8Array(data), {
+    headers: { 'x-file-name': encodeURIComponent(name), ...(maxChars ? { 'x-max-chars': String(maxChars) } : {}) },
+  })
+}
+
+/** 生成整理计划（不会移动文件） */
 export function planOrganize(roots: string[], folder: string, by: OrganizeBy): Promise<FileMove[]> {
   return call('files_plan_organize', { roots, folder, by, utcOffsetMinutes: -new Date().getTimezoneOffset() })
 }

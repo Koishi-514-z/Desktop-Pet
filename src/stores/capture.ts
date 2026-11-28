@@ -10,6 +10,8 @@ import { isTauri, useDesktopCursor } from '@/composables/desktop'
 import { useAgentStore } from '@/stores/agent'
 import type { AudioRef } from '@/utils/audios'
 import { addAudio, deleteAudios, MAX_AUDIOS } from '@/utils/audios'
+import type { DocumentRef } from '@/utils/documents'
+import { addDocument, deleteDocuments, MAX_DOCUMENTS } from '@/utils/documents'
 import { addImage, deleteImages } from '@/utils/images'
 
 // 划词：获取选中的文字（或图片）；截图：框选屏幕区域
@@ -64,6 +66,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const pendingQuote = ref('')
   const pendingImages = ref<ImageRef[]>([])
   const pendingAudios = ref<AudioRef[]>([])
+  const pendingDocuments = ref<DocumentRef[]>([])
 
   // 对应的技能可用时才注册快捷键
   const active = computed<Record<CaptureKind, boolean>>(() => {
@@ -132,12 +135,27 @@ export const useCaptureStore = defineStore('capture', () => {
     deleteAudios([id]).catch(() => {})
   }
 
+  // ===== 待发送的文档（Word、PowerPoint、Excel、PDF）=====
+
+  async function addPendingDocument(file: File) {
+    if (pendingDocuments.value.length >= MAX_DOCUMENTS) throw new Error(`一次最多发送 ${MAX_DOCUMENTS} 个文件`)
+    const document = await addDocument(file)
+    pendingDocuments.value.push(document)
+    return document
+  }
+
+  function removePendingDocument(id: string) {
+    pendingDocuments.value = pendingDocuments.value.filter((document) => document.id !== id)
+    deleteDocuments([id]).catch(() => {})
+  }
+
   // 取出待发送的附件（发送消息时调用）
   function takePending() {
-    const attachments = { quote: pendingQuote.value, images: pendingImages.value, audios: pendingAudios.value }
+    const attachments = { quote: pendingQuote.value, images: pendingImages.value, audios: pendingAudios.value, documents: pendingDocuments.value }
     pendingQuote.value = ''
     pendingImages.value = []
     pendingAudios.value = []
+    pendingDocuments.value = []
     return attachments
   }
 
@@ -170,6 +188,7 @@ export const useCaptureStore = defineStore('capture', () => {
     pendingQuote,
     pendingImages,
     pendingAudios,
+    pendingDocuments,
     active,
     init,
     showToolbar,
@@ -178,6 +197,8 @@ export const useCaptureStore = defineStore('capture', () => {
     removePendingImage,
     addPendingAudio,
     removePendingAudio,
+    addPendingDocument,
+    removePendingDocument,
     takePending,
     takeScreenshot,
   }

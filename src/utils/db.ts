@@ -3,14 +3,16 @@
  * - images：对话中的图片
  * - kv：以 JSON 字符串整体保存的较大数据（如对话会话），键为数据的名称
  * - audios：对话中的音频文件（连同转录结果）
+ * - documents：对话中的文档（Word、PowerPoint、Excel、PDF，连同提取出的文字）
  */
 
 const DB_NAME = 'desktop-pet'
-// 版本 2 新增了 kv，版本 3 新增了 audios
-const DB_VERSION = 3
+// 版本 2 新增了 kv，版本 3 新增了 audios，版本 4 新增了 documents
+const DB_VERSION = 4
 export const IMAGES_STORE = 'images'
 export const KV_STORE = 'kv'
 export const AUDIOS_STORE = 'audios'
+export const DOCUMENTS_STORE = 'documents'
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -22,6 +24,7 @@ export function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(IMAGES_STORE)) db.createObjectStore(IMAGES_STORE, { keyPath: 'id' })
       if (!db.objectStoreNames.contains(KV_STORE)) db.createObjectStore(KV_STORE)
       if (!db.objectStoreNames.contains(AUDIOS_STORE)) db.createObjectStore(AUDIOS_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(DOCUMENTS_STORE)) db.createObjectStore(DOCUMENTS_STORE, { keyPath: 'id' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => {

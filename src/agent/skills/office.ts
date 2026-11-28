@@ -1,5 +1,7 @@
+import type { ToolExecutionOptions } from 'ai'
 import type { PdfOutputPlan, ScriptResult, TargetChange, TargetInfo } from '@/files/api'
 import type { Skill, ToolDisplay } from '@/agent/types'
+import type { ExtractedText } from '@/utils/documents'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { getSkillContext } from '@/agent/context'
@@ -7,13 +9,14 @@ import { FILES_WRITE_PERMISSION, filesSkill } from '@/agent/skills/files'
 import { createRunId, describeResult, outputForModel, outputSections, runWithCancel, SCRIPT_RUN_PERMISSION } from '@/agent/skills/scripts'
 import * as files from '@/files/api'
 import { useToolsStore } from '@/stores/tools'
+import { findLatestDocumentIds, loadDocument, OFFICE_SKILL_ID, saveExtracted } from '@/utils/documents'
 // 示例代码：与 Rust 端测试中用真实的 Office、Python 库运行验证的是同一份文件
 import excelExample from './office-examples/excel.ps1?raw'
 import powerpointExample from './office-examples/powerpoint.ps1?raw'
 import pythonExample from './office-examples/python.py?raw'
 import wordExample from './office-examples/word.ps1?raw'
 
-export const OFFICE_SKILL_ID = 'office'
+export { OFFICE_SKILL_ID }
 
 // 默认最长运行时间（秒）：启动 Office 比较慢
 const DEFAULT_TIMEOUT = 180
@@ -24,6 +27,10 @@ const READABLE_EXTENSIONS = ['docx', 'pptx', 'xlsx', 'xls', 'xlsb', 'ods', 'pdf'
 // 生成 PDF 的 HTML 的最大长度，以及请求同意时展示的长度
 const MAX_HTML_CHARS = 400_000
 const HTML_PREVIEW_CHARS = 8000
+// 提取文档内容：最多提取的字数、一次返回给 LLM 的字数（更长时用 offset 继续读取）、卡片中最多展示的字数
+const EXTRACT_MAX_CHARS = 300_000
+export const EXTRACT_MODEL_CHARS = 16_000
+const EXTRACT_DISPLAY_CHARS = 100_000
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path
@@ -127,6 +134,38 @@ function readBack(changes: TargetChange[]): Promise<FileCheck[]> {
   }))
 }
 
+/** 要提取内容的文档：对话中发送的文件，或授权文件夹中的文件 */
+interface ExtractSource {
+  name: string
+  /** 授权文件夹中的文件的路径；对话中发送的文件没有路径 */
+  path?: string
+  extracted: ExtractedText
+}
+
+/**
+ * 提取文档的内容。对话中发送的文件：提取过的直接使用，否则把文件内容发给 Rust 端提取并保存结果；
+ * 授权文件夹中的文件：每次重新读取（文件可能被改过）
+ */
+async function extractSource(options: ToolExecutionOptions, input: { documentId?: string, path?: string }): Promise<ExtractSource> {
+  const context = getSkillContext(options)
+  if (input.path) {
+    const store = useToolsStore()
+    context.setStatus?.('正在提取文档内容…')
+    const file = await files.readFile(store.rootPaths, store.resolvePath(input.path), EXTRACT_MAX_CHARS)
+    return { name: file.name, path: file.path, extracted: { content: file.content, format: file.format, totalChars: file.totalChars } }
+  }
+  const id = input.documentId || findLatestDocumentIds(options.messages)[0]
+  if (!id) throw new Error('对话中还没有文档：请把文件拖进对话框（或点「添加附件」），也可以告诉我它在授权文件夹中的路径')
+  const document = await loadDocument(id)
+  if (!document) throw new Error(`找不到文件 ${id}，它可能已经被删除`)
+  if (document.extracted) return { name: document.name, extracted: document.extracted }
+  context.setStatus?.('正在提取文档内容…')
+  const file = await files.extractFileText(document.name, await document.data.arrayBuffer(), EXTRACT_MAX_CHARS)
+  const extracted: ExtractedText = { content: file.content, format: file.format, totalChars: file.totalChars }
+  await saveExtracted(id, extracted)
+  return { name: document.name, extracted }
+}
+
 /** 技能说明中的「本机可用的方式」 */
 function describeSupport(): string {
   const support = useToolsStore().officeSupport
@@ -168,14 +207,23 @@ const reasonParam = z.string().min(1).describe('向用户说明要做什么，�
 export const officeSkill: Skill = {
   id: OFFICE_SKILL_ID,
   name: 'Office 文档',
-  description: '新建或修改 Word 文档、Excel 表格、PowerPoint 演示文稿，或把它们导出为 PDF：写报告与纪要、做表格与图表、做幻灯片，设置字体、颜色、对齐、列宽、数字格式、页码等格式（通过本机的 Microsoft Office 或 Python 库）。也可以直接生成 PDF（报告、简历、讲义等），以及合并、拆分 PDF，提取、删除、调整顺序或旋转 PDF 的页面（不需要 Office）。运行前需要用户同意。',
-  examples: ['帮我做一个介绍公司产品的 PPT，存到桌面', '把销售表的表头加粗并加上底色', '根据这些数据在 Excel 里画一个柱状图', '给报告.docx 加上页码', '把这个 Word 文档导出成 PDF', '把这份总结生成一个 PDF', '把这两个 PDF 合并成一个', '把合同.pdf 的第 3 页删掉', '扫描件第 2 页是倒着的，帮我转过来'],
+  description: '提取 Word、PowerPoint、Excel、PDF 文件的完整内容（保留标题、列表、表格的结构，包括页眉页脚、脚注、批注与 PPT 的演讲者备注），处理用户发送的文档（消息中带有【附文件：…】）。新建或修改 Word 文档、Excel 表格、PowerPoint 演示文稿，或把它们导出为 PDF：写报告与纪要、做表格与图表、做幻灯片，设置字体、颜色、对齐、列宽、数字格式、页码等格式（通过本机的 Microsoft Office 或 Python 库）。也可以直接生成 PDF（报告、简历、讲义等），以及合并、拆分 PDF，提取、删除、调整顺序或旋转 PDF 的页面（不需要 Office）。修改文件前需要用户同意。',
+  examples: ['把这个 Word 里的文字提取出来', '这份 PPT 每页的备注写了什么', '帮我做一个介绍公司产品的 PPT，存到桌面', '把销售表的表头加粗并加上底色', '根据这些数据在 Excel 里画一个柱状图', '给报告.docx 加上页码', '把这个 Word 文档导出成 PDF', '把这份总结生成一个 PDF', '把这两个 PDF 合并成一个', '把合同.pdf 的第 3 页删掉', '扫描件第 2 页是倒着的，帮我转过来'],
   instructions: () => {
     const store = useToolsStore()
     const roots = store.fileRoots.length
       ? store.fileRoots.map((root) => `  - ${root.name}：${root.path}`).join('\n')
       : '  （用户还没有授权任何文件夹，请告诉用户在 设置 → Tools 中添加）'
-    return `- 用 run_office_script 运行一段代码来新建或修改 Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）文件，或把它们导出为 PDF。读取文件内容用 read_file（Excel 会显示行号与列字母，PDF 开头会写明共几页），完成后可以用 reveal_file 在文件夹中显示文件。
+    return `# 提取文档内容
+- 用户发送的文件以「【附文件：id｜文件名｜大小】」的形式附在用户消息末尾。用 extract_document 读取文件的内容：处理用户最近发送的文件时省略 documentId，处理更早的文件时填写对应的 id；授权文件夹中的文件填写 path。
+- extract_document 按结构提取：Word 的标题（# 开头）、列表、表格（Markdown 表格）、文本框，页眉页脚、脚注尾注、批注（注明对应的原文）；PowerPoint 每页的文字、表格与演讲者备注；Excel 的每个工作表；PDF 每页的文字。
+- 用户要看文档的内容（「提取文字」「把内容给我」「转成文字」「PPT 的备注写了什么」）时 display 为 true（默认）：完整的内容会以卡片展示给用户，回复时简单说明即可，不要复述全文。只是为了总结、翻译、回答问题而读取时 display 设为 false，再根据内容完成要求（翻译、润色等可以交给文字处理技能，把内容填入它的 text）。
+- 内容较长时一次只返回一部分：结果中有 nextOffset 时，需要后面的内容再用 offset 继续读取。
+- 拖进对话框的文件只能读取内容，不知道它在电脑上的位置：要修改它、转成 PDF 或合并时，请用户告诉你它在授权文件夹中的路径。
+- 扫描件 PDF 与图片中的文字提取不出来（可以截图后交给图片理解）；旧版的 .doc / .ppt 需要先另存为 .docx / .pptx。
+
+# 新建与修改 Office 文件
+- 用 run_office_script 运行一段代码来新建或修改 Word（.docx）、Excel（.xlsx）、PowerPoint（.pptx）文件，或把它们导出为 PDF。读取文件内容用 read_file（Excel 会显示行号与列字母，PDF 开头会写明共几页），完成后可以用 reveal_file 在文件夹中显示文件。
 - 只能处理下面这些授权的文件夹（及其子文件夹）中的文件：
 ${roots}
 - 本机可用的方式（按优先顺序）：
@@ -219,6 +267,46 @@ ${examples()}`
     // 与「本地文件」技能共用：读取 Office 文件的内容、在文件夹中显示文件
     read_file: filesSkill.tools.read_file!,
     reveal_file: filesSkill.tools.reveal_file!,
+
+    extract_document: tool({
+      description: '提取 Word、PowerPoint、Excel、PDF 文件的完整内容：Word 保留标题、列表与表格的结构，并包括页眉页脚、脚注尾注与批注；PowerPoint 包括每页的表格与演讲者备注。完整的内容以卡片展示给用户，同时返回给你阅读',
+      inputSchema: z.object({
+        documentId: z.string().optional().describe('用户发送的文件的 id（消息中【附文件：id｜…】里的 id）。处理用户最近发送的文件时省略'),
+        path: z.string().optional().describe('授权文件夹中文件的完整路径；用户给出了文件路径、而不是在对话中发送文件时使用'),
+        display: z.boolean().optional().describe('是否以卡片向用户展示完整的内容，默认 true；只是为了总结、翻译、回答问题而读取时设为 false'),
+        offset: z.number().int().min(0).optional().describe(`从第几个字开始返回给你（一次最多 ${EXTRACT_MODEL_CHARS} 字），内容较长、需要继续阅读时使用`),
+      }),
+      execute: async ({ documentId, path, display = true, offset = 0 }, options) => {
+        const { name, path: filePath, extracted } = await extractSource(options, { documentId, path })
+        const { content, format } = extracted
+        if (!content.trim()) return { name, ...(filePath ? { path: filePath } : {}), format, chars: 0, message: '没有提取到文字：文档可能是空的，或者内容都在图片中' }
+
+        const part = content.slice(offset, offset + EXTRACT_MODEL_CHARS)
+        const end = offset + part.length
+        const truncated = extracted.totalChars > content.length
+        const card: ToolDisplay | undefined = display && offset === 0
+          ? {
+              title: `文档内容：${name}`,
+              content: content.length > EXTRACT_DISPLAY_CHARS
+                ? `${content.slice(0, EXTRACT_DISPLAY_CHARS)}\n……（内容太长，这里只展示了前 ${EXTRACT_DISPLAY_CHARS} 字）`
+                : `${content}${truncated ? `\n……（文件太长，只提取了前 ${content.length} 字）` : ''}`,
+              format: 'text',
+            }
+          : undefined
+        return {
+          name,
+          ...(filePath ? { path: filePath } : {}),
+          format,
+          chars: content.length,
+          content: part,
+          ...(end < content.length
+            ? { nextOffset: end, note: `内容较长，这里是第 ${offset + 1}-${end} 字，共 ${content.length} 字；需要后面的内容时用 offset: ${end} 继续读取` }
+            : {}),
+          ...(truncated ? { truncated: `文件太长，只提取了前 ${content.length} 字（共 ${extracted.totalChars} 字）` } : {}),
+          ...(card ? { shownToUser: true, display: card } : {}),
+        }
+      },
+    }),
 
     run_office_script: tool({
       description: '运行一段代码来新建或修改 Word、Excel、PowerPoint 文件（优先用 PowerShell 调用 Microsoft Office，其次用 Python 库）。运行前会检查并备份 files 中的文件，并请求用户同意',

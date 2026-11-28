@@ -1,17 +1,17 @@
-//! 读取文件内容：纯文本（自动识别编码）、Word（docx）、PowerPoint（pptx）、PDF、表格（xlsx / xls / xlsb / ods）
+//! 读取文件内容：纯文本（自动识别编码）、Word（docx）、PowerPoint（pptx，见 office_text.rs）、PDF、表格（xlsx / xls / xlsb / ods）
 
 use std::{
   fs::{self, File},
-  io::{Read, Seek},
+  io::{Cursor, Read, Seek},
   path::Path,
 };
 
-use calamine::{open_workbook_auto, Data, DataType, Range, Reader};
+use calamine::{open_workbook_auto, open_workbook_auto_from_rs, Data, DataType, Range, Reader, Sheets};
+
+use super::office_text::{read_docx, read_pptx, tidy};
 
 /// 读取纯文本文件时最多读取的字节数
 const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
-/// 读取 docx / pptx 时，压缩包内单个 XML 的最大大小
-const MAX_XML_BYTES: u64 = 16 * 1024 * 1024;
 /// PDF 文件的最大大小
 const MAX_PDF_BYTES: u64 = 50 * 1024 * 1024;
 /// 表格的每个工作表最多读取的行数与列数
@@ -25,31 +25,84 @@ pub const TEXT_EXTENSIONS: &[&str] = &[
   "go", "rs", "rb", "php", "sh", "bat", "cmd", "ps1", "sql", "r", "swift", "kt", "dart", "lua", "tex", "srt", "ass", "vtt",
 ];
 
+#[derive(Debug)]
 pub struct FileText {
   pub content: String,
-  /// 内容的格式：text、docx、pptx
+  /// 内容的格式：text、docx、pptx、pdf、spreadsheet
   pub format: &'static str,
   /// 文本使用的编码（仅纯文本）
   pub encoding: Option<&'static str>,
 }
 
+fn extension_of(name: &str) -> String {
+  Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
+}
+
+fn old_format_error(extension: &str) -> String {
+  format!("暂不支持读取旧版的 .{extension} 文件，可以先用 Office 另存为 .{extension}x")
+}
+
 /// 读取文件的文字内容
 pub fn read_text(path: &Path) -> Result<FileText, String> {
-  let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+  let extension = extension_of(&path.to_string_lossy());
   match extension.as_str() {
-    "docx" => Ok(FileText { content: read_docx(path)?, format: "docx", encoding: None }),
-    "pptx" => Ok(FileText { content: read_pptx(path)?, format: "pptx", encoding: None }),
-    "pdf" => Ok(FileText { content: read_pdf(path)?, format: "pdf", encoding: None }),
-    "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" => Ok(FileText { content: read_spreadsheet(path)?, format: "spreadsheet", encoding: None }),
-    "doc" | "ppt" => Err(format!("暂不支持读取旧版的 .{extension} 文件，可以先用 Office 另存为 .{extension}x")),
+    "docx" | "pptx" => read_zip_document(File::open(path).map_err(|e| format!("读取文件失败：{e}"))?, &extension),
+    "pdf" => {
+      let size = fs::metadata(path).map_err(|e| format!("读取文件失败：{e}"))?.len();
+      if size > MAX_PDF_BYTES {
+        return Err("PDF 太大（超过 50 MB），无法读取".into());
+      }
+      let bytes = fs::read(path).map_err(|e| format!("读取文件失败：{e}"))?;
+      Ok(FileText { content: read_pdf(&bytes)?, format: "pdf", encoding: None })
+    }
+    "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" => {
+      let workbook = open_workbook_auto(path).map_err(|e| format!("无法读取这个表格文件（可能已加密或损坏）：{e}"))?;
+      Ok(FileText { content: read_workbook(workbook), format: "spreadsheet", encoding: None })
+    }
+    "doc" | "ppt" => Err(old_format_error(&extension)),
     _ => {
       let mut bytes = Vec::new();
       File::open(path)
         .and_then(|file| file.take(MAX_TEXT_BYTES).read_to_end(&mut bytes))
         .map_err(|e| format!("读取文件失败：{e}"))?;
-      let (content, encoding) = decode(&bytes).ok_or("这不是文本文件，无法读取内容")?;
-      Ok(FileText { content, format: "text", encoding: Some(encoding) })
+      read_plain_text(&bytes)
     }
+  }
+}
+
+/// 从文件内容的字节读取文字（如拖进对话框的文件，不知道它在电脑上的位置），name 为文件名，用来判断类型
+pub fn read_bytes(name: &str, bytes: &[u8]) -> Result<FileText, String> {
+  let extension = extension_of(name);
+  match extension.as_str() {
+    "docx" | "pptx" => read_zip_document(Cursor::new(bytes), &extension),
+    "pdf" => {
+      if bytes.len() as u64 > MAX_PDF_BYTES {
+        return Err("PDF 太大（超过 50 MB），无法读取".into());
+      }
+      Ok(FileText { content: read_pdf(bytes)?, format: "pdf", encoding: None })
+    }
+    "xlsx" | "xlsm" | "xls" | "xlsb" | "ods" => {
+      let workbook = open_workbook_auto_from_rs(Cursor::new(bytes)).map_err(|e| format!("无法读取这个表格文件（可能已加密或损坏）：{e}"))?;
+      Ok(FileText { content: read_workbook(workbook), format: "spreadsheet", encoding: None })
+    }
+    "doc" | "ppt" => Err(old_format_error(&extension)),
+    _ => read_plain_text(&bytes[..bytes.len().min(MAX_TEXT_BYTES as usize)]),
+  }
+}
+
+fn read_plain_text(bytes: &[u8]) -> Result<FileText, String> {
+  let (content, encoding) = decode(bytes).ok_or("这不是文本文件，无法读取内容")?;
+  Ok(FileText { content, format: "text", encoding: Some(encoding) })
+}
+
+/// Word 与 PowerPoint 文件是 zip 压缩包
+fn read_zip_document<R: Read + Seek>(reader: R, extension: &str) -> Result<FileText, String> {
+  let mut archive = zip::ZipArchive::new(reader).map_err(|_| "文件已损坏，或不是有效的 Office 文档".to_string())?;
+  if extension == "docx" {
+    Ok(FileText { content: read_docx(&mut archive)?, format: "docx", encoding: None })
+  }
+  else {
+    Ok(FileText { content: read_pptx(&mut archive)?, format: "pptx", encoding: None })
   }
 }
 
@@ -74,123 +127,9 @@ pub fn decode(bytes: &[u8]) -> Option<(String, &'static str)> {
   }
 }
 
-fn open_zip(path: &Path) -> Result<zip::ZipArchive<File>, String> {
-  let file = File::open(path).map_err(|e| format!("读取文件失败：{e}"))?;
-  zip::ZipArchive::new(file).map_err(|_| "文件已损坏，或不是有效的 Office 文档".to_string())
-}
-
-fn read_entry<R: Read + Seek>(archive: &mut zip::ZipArchive<R>, name: &str) -> Result<String, String> {
-  let entry = archive.by_name(name).map_err(|_| format!("文档中缺少 {name}"))?;
-  if entry.size() > MAX_XML_BYTES {
-    return Err("文档太大，无法读取".into());
-  }
-  let mut xml = String::new();
-  entry.take(MAX_XML_BYTES).read_to_string(&mut xml).map_err(|e| format!("读取文档失败：{e}"))?;
-  Ok(xml)
-}
-
-/// 从 Office XML 中提取指定标签（如 w:t、a:t）中的文字，段落标签（如 w:p、a:p）结束时换行
-pub fn extract_xml_text(xml: &str, text_tag: &str, paragraph_tag: &str) -> String {
-  let open = format!("<{text_tag}");
-  let close = format!("</{text_tag}>");
-  let paragraph_end = format!("</{paragraph_tag}>");
-  let mut output = String::new();
-  let mut rest = xml;
-
-  while let Some(position) = rest.find('<') {
-    let tail = &rest[position..];
-    if tail.starts_with(&paragraph_end) {
-      if !output.ends_with('\n') && !output.is_empty() {
-        output.push('\n');
-      }
-      rest = &tail[paragraph_end.len()..];
-    }
-    else if tail.starts_with(&open) && tail[open.len()..].starts_with(['>', ' ']) {
-      // 跳过开始标签，读取到结束标签为止
-      let Some(start) = tail.find('>') else { break };
-      if tail[..start].ends_with('/') {
-        rest = &tail[start + 1..];
-        continue;
-      }
-      let content = &tail[start + 1..];
-      let end = content.find(&close).unwrap_or(content.len());
-      output.push_str(&unescape_xml(&content[..end]));
-      rest = &content[(end + close.len()).min(content.len())..];
-    }
-    else {
-      rest = &tail[1..];
-    }
-  }
-  output.trim().to_string()
-}
-
-fn unescape_xml(text: &str) -> String {
-  text
-    .replace("&lt;", "<")
-    .replace("&gt;", ">")
-    .replace("&quot;", "\"")
-    .replace("&apos;", "'")
-    .replace("&amp;", "&")
-}
-
-fn read_docx(path: &Path) -> Result<String, String> {
-  let mut archive = open_zip(path)?;
-  let xml = read_entry(&mut archive, "word/document.xml")?;
-  Ok(extract_xml_text(&xml, "w:t", "w:p"))
-}
-
-fn read_pptx(path: &Path) -> Result<String, String> {
-  let mut archive = open_zip(path)?;
-  // 幻灯片按编号排序：ppt/slides/slide1.xml、slide2.xml……
-  let mut slides: Vec<(usize, String)> = archive
-    .file_names()
-    .filter_map(|name| {
-      let name = name.ok()?;
-      let number = name.strip_prefix("ppt/slides/slide")?.strip_suffix(".xml")?.parse().ok()?;
-      Some((number, name.to_string()))
-    })
-    .collect();
-  slides.sort();
-
-  let mut output = Vec::new();
-  for (number, name) in slides {
-    let xml = read_entry(&mut archive, &name)?;
-    let text = extract_xml_text(&xml, "a:t", "a:p");
-    if !text.is_empty() {
-      output.push(format!("【第 {number} 页】\n{text}"));
-    }
-  }
-  Ok(output.join("\n\n"))
-}
-
-//// 整理提取出的文字：去掉行尾空白，最多保留一个空行
-fn tidy(text: &str) -> String {
-  let mut output = String::new();
-  let mut blank = false;
-  for line in text.lines().map(str::trim_end) {
-    if line.trim().is_empty() {
-      if !blank && !output.is_empty() {
-        output.push('\n');
-      }
-      blank = true;
-    }
-    else {
-      output.push_str(line);
-      output.push('\n');
-      blank = false;
-    }
-  }
-  output.trim().to_string()
-}
-
-fn read_pdf(path: &Path) -> Result<String, String> {
-  let size = fs::metadata(path).map_err(|e| format!("读取文件失败：{e}"))?.len();
-  if size > MAX_PDF_BYTES {
-    return Err("PDF 太大（超过 50 MB），无法读取".into());
-  }
-  let bytes = fs::read(path).map_err(|e| format!("读取文件失败：{e}"))?;
+fn read_pdf(bytes: &[u8]) -> Result<String, String> {
   // 解析库遇到不规范的 PDF 时可能 panic，不能让它影响整个应用
-  let pages = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(&bytes))
+  let pages = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(bytes))
     .map_err(|_| "无法解析这个 PDF（文件可能已损坏，或使用了不支持的格式）".to_string())?
     .map_err(|e| format!("无法读取这个 PDF（可能已加密或损坏）：{e}"))?;
 
@@ -275,8 +214,7 @@ fn format_sheet(name: &str, range: &Range<Data>) -> String {
   lines.join("\n")
 }
 
-fn read_spreadsheet(path: &Path) -> Result<String, String> {
-  let mut workbook = open_workbook_auto(path).map_err(|e| format!("无法读取这个表格文件（可能已加密或损坏）：{e}"))?;
+fn read_workbook<RS: Read + Seek>(mut workbook: Sheets<RS>) -> String {
   let names = workbook.sheet_names().to_vec();
   let sheets: Vec<String> = names
     .iter()
@@ -285,5 +223,5 @@ fn read_spreadsheet(path: &Path) -> Result<String, String> {
       Err(error) => format!("【工作表：{name}】无法读取：{error}"),
     })
     .collect();
-  Ok(sheets.join("\n\n"))
+  sheets.join("\n\n")
 }

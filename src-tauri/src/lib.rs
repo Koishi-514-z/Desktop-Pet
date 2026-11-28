@@ -182,6 +182,7 @@ pub fn run() {
       files::files_list,
       files::files_read,
       files::files_read_bytes,
+      files::files_extract_bytes,
       files::files_plan_organize,
       files::files_move,
       files::files_create_folder,
