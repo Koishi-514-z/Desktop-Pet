@@ -72,6 +72,8 @@ export interface ChatMessage {
   audios?: AudioRef[]
   // user 消息：附带的文档（Word、PowerPoint、Excel、PDF，数据保存在 IndexedDB 中，见 utils/documents.ts）
   documents?: DocumentRef[]
+  // assistant 消息：在字幕上收藏了这条回复的语音时，收藏的 id（见 stores/favorites.ts）
+  favoriteId?: string
 }
 
 export interface SendMessageOptions {

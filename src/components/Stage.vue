@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, toRaw, watch } from 'vue'
 import Live2dModel from '@/components/Live2dModel.vue'
 import {
   useTextProcessingQueue,
@@ -14,8 +14,11 @@ import { useAudioStore } from '@/stores/audio';
 import { useLive2dStore } from '@/stores/live2d';
 import { useLanguageStore } from '@/stores/language'
 import { useMicrophoneStore } from '@/stores/microphone'
+import { usePersonaStore } from '@/stores/persona'
+import { useProvidersStore } from '@/stores/providers'
 import { useTranscriptionStore } from '@/stores/transcription'
 import { randBool } from '@/utils/math';
+import { recordReplyAudio } from '@/utils/reply-audio'
 
 // 语音管线（见 composables/queues.ts）：
 // 输入：麦克风 → 检测出一句句话 → 语音识别 → 发送给对话
@@ -32,6 +35,8 @@ const audioStore = useAudioStore()
 const audioPlayingQueue = useAudioPlayingQueue()
 const live2dStore = useLive2dStore()
 const languageStore = useLanguageStore()
+const personaStore = usePersonaStore()
+const providersStore = useProvidersStore()
 
 // ===== 输入：语音识别 =====
 
@@ -215,10 +220,16 @@ function resetSpeechTurn() {
   speechController = new AbortController()
 }
 
+// 正在说的这条回复：会话中最后一条桌宠的消息（流式输出时它就是最后一条）
+function currentReply(): object | undefined {
+  const latest = chatStore.currentSession?.messages.at(-1)
+  return latest?.role === 'assistant' ? toRaw(latest) : undefined
+}
+
 textProcessingQueue.onTextProcessed((text: string) => {
   // 有话要说了：直到结束标记在播放队列中被处理之前，都算还有语音没播完
   audioStore.speechPending = true
-  speechGeneratingQueue.enQueue({ type: 'speech', text, context: spokenText })
+  speechGeneratingQueue.enQueue({ type: 'speech', text, context: spokenText, owner: currentReply() })
   spokenText += text
 })
 
@@ -249,6 +260,13 @@ speechGeneratingQueue.onItemReceived(async ({ data }) => {
 
 speechGeneratingQueue.onItemGenerated(async ({ data, sequence, originalData }) => {
   console.log('speechGeneratingQueue.onItemGenerated', sequence, originalData)
+  // 按顺序记下这条回复的每一句语音，在字幕上收藏时拼成一个音频文件
+  if (data.type === 'audio' && originalData.type === 'speech' && originalData.owner) {
+    recordReplyAudio(originalData.owner, data.audio, {
+      personaName: personaStore.currentPersona?.name ?? '桌宠',
+      voice: providersStore.getCurrentTTSProvider()?.name,
+    })
+  }
   audioPlayingQueue.enQueue(data)
 })
 

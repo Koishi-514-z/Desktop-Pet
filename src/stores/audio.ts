@@ -29,6 +29,9 @@ export const useAudioStore = defineStore('audio', () => {
   // 由 Stage 中的语音流水线维护；字幕据此等语音全部播完后才开始隐藏的倒计时
   const speechPending = ref(false)
 
+  // 正在重听的收藏（见 stores/favorites.ts）：播放期间字幕显示这句话，而不是对话中的消息
+  const replay = ref<{ text: string, speaker: string } | null>(null)
+
   // 是否使用自定义的播放器
   const useCustomPlayer = ref(false)
 
@@ -210,6 +213,7 @@ export const useAudioStore = defineStore('audio', () => {
   return {
     isPlaying,
     speechPending,
+    replay,
     useCustomPlayer,
     volume,
     play,

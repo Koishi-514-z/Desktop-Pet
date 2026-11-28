@@ -117,8 +117,9 @@ const END_OF_REPLY = Symbol('end-of-reply')
 // 'speech' 为待合成语音的文本（其中保留着情绪标签，合成前按服务商决定是否去掉），'emotion'/'end' 为情绪标签/结束标记，
 // 二者会按原始顺序依次向下传递，最终在 audioPlayingQueue 中处理
 export type SpeechQueueItem =
-  // context：这一轮回复中这句话之前的内容，念的语言与显示的不同、需要翻译时用来保持译文连贯
-  | { type: 'speech', text: string, context?: string }
+  // context：这一轮回复中这句话之前的内容，念的语言与显示的不同、需要翻译时用来保持译文连贯；
+  // owner：这句话所属的回复（会话中的消息），合成的语音记在它名下，以便在字幕上收藏
+  | { type: 'speech', text: string, context?: string, owner?: object }
   | { type: 'emotion', emotion: string }
   | { type: 'end' }
 

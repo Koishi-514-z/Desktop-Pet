@@ -13,6 +13,7 @@ import MemorySetting from './settings/MemorySetting.vue'
 import ToolSetting from './settings/ToolSetting.vue'
 import ProactiveSetting from './settings/ProactiveSetting.vue'
 import UsageSetting from './settings/UsageSetting.vue'
+import FavoriteSetting from './settings/FavoriteSetting.vue'
 
 // 设置面板的分类标签
 const tabs = [
@@ -25,6 +26,7 @@ const tabs = [
   { id: 'proactive', label: 'Proactive' },
   { id: 'tools', label: 'Tools' },
   { id: 'usage', label: 'Usage' },
+  { id: 'favorites', label: 'Favorites' },
 ] as const
 
 type SettingTabId = (typeof tabs)[number]['id']
@@ -138,6 +140,7 @@ onBeforeUnmount(() => {
           <ProactiveSetting v-else-if="activeTab === 'proactive'" />
           <ToolSetting v-else-if="activeTab === 'tools'" />
           <UsageSetting v-else-if="activeTab === 'usage'" />
+          <FavoriteSetting v-else-if="activeTab === 'favorites'" />
         </section>
       </div>
     </div>

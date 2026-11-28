@@ -12,6 +12,7 @@
 - **语音合成**：回复按句切分后逐句合成并按顺序播放，播放音量可调。
 - **情绪表达**：模型在回复中输出方括号括起来的情绪标签（如 `[happy]`、`[laughs]`、`[short pause]`），前端据此随机播放带有对应标签的表情或动作；支持标签的语音合成（Fish Audio、ElevenLabs v3 / v4）还会据此调整语气、发出笑声或停顿，其他服务商合成前去掉标签。
 - **口型同步**：实时分析播放音频的音量，驱动模型嘴部开合。
+- **收藏语音**：在字幕上点「收藏」，把喜欢的回复连同它的语音保存下来；在设置的 **Favorites** 页由桌宠再说一遍（对口型，字幕显示这句话），按自定义顺序（拖动或上移下移）、收藏时间、时长排列，搜索、复制文字、删除，见下文「收藏语音」。
 - **Agent（技能 + 工具调用）**：先由 LLM 识别用户意图，需要时调用技能中的工具完成请求，再以角色口吻润色结果；内置日期时间、天气、文字处理、图片理解、看屏幕、记忆管理、待办、本地文件、Office 文档、网页搜索、运行脚本、应用与窗口、系统诊断、音频理解十四个技能，提醒到时桌宠会主动开口。
 - **划词**：在任意应用中选中文字后按下快捷键，即可翻译、解释、总结、润色或分析代码。
 - **图片理解**：发送图片或截图，即可解释图片内容、提取或翻译图中文字、分析报错。
@@ -401,6 +402,11 @@ export const mySkill: Skill = {
   → Live2D 模型：口型同步 + 表情动作
 ```
 
+## 收藏语音
+
+- **收藏**：桌宠说完一句回复后，字幕右上角有「收藏」按钮（正在说的这一条要等语音播完，语音才完整）。语音管线合成好一句，就按顺序记在这句话所属的回复名下（只在内存中保留最近 30 条回复，[reply-audio.ts](src/utils/reply-audio.ts)），收藏时直接使用，不用重新合成：只有一句时原样保存，有多句时解码后依次拼接（句间停顿 0.15 秒），编码为 24 kHz 的 WAV（各句的 mp3 等格式各自带着文件头，直接把字节接起来时长会算错）。语音已经不在内存中时（如很早的回复、重新打开了应用），用当前的语音合成服务重新合成整段话。收藏连同文字、说话的角色、语音服务保存在 IndexedDB 中（[favorites.ts](src/utils/favorites.ts)），收藏的 id 记在会话的消息上，字幕据此显示「已收藏」；再点一次取消收藏（会删除保存的语音）。
+- **收藏页**（[FavoriteSetting.vue](src/components/settings/FavoriteSetting.vue)）：点 ▶ 由桌宠播放（[stores/favorites.ts](src/stores/favorites.ts)）——经过与平时说话相同的播放器，所以模型会对口型、音量设置也生效，字幕显示这句话并标着「收藏」，可以在字幕上停止；桌宠正在回复时不能重听，免得和它说的话混在一起。可以按自定义顺序（拖动或上移下移；自定义顺序单独保存在 `localStorage` 中，调整顺序不用重写音频）、最新 / 最早收藏、时长排列，搜索文字或角色名，复制文字，删除（点两次确认）或清空。
+
 ## 项目结构
 
 ```
@@ -421,7 +427,8 @@ src/
 │   ├── TaskPanel.vue        # 待办面板
 │   ├── CaptureToolbar.vue   # 划词 / 截图后弹出的工具栏
 │   ├── SettingBox.vue       # 设置面板
-│   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景 / 技能 / 记忆 / 工具）
+│   ├── SubtitleBar.vue      # 字幕：翻看消息、打断、收藏语音、重听收藏时显示收藏的那句话
+│   └── settings/            # 各设置页（Provider / Live2D / 人物设定 / 场景 / 技能 / 记忆 / 主动交互 / 工具 / 用量 / 收藏）
 ├── agent/                   # Agent：意图识别、工具执行与各技能
 │   └── skills/              # 内置技能（日期时间 / 天气 / 文字处理 / 图片理解 / 看屏幕 / 记忆管理 / 待办 / 本地文件 / Office 文档 / 网页搜索 / 运行脚本 / 应用与窗口 / 系统诊断 / 音频理解）
 │       └── office-examples/ # 「Office 文档」技能的示例代码（Word / Excel / PowerPoint / Python），也用于测试
@@ -433,7 +440,7 @@ src/
 │   ├── queues.ts            # 文本处理、语音合成、音频播放队列
 │   ├── animation.ts         # 视线跟随
 │   └── desktop.ts           # 桌面窗口：鼠标穿透与全局鼠标坐标
-├── stores/                  # Pinia 状态（chat / agent / memory / tasks / tools / capture / reminders / speech / audio / live2d / persona / providers / scene）
+├── stores/                  # Pinia 状态（chat / agent / memory / tasks / tools / capture / reminders / speech / audio / favorites / live2d / persona / providers / scene）
 ├── utils/                   # 网络请求（桌面应用中经 Rust 端发出）、队列、图片存储（IndexedDB）、窗口截取等
 └── pages/HomePage.vue
 ```

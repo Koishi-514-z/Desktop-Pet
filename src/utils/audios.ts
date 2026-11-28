@@ -68,7 +68,7 @@ export function createAudioId(): string {
 }
 
 /** 用 <audio> 读取时长（只读文件头，不用解码整个文件）；读取不到时为 0 */
-function readDuration(blob: Blob): Promise<number> {
+export function readAudioDuration(blob: Blob): Promise<number> {
   if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') return Promise.resolve(0)
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob)
@@ -93,7 +93,7 @@ export async function addAudio(file: Blob, name = (file as File).name || '音频
     name,
     mediaType: file.type || 'audio/*',
     size: file.size,
-    duration: await readDuration(file),
+    duration: await readAudioDuration(file),
     data: file,
     createdAt: Date.now(),
   }

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useAudioStore } from '@/stores/audio'
 import { useChatStore } from '@/stores/chat'
+import { useFavoritesStore } from '@/stores/favorites'
 import { usePersonaStore } from '@/stores/persona'
 import { useSceneStore } from '@/stores/scene'
 import { useDesktopCursor } from '@/composables/desktop'
@@ -11,7 +12,11 @@ const chatStore = useChatStore()
 const personaStore = usePersonaStore()
 const sceneStore = useSceneStore()
 const audioStore = useAudioStore()
+const favoritesStore = useFavoritesStore()
 const desktopCursor = useDesktopCursor()
+
+// 正在重听的收藏（在设置的「收藏」页播放）：播放期间字幕显示这句话
+const replay = computed(() => audioStore.replay)
 
 // 字幕只在非空消息之间切换（流式回复的占位消息在收到首个字符前为空，不予显示；
 // 只有情绪标签、去掉后没有正文的消息同样视为空）
@@ -47,15 +52,22 @@ const isLive = computed(
 
 // 桌宠的回复去掉情绪标签后再显示（流式生成中还会去掉末尾未接收完整的半截标签）；用户消息原样显示
 const displayText = computed(() => {
+  if (replay.value) return replay.value.text
   const message = currentMessage.value
   if (!message) return ''
   const text = message.role === 'user' ? message.content : stripEmotionTags(message.content, isLive.value)
   return text.trim()
 })
 
-const speakerName = computed(() =>
-  currentMessage.value?.role === 'user' ? '我' : (personaStore.currentPersona?.name ?? '桌宠'),
-)
+const speakerName = computed(() => {
+  if (replay.value) return replay.value.speaker
+  return currentMessage.value?.role === 'user' ? '我' : (personaStore.currentPersona?.name ?? '桌宠')
+})
+
+// 字幕卡片的样式：重听收藏时按桌宠的回复显示
+const cardRole = computed(() => (replay.value ? 'assistant' : currentMessage.value?.role))
+// 切换动画的 key：重听收藏与对话中的消息各自独立
+const textKey = computed(() => (replay.value ? 'replay' : `${chatStore.currentSession?.id}-${displayIndex.value}`))
 
 const canGoOlder = computed(() => displayIndex.value > 0)
 const canGoNewer = computed(() => displayIndex.value < messages.value.length - 1)
@@ -185,32 +197,103 @@ onBeforeUnmount(clearHideTimer)
 // 跟随最新消息时，最新的是用户刚发出的消息：桌宠还没开口，先不显示（手动翻看之前的消息时照常显示）
 const waitingReply = computed(() => following.value && currentMessage.value?.role === 'user')
 
-const visible = computed(() => sceneStore.showSubtitle && !!currentMessage.value && active.value && !waitingReply.value)
+const visible = computed(() => sceneStore.showSubtitle && active.value && (!!replay.value || (!!currentMessage.value && !waitingReply.value)))
+
+// ===== 收藏：把喜欢的回复连同语音保存下来，在设置的「收藏」页重听 =====
+
+// 收藏状态需要从数据库读取
+favoritesStore.load().catch((error) => console.warn('[subtitle] 读取收藏失败：', error))
+
+// 只能收藏桌宠的回复；正在说的这一条要等语音播完（否则语音还不完整）
+const canFavorite = computed(() => {
+  const message = currentMessage.value
+  if (replay.value || !message || message.role !== 'assistant') return false
+  return !(speaking.value && message === messages.value.at(-1))
+})
+const favorited = computed(() => !!currentMessage.value && favoritesStore.isFavorited(currentMessage.value))
+const favoriteSaving = computed(() => !!currentMessage.value && favoritesStore.isSaving(currentMessage.value))
+
+// 收藏失败的原因，在按钮上短暂显示
+const favoriteError = ref('')
+let favoriteErrorTimer: ReturnType<typeof setTimeout> | undefined
+
+function showFavoriteError(error: unknown) {
+  favoriteError.value = error instanceof Error ? error.message : String(error)
+  clearTimeout(favoriteErrorTimer)
+  favoriteErrorTimer = setTimeout(() => (favoriteError.value = ''), 5000)
+}
+
+async function toggleFavorite() {
+  const message = currentMessage.value
+  if (!message || favoriteSaving.value) return
+  favoriteError.value = ''
+  try {
+    if (favorited.value) await favoritesStore.unfavoriteMessage(message)
+    else await favoritesStore.favoriteMessage(message)
+  }
+  catch (error) {
+    showFavoriteError(error)
+  }
+}
+
+watch(currentMessage, () => (favoriteError.value = ''))
+onBeforeUnmount(() => clearTimeout(favoriteErrorTimer))
+
+const favoriteLabel = computed(() => {
+  if (favoriteSaving.value) return '收藏中…'
+  if (favoriteError.value) return '收藏失败'
+  return favorited.value ? '已收藏' : '收藏'
+})
+
+const favoriteTitle = computed(() => {
+  if (favoriteError.value) return favoriteError.value
+  return favorited.value ? '取消收藏（会删除保存的语音）' : '收藏这句话和它的语音，可以在设置的 Favorites 页重听'
+})
 </script>
 
 <template>
   <Transition name="subtitle-fade">
-    <div v-if="visible && currentMessage" class="subtitle">
-      <div ref="cardRef" class="subtitle-card" :class="currentMessage.role">
+    <div v-if="visible" class="subtitle">
+      <div ref="cardRef" class="subtitle-card" :class="cardRole">
         <div class="speaker">
           <span class="speaker-name">{{ speakerName }}</span>
-          <span v-if="isLive" class="live-dot" title="正在回复"></span>
+          <span v-if="replay" class="replay-badge">收藏</span>
+          <span v-else-if="isLive" class="live-dot" title="正在回复"></span>
         </div>
 
-        <!-- 桌宠说话时可以打断（语音对话时不用打开对话面板） -->
-        <button v-if="speaking" class="interrupt-button" title="打断，不让它继续说" @click="chatStore.interrupt()">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-          打断
-        </button>
+        <div class="card-actions">
+          <!-- 收藏桌宠的回复（连同语音） -->
+          <button
+            v-if="canFavorite"
+            class="card-button favorite-button"
+            :class="{ active: favorited, failed: !!favoriteError }"
+            :disabled="favoriteSaving"
+            :title="favoriteTitle"
+            @click="toggleFavorite"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.85-4.2 4.1 1 5.8L12 16.9l-5.2 2.75 1-5.8-4.2-4.1 5.8-.85z" /></svg>
+            {{ favoriteLabel }}
+          </button>
+          <!-- 重听收藏时可以停止 -->
+          <button v-if="replay" class="card-button interrupt-button" title="停止重听" @click="favoritesStore.stop()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+            停止
+          </button>
+          <!-- 桌宠说话时可以打断（语音对话时不用打开对话面板） -->
+          <button v-else-if="speaking" class="card-button interrupt-button" title="打断，不让它继续说" @click="chatStore.interrupt()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+            打断
+          </button>
+        </div>
 
         <div ref="textWrapper" class="subtitle-body">
           <Transition :name="`subtitle-slide-${direction}`" mode="out-in" @enter="onTextEnter">
             <!-- prettier-ignore -->
-            <p :key="`${chatStore.currentSession?.id}-${displayIndex}`" class="subtitle-text">{{ displayText }}<span v-if="isLive" class="caret"></span></p>
+            <p :key="textKey" class="subtitle-text">{{ displayText }}<span v-if="isLive && !replay" class="caret"></span></p>
           </Transition>
         </div>
 
-        <nav class="subtitle-nav">
+        <nav v-if="!replay" class="subtitle-nav">
           <button
             class="nav-button"
             title="上一条"
