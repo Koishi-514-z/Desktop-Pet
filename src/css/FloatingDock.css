@@ -1,0 +1,198 @@
+/*
+ * 右下角的悬浮按钮
+ *
+ * 展开时三个按钮排成一列，位置与 utils/panel-resize.ts 中 FLOATING_BUTTONS_GAP 让出的区域一致：
+ * 距右边 24px，从下往上依次是对话、设置、待办（间隔 60px）。
+ * 收起时三个按钮合到中间（设置）的位置并隐藏，换成一个只露出一半的悬浮球。
+ *
+ * 动画顺序 —— 展开：悬浮球滑出 → 分开成三个按钮；收起：三个按钮合拢 → 悬浮球缩回屏幕边缘
+ */
+
+.floating-dock {
+  --size: 48px;
+  --gap: 60px;
+
+  /* 按钮与范围边缘的距离：展开时鼠标在按钮旁边一点、按钮之间移动也算悬停 */
+  --pad: 12px;
+  --color: rgb(64 158 255 / 85%);
+  --color-hover: rgb(64 158 255 / 100%);
+
+  /* 范围：最下面的按钮离屏幕底边 24px（= 12px + --pad） */
+  position: fixed;
+  right: 0;
+  bottom: 12px;
+  z-index: 1000;
+  width: calc(24px + var(--size) + var(--pad));
+  height: calc(var(--pad) * 2 + var(--gap) * 2 + var(--size));
+
+  /* 收起时整个区域不响应鼠标（不挡住下方应用的点击），只有悬浮球响应 */
+  pointer-events: none;
+}
+
+.floating-dock.expanded {
+  pointer-events: auto;
+}
+
+svg {
+  flex-shrink: 0;
+  fill: currentcolor;
+  stroke: none;
+}
+
+/* ===== 悬浮球 ===== */
+
+.dock-orb {
+  position: absolute;
+  right: calc(var(--size) / -2);
+
+  /* 与中间的按钮（设置）同一高度 */
+  bottom: calc(var(--pad) + var(--gap));
+  display: flex;
+  align-items: center;
+
+  /* 只有左半边露在外面，图标放在左半边的中间 */
+  justify-content: flex-start;
+  width: var(--size);
+  height: var(--size);
+  padding: 0 0 0 5px;
+  color: #fff;
+  pointer-events: auto;
+  cursor: pointer;
+  background: var(--color);
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+
+  /* 收起：等按钮合拢后再出现、缩回边缘 */
+  transition:
+    opacity 0.15s ease 0.12s,
+    transform 0.2s ease 0.22s;
+}
+
+.dock-orb svg {
+  width: 14px;
+  height: 14px;
+}
+
+.floating-dock.expanded .dock-orb {
+  pointer-events: none;
+  opacity: 0;
+
+  /* 完全露出（移到按钮所在的位置） */
+  transform: translateX(calc(var(--size) * -1));
+
+  /* 展开：先滑出，再在按钮分开时淡出 */
+  transition:
+    transform 0.18s ease,
+    opacity 0.15s ease 0.12s;
+}
+
+/* 有未完成的待办时在露出的半边上显示小圆点，有逾期的为红色 */
+.orb-dot {
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  background: #94a3b8;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+}
+
+.orb-dot.alert {
+  background: #ef4444;
+}
+
+/* ===== 三个按钮 ===== */
+
+.dock-button {
+  position: absolute;
+  right: 24px;
+  width: var(--size);
+  height: var(--size);
+  font-size: 20px;
+  color: #fff;
+  pointer-events: auto;
+  visibility: hidden;
+  cursor: pointer;
+  background: var(--color);
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  opacity: 0;
+
+  /* 收起：合到中间按钮（悬浮球滑出后）的位置 */
+  transform: translateY(var(--merge-y)) scale(0.6);
+
+  /* 收起：合拢、淡出，动画结束后隐藏（不再响应鼠标和 Tab） */
+  transition:
+    transform 0.22s ease,
+    opacity 0.18s ease,
+    visibility 0s linear 0.22s,
+    background 0.15s;
+}
+
+.dock-button:hover {
+  background: var(--color-hover);
+}
+
+.dock-button.chat {
+  --merge-y: calc(var(--gap) * -1);
+
+  bottom: var(--pad);
+}
+
+.dock-button.settings {
+  --merge-y: 0px;
+
+  bottom: calc(var(--pad) + var(--gap));
+}
+
+.dock-button.task {
+  --merge-y: var(--gap);
+
+  bottom: calc(var(--pad) + var(--gap) * 2);
+}
+
+.floating-dock.expanded .dock-button {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+
+  /* 展开：等悬浮球滑出后分开，带一点回弹 */
+  transition:
+    transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.12s,
+    opacity 0.18s ease 0.12s,
+    visibility 0s linear 0.12s,
+    background 0.15s;
+}
+
+/* 待办数量 */
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  color: #fff;
+  background: #64748b;
+  border-radius: 9px;
+}
+
+.dock-button.alert .badge {
+  background: #ef4444;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-orb,
+  .dock-button,
+  .floating-dock.expanded .dock-orb,
+  .floating-dock.expanded .dock-button {
+    transition-duration: 0s;
+    transition-delay: 0s;
+  }
+}

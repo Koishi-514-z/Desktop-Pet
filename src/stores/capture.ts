@@ -8,6 +8,8 @@ import { IMAGE_SKILL_ID, MAX_IMAGES } from '@/agent/skills/image'
 import { SELECTION_SKILL_ID } from '@/agent/skills/selection'
 import { isTauri, useDesktopCursor } from '@/composables/desktop'
 import { useAgentStore } from '@/stores/agent'
+import type { AudioRef } from '@/utils/audios'
+import { addAudio, deleteAudios, MAX_AUDIOS } from '@/utils/audios'
 import { addImage, deleteImages } from '@/utils/images'
 
 // 划词：获取选中的文字（或图片）；截图：框选屏幕区域
@@ -61,6 +63,7 @@ export const useCaptureStore = defineStore('capture', () => {
   // 附加到下一条消息上的划词内容与图片（对话面板输入框上方展示）
   const pendingQuote = ref('')
   const pendingImages = ref<ImageRef[]>([])
+  const pendingAudios = ref<AudioRef[]>([])
 
   // 对应的技能可用时才注册快捷键
   const active = computed<Record<CaptureKind, boolean>>(() => {
@@ -115,11 +118,26 @@ export const useCaptureStore = defineStore('capture', () => {
     deleteImages([id]).catch(() => {})
   }
 
+  // ===== 待发送的音频 =====
+
+  async function addPendingAudio(file: File) {
+    if (pendingAudios.value.length >= MAX_AUDIOS) throw new Error(`一次最多发送 ${MAX_AUDIOS} 个音频`)
+    const audio = await addAudio(file)
+    pendingAudios.value.push(audio)
+    return audio
+  }
+
+  function removePendingAudio(id: string) {
+    pendingAudios.value = pendingAudios.value.filter((audio) => audio.id !== id)
+    deleteAudios([id]).catch(() => {})
+  }
+
   // 取出待发送的附件（发送消息时调用）
   function takePending() {
-    const attachments = { quote: pendingQuote.value, images: pendingImages.value }
+    const attachments = { quote: pendingQuote.value, images: pendingImages.value, audios: pendingAudios.value }
     pendingQuote.value = ''
     pendingImages.value = []
+    pendingAudios.value = []
     return attachments
   }
 
@@ -151,12 +169,15 @@ export const useCaptureStore = defineStore('capture', () => {
     toolbar,
     pendingQuote,
     pendingImages,
+    pendingAudios,
     active,
     init,
     showToolbar,
     hideToolbar,
     addPendingImage,
     removePendingImage,
+    addPendingAudio,
+    removePendingAudio,
     takePending,
     takeScreenshot,
   }

@@ -43,8 +43,10 @@ export interface TraceRoute {
   reason?: string
   /** 是否是需要较多步骤的任务（允许更多轮的工具调用） */
   complex?: boolean
-  /** 开始执行时预先加载的技能名称（如用户发了图片时的图片理解） */
+  /** 开始执行时预先加载的技能名称（意图识别选出的，或者如用户发了图片时的图片理解） */
   preloaded?: string[]
+  /** 意图识别把请求拆成的步骤（多于一步时） */
+  steps?: string[]
   /** 旧版本的记录：意图识别选中的技能名称 */
   skills?: string[]
 }
@@ -156,6 +158,7 @@ export function applyAgentEvent(trace: AgentTrace, event: AgentEvent, now = Date
       route.task = event.decision.task
       route.reason = event.decision.reason
       if (event.decision.complex) route.complex = true
+      if (event.decision.task && event.decision.steps && event.decision.steps.length > 1) route.steps = event.decision.steps
       break
     }
 

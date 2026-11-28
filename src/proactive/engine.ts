@@ -50,7 +50,7 @@ export interface EngineDeps {
 const MINUTE = 60_000
 /** 主动说话后等待用户回应的时间：这段时间内用户发了消息就算有回应 */
 export const REPLY_WINDOW_MS = 10 * MINUTE
-/** 连续被忽略的次数最多记到几次（间隔最多拉长到 8 倍） */
+/** 连续被忽略的次数最多记到几次（间隔最多拉长到 2 倍，见 gate.ts 的 backoffScale） */
 const MAX_IGNORED = 3
 /** 记住今天主动说过的最近几句话 */
 const RECENT_LINES = 5

@@ -137,7 +137,7 @@ describe('主动交互', () => {
   })
 
   it('连续专注很久时提醒休息，同一段专注之后要再专注同样久才提醒', async () => {
-    const { engine, state, judge, setActivity, advance } = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch'] })
+    const { engine, state, judge, setActivity, advance } = setup({ now: at(15, 0), handled: ['daily-greeting', 'lunch', 'afternoon-break'] })
     const since = at(15, 0) - 95 * MINUTE
     setActivity({ focus: { category: 'coding', since } })
     await engine.tick()

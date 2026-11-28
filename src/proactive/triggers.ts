@@ -351,9 +351,9 @@ export function eventCandidates(event: ActivityEvent): ProactiveCandidate[] {
 export const SPONTANEOUS_MEAN_MS: Partial<Record<TriggerId, number>> = {
   'idle-animation': 4 * MINUTE,
   'random-motion': 15 * MINUTE,
-  'self-talk': 60 * MINUTE,
-  'topic': 90 * MINUTE,
-  'share': 120 * MINUTE,
+  'self-talk': 30 * MINUTE,
+  'topic': 45 * MINUTE,
+  'share': 60 * MINUTE,
 }
 
 const SPONTANEOUS_SITUATIONS: Partial<Record<TriggerId, string>> = {

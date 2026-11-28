@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
+import ShortcutRecorder from '@/components/settings/ShortcutRecorder.vue'
+import { isTauri } from '@/composables/desktop'
 import { useLanguageStore } from '@/stores/language'
-import { useSceneStore } from '@/stores/scene'
+import { DEFAULT_TOGGLE_SHORTCUT, useSceneStore } from '@/stores/scene'
 import { isPresetLanguage, LANGUAGE_OPTIONS, languageLabel } from '@/utils/language'
 
 const sceneStore = useSceneStore()
@@ -18,6 +20,9 @@ const RESOLUTION_OPTIONS = [1, 1.5, 2, 2.5, 3, 3.5, 4]
 const FPS_PRESETS = [30, 60, 120, 144, 180, 240]
 // 桌宠说完后，字幕再保留多少秒
 const SUBTITLE_HIDE_DELAYS = [3, 5, 10, 30]
+
+// 录制显示 / 隐藏快捷键时的提示（如缺少修饰键）
+const toggleShortcutHint = ref('')
 
 const resolutionIndex = computed(() => RESOLUTION_OPTIONS.indexOf(sceneStore.resolution))
 const indicatorStyle = computed(() => ({
@@ -252,6 +257,23 @@ const volumeSettings = [
             {{ seconds }} 秒
           </button>
         </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">
+          <span>显示 / 隐藏快捷键</span>
+          <span class="setting-desc">在任意应用中按下快捷键，隐藏或重新显示桌宠，与托盘菜单的「显示 / 隐藏」相同</span>
+        </div>
+        <ShortcutRecorder
+          v-model="sceneStore.toggleShortcut"
+          :default-value="DEFAULT_TOGGLE_SHORTCUT"
+          :disabled="!isTauri"
+          @hint="toggleShortcutHint = $event"
+        />
+        <span v-if="toggleShortcutHint" class="setting-desc warn">{{ toggleShortcutHint }}</span>
+        <span v-else-if="!isTauri" class="setting-desc warn">需要在桌面应用中使用</span>
+        <span v-else-if="sceneStore.toggleShortcutError" class="setting-desc warn">{{ sceneStore.toggleShortcutError }}</span>
+        <span v-else class="setting-desc ok">快捷键已生效</span>
       </div>
     </section>
 

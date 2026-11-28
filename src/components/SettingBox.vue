@@ -12,6 +12,7 @@ import AgentSetting from './settings/AgentSetting.vue'
 import MemorySetting from './settings/MemorySetting.vue'
 import ToolSetting from './settings/ToolSetting.vue'
 import ProactiveSetting from './settings/ProactiveSetting.vue'
+import UsageSetting from './settings/UsageSetting.vue'
 
 // 设置面板的分类标签
 const tabs = [
@@ -23,6 +24,7 @@ const tabs = [
   { id: 'memory', label: 'Memory' },
   { id: 'proactive', label: 'Proactive' },
   { id: 'tools', label: 'Tools' },
+  { id: 'usage', label: 'Usage' },
 ] as const
 
 type SettingTabId = (typeof tabs)[number]['id']
@@ -103,10 +105,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button class="settings-toggle-button" :title="state.visible ? '收起设置' : '打开设置'" @click="state.visible = !state.visible">
-    {{ state.visible ? '×' : '⚙️' }}
-  </button>
-
   <!-- 外框负责位置与尺寸：调整大小的手柄跨在面板边缘（面板本身裁掉了溢出的内容，手柄放不进去） -->
   <div v-show="state.visible" class="settings-frame" :style="panelStyle">
     <div class="settings-panel">
@@ -139,6 +137,7 @@ onBeforeUnmount(() => {
           <MemorySetting v-else-if="activeTab === 'memory'" />
           <ProactiveSetting v-else-if="activeTab === 'proactive'" />
           <ToolSetting v-else-if="activeTab === 'tools'" />
+          <UsageSetting v-else-if="activeTab === 'usage'" />
         </section>
       </div>
     </div>

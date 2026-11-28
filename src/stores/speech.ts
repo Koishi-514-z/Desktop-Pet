@@ -10,6 +10,7 @@ import { createDashScopeSpeechModel } from '@/utils/dashscope'
 import { stripEmotionTags, supportsEmotionTags } from '@/utils/emotion-tags'
 import { createFishAudioSpeechModel } from '@/utils/fish-audio'
 import { addHook } from '@/utils/hooks'
+import { recordUsage } from '@/stores/usage'
 import { createMiniMaxSpeechModel } from '@/utils/minimax'
 
 // 根据 provider 配置的协议类型，创建对应的 AI SDK 语音合成模型实例
@@ -66,13 +67,19 @@ export const useSpeechStore = defineStore('speech', () => {
     isGenerating.value = true
     try {
       const model = resolveSpeechModel(provider)
+      const input = supportsEmotionTags(provider) ? text : stripEmotionTags(text)
       const { audio } = await generateSpeech({
         model,
-        text: supportsEmotionTags(provider) ? text : stripEmotionTags(text),
+        text: input,
         voice: provider.selectedVoiceId || undefined,
         // index-tts 本地服务只输出 wav
         ...(provider.protocol === 'index-tts' ? { outputFormat: 'wav' } : {}),
       })
+      // 用量：语音合成一般按字符计费（统计的是实际发送的文字，包括情绪标签）
+      recordUsage(
+        { providerId: provider.id, providerName: provider.name, modelId: model.modelId || '默认模型', kind: 'tts' },
+        { characters: [...input].length },
+      )
 
       onFinishHooks.value.forEach(hook => hook(audio))
       return audio

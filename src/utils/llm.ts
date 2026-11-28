@@ -3,11 +3,22 @@ import type { Provider } from '@/stores/providers'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
-import { wrapEmbeddingModel } from 'ai'
+import { wrapEmbeddingModel, wrapLanguageModel } from 'ai'
 import { httpFetch } from '@/utils/http'
+import { embeddingUsageMiddleware, languageUsageMiddleware } from '@/utils/usage-tracking'
 
-// 根据 provider 配置的协议类型，创建对应的 AI SDK 语言模型实例；modelId 默认为 provider 当前选中的模型
+type LanguageModelInstance = Parameters<typeof wrapLanguageModel>[0]['model']
+
+// 根据 provider 配置的协议类型，创建对应的 AI SDK 语言模型实例；modelId 默认为 provider 当前选中的模型。
+// 模型外面包了一层用量统计（见 utils/usage-tracking.ts），用到它的地方都会自动记录 token 用量
 export function resolveLanguageModel(provider: Provider, modelId = provider.selectedModelId): LanguageModel {
+  return wrapLanguageModel({
+    model: createLanguageModel(provider, modelId),
+    middleware: languageUsageMiddleware({ providerId: provider.id, providerName: provider.name, modelId }),
+  })
+}
+
+function createLanguageModel(provider: Provider, modelId: string): LanguageModelInstance {
   const { apiKey, baseUrl, protocol } = provider
 
   switch (protocol) {
@@ -27,9 +38,10 @@ export function resolveLanguageModel(provider: Provider, modelId = provider.sele
 // 超过时 embedMany 会自动分成几次请求
 export const OPENAI_COMPATIBLE_EMBEDDING_BATCH = 10
 
-// 创建生成向量（embedding）的模型，用于长期记忆的语义检索
+// 创建生成向量（embedding）的模型，用于长期记忆的语义检索；同样记录 token 用量
 export function resolveEmbeddingModel(provider: Provider, modelId: string): EmbeddingModel {
   const { apiKey, baseUrl, protocol } = provider
+  const usage = embeddingUsageMiddleware({ providerId: provider.id, providerName: provider.name, modelId })
 
   switch (protocol) {
     case 'openai':
@@ -37,10 +49,10 @@ export function resolveEmbeddingModel(provider: Provider, modelId: string): Embe
       // 请求从 Rust 端发出：有的平台不允许浏览器跨域访问 /embeddings（如阿里云百炼，对话接口却可以）
       return wrapEmbeddingModel({
         model: createOpenAI({ apiKey, baseURL: baseUrl, fetch: httpFetch }).embedding(modelId),
-        middleware: { specificationVersion: 'v3', overrideMaxEmbeddingsPerCall: () => OPENAI_COMPATIBLE_EMBEDDING_BATCH },
+        middleware: { ...usage, overrideMaxEmbeddingsPerCall: () => OPENAI_COMPATIBLE_EMBEDDING_BATCH },
       })
     case 'google':
-      return createGoogleGenerativeAI({ apiKey, baseURL: baseUrl }).embedding(modelId)
+      return wrapEmbeddingModel({ model: createGoogleGenerativeAI({ apiKey, baseURL: baseUrl }).embedding(modelId), middleware: usage })
     default:
       throw new Error(`${provider.name} 使用的 ${protocol} 协议不支持生成向量`)
   }

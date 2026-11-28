@@ -245,6 +245,9 @@ const overallStatus = computed<TraceStatus>(() => {
             <span class="node-time">{{ elapsed(node) }}</span>
           </div>
           <p v-if="node.kind === 'route' && node.reason" class="node-note">{{ node.reason }}</p>
+          <p v-if="node.kind === 'route' && node.steps?.length" class="node-note">
+            拆成 {{ node.steps.length }} 步：{{ node.steps.map((step, i) => `${i + 1}. ${step}`).join('　') }}
+          </p>
 
           <ul v-if="node.kind === 'step' && node.tools.length" class="trace-tools">
             <li v-for="tool in node.tools" :key="tool.id" class="trace-tool" :class="tool.status">

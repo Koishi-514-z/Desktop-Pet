@@ -136,6 +136,11 @@ export function readFile(roots: string[], path: string, maxChars?: number): Prom
 }
 
 /** 生成整理计划（不会移动文件） */
+/** 读取授权文件夹中的文件的原始字节（如音频），超过 maxBytes 时报错 */
+export async function readFileBytes(roots: string[], path: string, maxBytes: number): Promise<Uint8Array> {
+  return new Uint8Array(await call<ArrayBuffer>('files_read_bytes', { roots, path, maxBytes }))
+}
+
 export function planOrganize(roots: string[], folder: string, by: OrganizeBy): Promise<FileMove[]> {
   return call('files_plan_organize', { roots, folder, by, utcOffsetMinutes: -new Date().getTimezoneOffset() })
 }

@@ -115,3 +115,64 @@ describe('预置模型', () => {
     expect(defaultModels[0]!.position).toEqual({ x: 1513, y: 676 })
   })
 })
+
+describe('情绪标签', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  function setup() {
+    const store = useLive2dStore()
+    store.availableExpressions = [
+      { name: 'smile', fileName: 'smile.json', tags: ['happy'] },
+      { name: 'cry', fileName: 'cry.json' },
+      { name: 'Watermark Hide', fileName: 'watermark.json', tags: ['happy'] },
+    ]
+    store.availableMotions = [{ group: 'TapBody', index: 0, fileName: 'a.json' }]
+    store.currentModel!.persistentExpressions = ['Watermark Hide']
+    return store
+  }
+
+  it('按设置中打的标签播放表情，优先于模型文件中的；常驻表情不参与；没有时返回 false', () => {
+    const store = setup()
+    const id = store.currentModelId
+    expect(store.playExpressionByTag('happy')).toBe(true)
+    expect(store.currentExpression.name).toBe('smile')
+    expect(store.playExpressionByTag('sad')).toBe(false)
+
+    store.setExpressionTags(id, 'cry', ['sad', 'sobs'])
+    expect(store.playExpressionByTag('sobs')).toBe(true)
+    expect(store.currentExpression.name).toBe('cry')
+
+    // 清空也算设置过：模型文件中的 happy 不再生效
+    store.setExpressionTags(id, 'smile', [])
+    expect(store.playExpressionByTag('happy')).toBe(false)
+    // 恢复为模型文件中的
+    store.setExpressionTags(id, 'smile', null)
+    expect(store.playExpressionByTag('happy')).toBe(true)
+  })
+
+  it('按标签做动作；一类全部恢复为模型文件中的标签', () => {
+    const store = setup()
+    const id = store.currentModelId
+    expect(store.playMotionByTag('laughs')).toBe(false)
+    store.setMotionTags(id, { group: 'TapBody', index: 0 }, ['laughs', 'laughs'])
+    expect(store.currentModel!.customTags!.motions).toEqual({ 'TapBody:0': ['laughs'] })
+    expect(store.playMotionByTag('laughs')).toBe(true)
+    expect(store.currentMotion).toEqual({ group: 'TapBody', index: 0 })
+
+    store.setExpressionTags(id, 'cry', ['sad'])
+    store.clearCustomTags(id, 'motions')
+    expect(store.currentModel!.customTags).toEqual({ expressions: { cry: ['sad'] } })
+    expect(store.playMotionByTag('laughs')).toBe(false)
+  })
+})
+

@@ -1,6 +1,9 @@
 import type { Skill } from '@/agent/types'
 import { markRaw } from 'vue'
+import { appsSkill } from '@/agent/skills/apps'
+import { audioSkill } from '@/agent/skills/audio'
 import { datetimeSkill } from '@/agent/skills/datetime'
+import { diagnosticsSkill } from '@/agent/skills/diagnostics'
 import { filesSkill } from '@/agent/skills/files'
 import { imageSkill } from '@/agent/skills/image'
 import { memorySkill } from '@/agent/skills/memory'
@@ -26,4 +29,7 @@ export const builtinSkills: readonly Skill[] = [
   officeSkill,
   scriptsSkill,
   webSkill,
+  appsSkill,
+  diagnosticsSkill,
+  audioSkill,
 ].map((skill) => markRaw(skill))

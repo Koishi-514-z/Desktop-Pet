@@ -1,11 +1,16 @@
+use std::sync::Mutex;
+
 use tauri::{
   menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
   tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  AppHandle, Manager, WebviewWindow,
+  AppHandle, Manager, State, WebviewWindow,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 mod activity;
+mod apps;
 mod capture;
+mod diagnostics;
 mod files;
 mod memory;
 mod screen;
@@ -34,6 +39,50 @@ fn toggle_visibility(app: &AppHandle) {
   } else {
     let _ = window.show();
   }
+}
+
+/// 当前注册的显示 / 隐藏快捷键
+#[derive(Default)]
+struct ToggleShortcutState(Mutex<Option<Shortcut>>);
+
+/// 设置显示 / 隐藏桌宠窗口的全局快捷键（效果与托盘菜单的「显示 / 隐藏」相同），
+/// 传入 None 或空字符串表示取消注册。快捷键格式与划词、截图相同，如 `Ctrl+Alt+KeyS`
+#[tauri::command]
+fn set_toggle_shortcut(
+  app: AppHandle,
+  state: State<'_, ToggleShortcutState>,
+  shortcut: Option<String>,
+) -> Result<(), String> {
+  let global_shortcut = app.global_shortcut();
+  let mut current = state.0.lock().map_err(|e| e.to_string())?;
+
+  if let Some(old) = current.take() {
+    let _ = global_shortcut.unregister(old);
+  }
+
+  let Some(accelerator) = shortcut.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) else {
+    return Ok(());
+  };
+
+  let parsed: Shortcut = accelerator
+    .parse()
+    .map_err(|e| format!("无效的快捷键 {accelerator}：{e}"))?;
+
+  // 只能查到本应用注册的快捷键（划词、截图），其他程序占用的在注册时才会失败
+  if global_shortcut.is_registered(parsed) {
+    return Err(format!("快捷键 {accelerator} 已被桌宠的其他功能占用"));
+  }
+
+  global_shortcut
+    .on_shortcut(parsed, |app, _shortcut, event| {
+      if event.state() == ShortcutState::Pressed {
+        toggle_visibility(app);
+      }
+    })
+    .map_err(|e| format!("注册快捷键 {accelerator} 失败，可能已被其他程序占用：{e}"))?;
+
+  *current = Some(parsed);
+  Ok(())
 }
 
 /// 创建托盘图标：窗口不在任务栏显示，托盘是显示/隐藏与退出的入口
@@ -94,12 +143,20 @@ pub fn run() {
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_opener::init())
     .manage(capture::CaptureState::default())
+    .manage(ToggleShortcutState::default())
     .invoke_handler(tauri::generate_handler![
+      set_toggle_shortcut,
       capture::set_capture_shortcut,
       capture::take_screenshot,
       screen::get_target_window,
       screen::capture_window,
       activity::activity_snapshot,
+      apps::apps_list_windows,
+      apps::apps_list_installed,
+      apps::apps_launch,
+      apps::apps_window_action,
+      apps::apps_set_window_rects,
+      diagnostics::diagnostics_snapshot,
       memory::memory_search,
       memory::memory_similar,
       memory::memory_get,
@@ -124,6 +181,7 @@ pub fn run() {
       files::files_search,
       files::files_list,
       files::files_read,
+      files::files_read_bytes,
       files::files_plan_organize,
       files::files_move,
       files::files_create_folder,

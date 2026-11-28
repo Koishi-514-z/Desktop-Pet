@@ -98,8 +98,8 @@ async function followProgress(stream: AsyncIterable<TextStreamPart<ToolSet>>, op
 }
 
 function createSkillContext(options: AgentRunOptions): SkillContext {
-  const { model, visionModel, abortSignal, requestPermission, askUser, attachImages, setStatus } = options
-  return { model, visionModel: visionModel ?? model, abortSignal, requestPermission, askUser, attachImages, setStatus }
+  const { model, visionModel, abortSignal, requestPermission, askUser, attachImages, attachAudios, setStatus } = options
+  return { model, visionModel: visionModel ?? model, abortSignal, requestPermission, askUser, attachImages, attachAudios, setStatus }
 }
 
 /** 合并多个技能的工具：多个技能共用同一个工具（如 read_file）时只保留一份；不同的工具重名时后者会被忽略 */
@@ -146,8 +146,9 @@ function createLoadSkillsTool(available: Skill[], loaded: Map<string, Skill>, on
 }
 
 /**
- * 阶段二：工具执行。由 LLM 根据技能目录加载需要的技能，按它们的说明自主调用工具（可多轮），并总结执行结果。
- * options.skills 为所有可用的技能，preloaded 为开始时就加载的技能（如用户发了图片时的图片理解），其余的由 LLM 用 load_skills 加载。
+ * 阶段二：工具执行。按技能的说明自主调用工具（可多轮），并总结执行结果。
+ * options.skills 为所有可用的技能，preloaded 为开始时就加载的技能（意图识别选出的、消息中的附件需要的），
+ * 还需要其他技能时由 LLM 用 load_skills 加载。plannedSteps 为意图识别拆出的步骤，写进系统提示供参考。
  * maxSteps 为最多进行的轮数，用完时任务还没完成，就不带工具再调用一次模型，根据执行记录总结
  */
 export async function executeSkills(
@@ -155,6 +156,7 @@ export async function executeSkills(
   preloaded: Skill[] = [],
   maxSteps = DEFAULT_MAX_STEPS,
   complex = false,
+  plannedSteps: string[] = [],
 ): Promise<AgentResult> {
   const { model, messages, skills: available, onEvent, abortSignal } = options
   const loaded = new Map(preloaded.map((skill) => [skill.id, skill]))
@@ -201,7 +203,7 @@ export async function executeSkills(
     const now = new Date()
     // truncated：之前的输出因为超过长度上限被截断过，提醒模型精简
     const system = (truncated: boolean) => [
-      buildExecutorSystemPrompt(loadedSkills(), { now, background, others: otherSkills(), maxSteps, complex, canAskUser }),
+      buildExecutorSystemPrompt(loadedSkills(), { now, steps: plannedSteps, background, others: otherSkills(), maxSteps, complex, canAskUser }),
       truncated ? TRUNCATED_OUTPUT_NOTE : '',
     ].filter(Boolean).join('\n\n')
 

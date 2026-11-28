@@ -6,6 +6,7 @@ import { routeImageRequest, routeIntent } from '@/agent/router'
 import { IMAGE_SKILL_ID, parseImageIds } from '@/agent/skills/image'
 import { QUOTE_MARKER, SELECTION_SKILL_ID } from '@/agent/skills/selection'
 import { errorMessage, messageText } from '@/agent/utils'
+import { AUDIO_SKILL_ID, parseAudioIds } from '@/utils/audios'
 
 export type * from '@/agent/types'
 export { getSkillContext } from '@/agent/context'
@@ -13,8 +14,10 @@ export { buildAgentContextPrompt, buildEventMessage } from '@/agent/prompts'
 
 /**
  * 运行 Agent 的前两个阶段：
- * 1. 意图识别：用便宜快速的小模型（routerModel）判断用户的最新消息是普通闲聊还是任务，不选择技能；
- * 2. 工具执行：由执行模型根据技能目录加载需要的技能，调用工具完成请求。
+ * 1. 意图识别：用便宜快速的小模型（routerModel）判断用户的最新消息是普通闲聊还是任务；
+ *    是任务时把请求拆成几个步骤，选出完成所有步骤需要的技能（如「提取语音内容并翻译」需要音频理解与文字处理）；
+ * 2. 工具执行：开始时一次加载意图识别选出的技能与消息中的附件需要的技能，调用工具完成请求；
+ *    还需要其他技能时，执行模型可以根据技能目录用 load_skills 加载。
  *    用户把要求写在图片里时，读出图片后再判断一次，图中是要完成的任务时继续执行。
  *
  * 指定了 directCall 时跳过以上两个阶段的 LLM，直接调用工具。
@@ -48,9 +51,9 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult | 
   onEvent?.({ type: 'routed', decision })
   if (!decision.task) return null
 
-  // 需要哪些技能由执行模块自己加载；需要较多步骤的任务允许更多轮的工具调用，并要求先制定计划
-  const preloaded = preloadedSkills(options)
-  const result = await executeSkills(options, preloaded, stepBudget(decision), decision.complex === true)
+  // 开始时一次加载需要的技能（还缺的由执行模块自己加载）；需要较多步骤的任务允许更多轮的工具调用，并要求先制定计划
+  const preloaded = preloadedSkills(options, decision)
+  const result = await executeSkills(options, preloaded, stepBudget(decision), decision.complex === true, decision.steps)
   console.debug('[agent] 工具执行：', result)
   // 执行模块没有加载技能、也没有调用工具，即判断不需要技能（如闲聊、常识问答）时，按普通对话处理
   if (result.toolCalls.length === 0 && result.error === undefined && result.skills.length === preloaded.length) return null
@@ -71,16 +74,20 @@ export async function runProactiveAgent(options: AgentRunOptions): Promise<Agent
 }
 
 /**
- * 从消息中明确的标记就能确定需要的技能，开始执行时预先加载，省去一轮加载技能的调用：
- * 用户的最新消息附带了图片时，需要图片理解才能看到图片的内容；附带了划词内容时，需要划词助手读取全文
+ * 开始执行时预先加载的技能，省去加载技能的调用，也避免多步骤的请求只加载了第一步的技能：
+ * - 意图识别选出的技能（只保留可用的）；
+ * - 从消息中明确的标记就能确定的技能：附带了图片时需要图片理解才能看到图片的内容，附带了音频时需要音频理解，
+ *   附带了划词内容时需要文字处理读取全文
  */
-function preloadedSkills(options: AgentRunOptions): Skill[] {
+export function preloadedSkills(options: Pick<AgentRunOptions, 'messages' | 'skills'>, decision?: Pick<RouteDecision, 'skills'>): Skill[] {
+  const needed = new Set<string>(decision?.skills ?? [])
   const latest = options.messages.at(-1)
-  if (latest?.role !== 'user') return []
-  const text = messageText(latest)
-  const needed = new Set<string>()
-  if (parseImageIds(text).length) needed.add(IMAGE_SKILL_ID)
-  if (text.includes(QUOTE_MARKER)) needed.add(SELECTION_SKILL_ID)
+  if (latest?.role === 'user') {
+    const text = messageText(latest)
+    if (parseImageIds(text).length) needed.add(IMAGE_SKILL_ID)
+    if (parseAudioIds(text).length) needed.add(AUDIO_SKILL_ID)
+    if (text.includes(QUOTE_MARKER)) needed.add(SELECTION_SKILL_ID)
+  }
   return options.skills.filter((skill) => needed.has(skill.id))
 }
 
@@ -119,14 +126,17 @@ async function continueWithImageRequest(options: AgentRunOptions, result: AgentR
     return result
   }
 
-  // 继续执行：图片内容加入系统提示；保留图片理解技能（必要时可以重新读取图片的原文），其余的技能由执行模块加载
+  // 继续执行：图片内容加入系统提示；保留图片理解技能（必要时可以重新读取图片的原文），
+  // 并加载判断出的、完成图中要求需要的技能，还缺的由执行模块加载
   const background = [await Promise.resolve(options.background).catch(() => ''), buildImageRequestBackground(imageContent)]
     .filter(Boolean)
     .join('\n\n')
-  const followUp = await executeSkills({ ...options, background }, result.skills, stepBudget(decision), decision.complex === true)
+  const needed = candidates.filter((skill) => decision.skills?.includes(skill.id))
+  const preloaded = [...result.skills, ...needed.filter((skill) => !result.skills.includes(skill))]
+  const followUp = await executeSkills({ ...options, background }, preloaded, stepBudget(decision), decision.complex === true, decision.steps)
   console.debug('[agent] 按图片中的要求执行：', followUp)
   // 执行模块最后认为不需要做什么时，保留已经得到的图片理解结果
-  if (followUp.toolCalls.length === 0 && followUp.error === undefined && followUp.skills.length === result.skills.length) return result
+  if (followUp.toolCalls.length === 0 && followUp.error === undefined && followUp.skills.length === preloaded.length) return result
   return {
     skills: followUp.skills,
     toolCalls: [...result.toolCalls, ...followUp.toolCalls],

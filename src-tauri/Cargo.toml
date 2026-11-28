@@ -43,10 +43,16 @@ pdf-extract = "0.12"
 calamine = { version = "0.38", features = ["dates"] }
 # 把表格中的日期格式化为文字（calamine 的 dates 特性使用 chrono，格式化需要 alloc 特性）
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+# 系统诊断：CPU、内存、进程、网络、磁盘的状态
+sysinfo = { version = "0.40", default-features = false, features = ["system", "network", "disk"] }
 
 [target.'cfg(windows)'.dependencies]
+# 系统诊断：用 DXGI 获取显卡名称与显存总量（tauri、sysinfo 已经依赖 windows 0.62，这里只多打开一个特性）
+windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
 # Graphics_Gdi 与 System_SystemInformation 用于主动交互：判断前台窗口是否全屏、用户空闲了多久
-windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi", "Win32_Globalization", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Gdi", "Win32_System_SystemInformation"] }
+# Graphics_Dwm 用于应用与窗口管理：跳过被系统隐藏的窗口、计算窗口四周透明边框的大小
+# System_Performance、System_Power 用于系统诊断：GPU 占用与显存（性能计数器）、电池状态
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_HiDpi", "Win32_Globalization", "Win32_System_Registry", "Win32_System_Diagnostics_ToolHelp", "Win32_Graphics_Gdi", "Win32_System_SystemInformation", "Win32_Graphics_Dwm", "Win32_System_Performance", "Win32_System_Power"] }
 
 # 截取指定窗口（「看屏幕」技能）。Linux 上依赖 pipewire 等系统库，暂不启用
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]

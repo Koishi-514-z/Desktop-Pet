@@ -1,5 +1,6 @@
 import type { LanguageModel, ModelMessage, ToolSet } from 'ai'
 import type { PlanStep } from '@/agent/plan'
+import type { AudioRef } from '@/utils/audios'
 import type { ImageRef } from '@/utils/images'
 
 /**
@@ -28,7 +29,8 @@ export interface Skill {
 }
 
 /**
- * 意图识别结果：只区分闲聊与任务（由便宜快速的小模型判断），需要哪些技能由工具执行阶段自己加载。
+ * 意图识别结果：区分闲聊与任务（由便宜快速的小模型判断）。是任务时把请求拆成几个步骤，
+ * 并选出完成所有步骤需要的技能，工具执行阶段开始时一次加载（执行中仍然可以用 load_skills 加载其他技能）。
  * 读出用户发来的图片后的判断中，task 表示图中是不是要完成的任务
  */
 export interface RouteDecision {
@@ -38,6 +40,10 @@ export interface RouteDecision {
   reason: string
   /** 是否是需要查阅较多内容或较多步骤的任务（如了解一个项目），此时允许更多轮的工具调用 */
   complex?: boolean
+  /** 拆出的步骤（按顺序），如「转录音频中的语音」「把转录内容翻译成中文」 */
+  steps?: string[]
+  /** 完成所有步骤需要的技能 id（还没有核对是否存在） */
+  skills?: string[]
 }
 
 /**
@@ -97,6 +103,8 @@ export interface SkillHost {
   askUser?: (question: UserQuestion) => Promise<string | null>
   /** 把工具产生的图片（如截图）附加到用户的这条消息上，便于展示与追问 */
   attachImages?: (images: ImageRef[]) => void
+  /** 把工具读取的音频（如授权文件夹中的音频文件）附加到这一轮的用户消息上，之后追问时可以继续使用 */
+  attachAudios?: (audios: AudioRef[]) => void
   /** 更新界面上展示的进度，如「正在查看屏幕…」 */
   setStatus?: (status: string) => void
 }

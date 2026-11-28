@@ -1,23 +1,3 @@
-.settings-toggle-button {
-  position: fixed;
-  right: 24px;
-  bottom: 84px;
-  z-index: 1000;
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-  color: #fff;
-  cursor: pointer;
-  background: rgb(64 158 255 / 85%);
-  border: none;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
-}
-
-.settings-toggle-button:hover {
-  background: rgb(64 158 255 / 100%);
-}
-
 /* 外框：位置与尺寸由组件设置（用户调整后的大小），窗口较小时自动收缩 */
 .settings-frame {
   position: fixed;

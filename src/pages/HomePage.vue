@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import InteractiveArea from '@/components/InteractiveArea.vue'
 import CaptureToolbar from '@/components/CaptureToolbar.vue'
+import FloatingDock from '@/components/FloatingDock.vue'
 import SettingBox from '@/components/SettingBox.vue'
 import Stage from '@/components/Stage.vue'
 import SubtitleBar from '@/components/SubtitleBar.vue'
@@ -24,6 +25,8 @@ onMounted(() => {
     <InteractiveArea />
     <SettingBox />
     <TaskPanel />
+    <!-- 右下角的悬浮按钮：打开 / 收起待办、设置、对话面板 -->
+    <FloatingDock />
     <CaptureToolbar />
   </main>
 </template>

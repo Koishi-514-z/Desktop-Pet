@@ -1215,3 +1215,27 @@ svg {
 .action-button.danger:hover:not(:disabled) {
   background: rgb(90 40 52 / 92%);
 }
+
+/* ===== 情绪标签：自动打标签 ===== */
+
+.auto-tag {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.auto-tag-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: rgb(255 255 255 / 55%);
+}
+
+.auto-tag-status.ok {
+  color: #5ad69a;
+}
+
+.auto-tag-status.warn {
+  color: #fbbf24;
+}

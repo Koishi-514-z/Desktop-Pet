@@ -9,47 +9,6 @@ svg {
   stroke-width: 2;
 }
 
-/* ===== 悬浮按钮 ===== */
-
-.task-toggle {
-  position: fixed;
-  right: 24px;
-  bottom: 144px;
-  z-index: 1000;
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-  color: #fff;
-  cursor: pointer;
-  background: rgb(64 158 255 / 85%);
-  border: none;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
-}
-
-.task-toggle:hover {
-  background: rgb(64 158 255 / 100%);
-}
-
-.badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
-  color: #fff;
-  background: #64748b;
-  border-radius: 9px;
-}
-
-.task-toggle.alert .badge {
-  background: #ef4444;
-}
-
 /* ===== 面板 ===== */
 
 /* 外框：位置与尺寸由组件设置（用户调整后的大小），窗口较小时自动收缩 */

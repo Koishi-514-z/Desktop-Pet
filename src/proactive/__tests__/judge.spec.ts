@@ -45,7 +45,7 @@ describe('判断要不要说', () => {
     expect(text).toContain('- 用户正在编程（Code），已经用了 40 分钟，连续编程 1 小时 40 分钟')
     expect(text).not.toContain('executor.ts')
     expect(text).toContain('- 今天已经主动说话 2 次，最近一次在 14:00：「该吃午饭啦」')
-    expect(text).toContain('- 最近 1 次主动说话，用户都没有回应')
+    expect(text).toContain('- 最近 1 次主动说话后用户没有接话（可能只是在忙）')
     expect(text).toContain('  用户：帮我看看这个报错\n  小桌：是空指针')
   })
 
@@ -54,6 +54,14 @@ describe('判断要不要说', () => {
     expect(describeContext({ ...base, activity: coding, shareWindowTitle: true })).toContain('- 窗口标题：executor.ts - desktop-pet')
     expect(describeContext({ ...base, activity: { ...coding, present: false, idleSeconds: 600 }, shareWindowTitle: false })).toContain('- 用户已经 10 分钟没有操作电脑了')
     expect(describeContext({ ...base, activity: null, shareWindowTitle: false })).toContain('- 用户在做什么：不知道（无法获取前台应用）')
+  })
+
+  it('判断原则倾向于主动说话：用户没有回应、在专注工作都不是不说的理由', () => {
+    const prompt = buildJudgeSystemPrompt('小桌', [])
+    expect(prompt).toContain('除非有下面不适合的情况，倾向于说')
+    expect(prompt).toContain('不代表不想听，不要因此就不说')
+    expect(prompt).not.toContain('更克制')
+    expect(prompt).not.toContain('除非很有必要，不要打扰')
   })
 
   it('提示中列出可以用来获取信息的技能；生成时附上时机的说话要求', () => {

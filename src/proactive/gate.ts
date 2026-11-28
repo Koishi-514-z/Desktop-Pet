@@ -12,8 +12,9 @@ const MINUTE = 60_000
 
 /** 用户刚发过消息多久内不主动开口（正在聊天时不需要主动找话题） */
 export const RECENT_CHAT_MS = 3 * MINUTE
-/** 连续被忽略时，间隔最多拉长到几倍 */
-const MAX_BACKOFF = 8
+/** 连续被忽略时，每次把间隔拉长多少（最短间隔的倍数），最多拉长到几倍 */
+const BACKOFF_STEP = 0.5
+const MAX_BACKOFF = 2
 const PRIORITY_SCALE: Record<TriggerInfo['priority'], number> = { high: 0.5, normal: 1, low: 1.5 }
 
 export interface ConversationState {
@@ -36,9 +37,12 @@ export interface GateContext {
 
 export type GateResult = { ok: true } | { ok: false, reason: string }
 
-/** 连续被忽略几次后，最短间隔的倍数：1、2、4、8 */
+/**
+ * 连续被忽略几次后，最短间隔的倍数：1、1.5、2（之后不再增加）。
+ * 用户没有回应往往只是在忙、没注意到，所以只稍微拉长一点，不会越说越少
+ */
 export function backoffScale(ignoredStreak: number): number {
-  return Math.min(2 ** Math.max(0, ignoredStreak), MAX_BACKOFF)
+  return Math.min(1 + BACKOFF_STEP * Math.max(0, ignoredStreak), MAX_BACKOFF)
 }
 
 /** 这个时机与上次主动说话之间至少要隔多久 */

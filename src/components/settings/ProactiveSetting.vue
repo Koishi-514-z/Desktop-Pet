@@ -38,7 +38,7 @@ const FREQUENCIES: Frequency[] = ['low', 'normal', 'high']
 
 const frequencyText = computed(() => {
   const preset = FREQUENCY_PRESETS[settings.value.frequency]
-  return `两次主动说话至少间隔 ${formatMinutes(preset.minIntervalMs)}，每天最多 ${preset.dailyLimit} 次。你连续不回应时，间隔会自动拉长`
+  return `两次主动说话至少间隔 ${formatMinutes(preset.minIntervalMs)}，每天最多 ${preset.dailyLimit} 次。你连续不回应时，间隔会稍微拉长（最多 2 倍）`
 })
 
 // ===== 时机 =====

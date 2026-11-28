@@ -11,7 +11,11 @@ import { FLOATING_BUTTONS_GAP, fitPanelSize, keepPanelInView, PANEL_MARGIN, view
 const tasksStore = useTasksStore()
 const sceneStore = useSceneStore()
 
-const visible = ref(false)
+// 是否打开：右下角的悬浮按钮（FloatingDock）也会切换
+const visible = computed({
+  get: () => sceneStore.taskPanelState.visible,
+  set: (value: boolean) => { sceneStore.taskPanelState.visible = value },
+})
 const position = ref({ x: 0, y: 0 })
 const error = ref('')
 
@@ -212,16 +216,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <button
-    class="task-toggle"
-    :class="{ alert: tasksStore.overdueCount > 0 }"
-    :title="visible ? '收起待办' : `待办（${tasksStore.pending.length} 项未完成）`"
-    @click="visible = !visible"
-  >
-    {{ visible ? '×' : '☑' }}
-    <span v-if="!visible && tasksStore.pending.length" class="badge">{{ tasksStore.pending.length }}</span>
-  </button>
-
   <Transition name="panel">
     <!-- 外框负责位置、尺寸与显示：调整大小的手柄跨在面板边缘（面板本身裁掉了溢出的内容，手柄放不进去） -->
     <div v-show="visible" class="task-frame" :style="panelStyle">

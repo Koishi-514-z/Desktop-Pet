@@ -212,6 +212,15 @@ svg {
   color: rgb(255 255 255 / 45%);
 }
 
+/* 状态提示：出错或需要注意（黄色）、已生效（绿色） */
+.setting-desc.warn {
+  color: #fbbf24;
+}
+
+.setting-desc.ok {
+  color: var(--mint);
+}
+
 /* 分段选择器：滑动指示块 */
 .segmented {
   position: relative;

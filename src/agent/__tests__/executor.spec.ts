@@ -4,7 +4,7 @@ import { simulateReadableStream, tool } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { runAgent } from '@/agent'
+import { preloadedSkills, runAgent } from '@/agent'
 
 // 模型调用的参数与结果的类型（@ai-sdk/provider 不是项目的直接依赖，从模拟模型上取）
 type CallOptions = Parameters<MockLanguageModelV3['doGenerate']>[0]
@@ -127,7 +127,7 @@ const loadedOf = (events: AgentEvent[]) => events.flatMap((event) => (event.type
 describe('意图识别与按需加载技能', () => {
   const messages = [{ role: 'user' as const, content: '帮我写一份周报' }]
 
-  it('意图识别只区分闲聊与任务，需要哪些技能由执行模块根据技能目录加载', async () => {
+  it('意图识别没有选出技能时，由执行模块根据技能目录用 load_skills 加载', async () => {
     writeDocument.mockClear()
     const { model, calls } = scriptedModel([
       text('{"task": true, "complex": false, "reason": "要写文档"}'),
@@ -138,9 +138,9 @@ describe('意图识别与按需加载技能', () => {
     const events: AgentEvent[] = []
     const result = await runAgent({ model, messages, skills: [pictureSkill, documentSkill, unusedSkill], onEvent: (event) => events.push(event) })
 
-    // 意图识别：只输出是不是任务，不选择技能
+    // 意图识别：要求拆出步骤、选出技能（这里的模型没有给出）
     const [router, first, second] = calls
-    expect(systemOf(router!)).toContain('{"task": true, "complex": false, "reason": "一句话理由"}')
+    expect(systemOf(router!)).toContain('"steps": ["第一步要做的事", "第二步要做的事"], "skills": ["技能 id"]')
     expect(toolsOf(router!)).toEqual([])
     // 执行的第一步：还没有加载技能，只有 load_skills；技能目录在系统提示中，但没有使用说明
     expect(toolsOf(first!)).toEqual(executorTools('load_skills'))
@@ -160,10 +160,50 @@ describe('意图识别与按需加载技能', () => {
     expect(loadedOf(events)).toEqual([['document']])
   })
 
-  it('消息中带有划词内容时预先加载划词助手', async () => {
+  it('多步骤的请求：意图识别拆出步骤、选出所有需要的技能，执行开始时一次加载，第一轮就能使用', async () => {
+    writeDocument.mockClear()
+    const { model, calls } = scriptedModel([
+      text('{"task": true, "steps": ["读出图片中的要求", "按要求写成 Word 文档"], "skills": ["picture", "document", "not-exist"], "reason": "先看图再写文档"}'),
+      call('read_picture', {}),
+      call('write_document', { title: '周报' }),
+      text('读出了要求，写好了周报.docx'),
+    ])
+    const events: AgentEvent[] = []
+    const result = await runAgent({ model, messages, skills: [pictureSkill, documentSkill, unusedSkill], onEvent: (event) => events.push(event) })
+
+    const first = calls[1]!
+    // 两个技能都已加载（不存在的 id 被忽略），不用先调用 load_skills
+    expect(toolsOf(first)).toEqual(executorTools('load_skills', 'read_picture', 'write_document'))
+    expect(systemOf(first)).toContain('## 图片理解（picture）')
+    expect(systemOf(first)).toContain('## Office 文档（document）')
+    // 拆出的步骤写进系统提示；还没加载的技能也提示先对照每一步补齐
+    expect(systemOf(first)).toContain('# 请求的步骤（意图识别拆出的，供参考）\n1. 读出图片中的要求\n2. 按要求写成 Word 文档')
+    expect(systemOf(first)).toContain('开始前先对照请求的每一步检查')
+    expect(systemOf(first)).toContain('每一步都要完成，不要只做第一步')
+
+    expect(writeDocument).toHaveBeenCalledWith({ title: '周报' }, expect.anything())
+    expect(result?.skills.map((skill) => skill.id)).toEqual(['picture', 'document'])
+    expect(result?.toolCalls.map((item) => item.toolName)).toEqual(['read_picture', 'write_document'])
+    expect(loadedOf(events)).toEqual([['picture', 'document']])
+    // 执行过程中显示拆出的步骤
+    expect(events.find((event) => event.type === 'routed')).toMatchObject({ decision: { steps: ['读出图片中的要求', '按要求写成 Word 文档'] } })
+  })
+
+  it('预先加载：意图识别选出的技能，加上消息中的图片、音频、划词标记需要的技能', () => {
+    const skill = (id: string): Skill => ({ id, name: id, description: id, instructions: '', tools: {} })
+    const skills = ['image', 'audio', 'selection', 'weather', 'tasks'].map(skill)
+    const ids = (text: string, decided?: string[]) => preloadedSkills({ messages: [{ role: 'user', content: text }], skills }, { skills: decided }).map((item) => item.id)
+
+    expect(ids('翻译一下\n\n【附音频：aud_1｜a.mp3｜0:10】', ['selection'])).toEqual(['audio', 'selection'])
+    expect(ids('看看\n\n【附图：img_1】')).toEqual(['image'])
+    expect(ids('查天气并记到待办', ['weather', 'tasks', 'unknown'])).toEqual(['weather', 'tasks'])
+    expect(ids('你好')).toEqual([])
+  })
+
+  it('消息中带有划词内容时预先加载文字处理', async () => {
     const selectionSkill: Skill = {
       id: 'selection',
-      name: '划词助手',
+      name: '文字处理',
       description: '处理划词选中的文字',
       instructions: '用 translate 翻译',
       tools: { translate: tool({ description: '翻译', inputSchema: z.object({}), execute: async () => ({ text: '你好' }) }) },

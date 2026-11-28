@@ -258,15 +258,18 @@ audioPlayingQueue.onItemReceived(async ({ data }) => {
     case 'audio':
       await audioStore.play(data.audio)
       break
-    case 'emotion':
-      // 播放带有同名标签的表情或动作；模型上没有这个标签（如停顿、说话方式类的标签）时什么也不做
+    case 'emotion': {
+      // 随机换一个带有同名标签的表情或做一个动作；随机到的那一类里没有这个标签时（如只给表情打了标签）换另一类。
+      // 都没有（如停顿、说话方式类的标签）时什么也不做
+      const tag = data.emotion
       if (randBool(0.5)) {
-        live2dStore.playExpressionByTag(data.emotion)
+        if (!live2dStore.playExpressionByTag(tag)) live2dStore.playMotionByTag(tag)
       }
-      else {
-        live2dStore.playMotionByTag(data.emotion)
+      else if (!live2dStore.playMotionByTag(tag)) {
+        live2dStore.playExpressionByTag(tag)
       }
       break
+    }
     case 'end':
       live2dStore.playDefaultExpression()
       // 结束标记排在这一轮所有语音之后：到这里语音已经全部播完（合成失败的句子会被跳过）

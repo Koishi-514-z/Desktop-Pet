@@ -132,6 +132,24 @@ pub async fn files_read(roots: Vec<String>, path: String, max_chars: Option<usiz
   .await
 }
 
+/// 「音频理解」读取授权文件夹中的音频文件：原样返回字节（前端收到 ArrayBuffer），最大 max_bytes
+#[tauri::command]
+pub async fn files_read_bytes(roots: Vec<String>, path: String, max_bytes: u64) -> Result<tauri::ipc::Response, String> {
+  blocking(move || {
+    let path = Roots::new(&roots)?.resolve(&path)?;
+    if path.is_dir() {
+      return Err(format!("{} 是文件夹", path.display()));
+    }
+    let size = path.metadata().map(|m| m.len()).map_err(|e| e.to_string())?;
+    if size > max_bytes {
+      return Err(format!("文件太大（{} MB，最大 {} MB）", size / 1024 / 1024, max_bytes / 1024 / 1024));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取 {} 失败：{e}", path.display()))?;
+    Ok(tauri::ipc::Response::new(bytes))
+  })
+  .await
+}
+
 /// 生成整理计划（不会移动文件）
 #[tauri::command]
 pub async fn files_plan_organize(

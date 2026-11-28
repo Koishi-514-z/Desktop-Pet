@@ -26,6 +26,7 @@ vi.mock('@/agent', async (importOriginal) => ({
 
 import { useChatStore } from '@/stores/chat'
 import { useLanguageStore } from '@/stores/language'
+import { useMemoryStore } from '@/stores/memory'
 import { buildReplyLanguagePrompt } from '@/utils/language'
 
 const usage = {
@@ -170,3 +171,61 @@ describe('回复语言', () => {
     expect(systemOf(1)).not.toContain('回复语言')
   })
 })
+
+describe('情绪标签', () => {
+  // 发给模型的某条消息的文字
+  const textOf = (message: { content: unknown } | undefined) =>
+    typeof message?.content === 'string'
+      ? message.content
+      : (message?.content as { type: string, text?: string }[] | undefined)?.map((part) => part.text ?? '').join('') ?? ''
+
+  it('显示的文字去掉标签，另存带标签的原文；之后只有角色扮演阶段的历史带标签', async () => {
+    const model = streamingModel([{ deltas: ['[happy]你好', '呀！[gig', 'gles]'] }, { deltas: ['[calm]好的。'] }])
+    mocks.model = model
+    const chat = useChatStore()
+    const recall = vi.spyOn(useMemoryStore(), 'recall').mockResolvedValue(null)
+
+    await expect(chat.sendMessage('早上好')).resolves.toBe('你好呀！')
+    const reply = chat.currentSession!.messages.find((message) => message.role === 'assistant')!
+    expect(reply).toMatchObject({ content: '你好呀！', rawContent: '[happy]你好呀！[giggles]' })
+
+    await chat.sendMessage('今天做什么')
+    // 角色扮演阶段：桌宠之前的回复带着标签
+    const history = model.doStreamCalls[1]!.prompt.find((message) => message.role === 'assistant')
+    expect(textOf(history)).toBe('[happy]你好呀！[giggles]')
+    // 检索记忆、意图识别与工具执行：不带标签
+    expect(textOf(recall.mock.calls[1]![0].find((message) => message.role === 'assistant'))).toBe('你好呀！')
+    expect(textOf(mocks.runAgent.mock.calls[1]![0].messages.find((message) => message.role === 'assistant'))).toBe('你好呀！')
+  })
+
+  it('以前保存的回复没有原文时，历史中用显示的文字', async () => {
+    const model = streamingModel([{ deltas: ['[happy]你好呀！'] }, { deltas: ['好的。'] }])
+    mocks.model = model
+    const chat = useChatStore()
+    vi.spyOn(useMemoryStore(), 'recall').mockResolvedValue(null)
+
+    await chat.sendMessage('早上好')
+    delete chat.currentSession!.messages.find((message) => message.role === 'assistant')!.rawContent
+    await chat.sendMessage('今天做什么')
+    expect(textOf(model.doStreamCalls[1]!.prompt.find((message) => message.role === 'assistant'))).toBe('你好呀！')
+  })
+})
+
+describe('音频附件', () => {
+  it('附带的音频保存在用户消息上，发给模型时附上音频标记（文件名与时长）；只发音频时也能发送', async () => {
+    const model = streamingModel([{ deltas: ['好的'] }])
+    mocks.model = model
+    const chat = useChatStore()
+    vi.spyOn(useMemoryStore(), 'recall').mockResolvedValue(null)
+
+    const audios = [{ id: 'aud_1', name: '会议.m4a', duration: 125, size: 100 }]
+    await chat.sendMessage('', { audios })
+    const user = chat.currentSession!.messages.find((message) => message.role === 'user')!
+    expect(user.audios).toEqual(audios)
+    expect(chat.currentSession!.title).toBe('会议.m4a')
+
+    const sent = mocks.runAgent.mock.calls[0]![0].messages.at(-1)!
+    expect(sent.content).toBe('（发送了 1 个音频）\n\n【附音频：aud_1｜会议.m4a｜2:05】')
+  })
+})
+

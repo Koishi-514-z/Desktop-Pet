@@ -58,7 +58,7 @@ export function describeContext(input: ContextInput): string {
 
   const last = state.recentLines.at(-1)
   lines.push(`- 今天已经主动说话 ${state.spokenToday} 次${last ? `，最近一次在 ${formatClock(last.at)}：「${truncate(last.text, DIALOG_LENGTH)}」` : ''}`)
-  if (state.ignoredStreak > 0) lines.push(`- 最近 ${state.ignoredStreak} 次主动说话，用户都没有回应`)
+  if (state.ignoredStreak > 0) lines.push(`- 最近 ${state.ignoredStreak} 次主动说话后用户没有接话（可能只是在忙）`)
 
   const dialog = recentDialog.slice(-DIALOG_LINES)
   if (dialog.length) {
@@ -90,9 +90,11 @@ export function buildJudgeSystemPrompt(assistantName: string, skills: SkillBrief
   return `你是桌宠「${assistantName}」的主动交互模块。程序发现了一个可能适合主动和用户说话的时机，由你判断现在要不要说、打算说什么。你的输出只给程序读取，不会展示给用户。
 
 # 判断原则
-- 主动说话要值得这次打扰：能帮上忙（提醒吃饭、休息、天气变化、快到期的待办）、能让用户开心、或者是自然的问候时才说；用户在专注工作时，除非很有必要，不要打扰。
-- 不要重复：今天已经说过的话题、问候过的事不要再说一遍。
-- 最近用户没有回应时更克制一些，可以不说。
+- 桌宠偶尔主动搭话本身就是陪伴，不需要每次都有要紧的事：一句关心、一句感想、一个小发现、自然的问候都可以说。除非有下面不适合的情况，倾向于说。
+- 用户在专注工作（写代码、写文档等）时也可以说，但选简短、不需要回答、不打断思路的话，不要发起需要长聊的话题。
+- 不适合说的情况：用户明显不方便被出声打扰（如正在录屏、直播、演示），或者刚刚才说过差不多的话。
+- 不要重复：今天已经说过的话题、问候过的事不要再说一遍，换个角度或内容。
+- 用户没有回应很正常（可能在忙、没注意到或者暂时离开了），不代表不想听，不要因此就不说；最近几次都没有回应时，说得更简短一些、选不需要回答的内容就好。
 - 想说的内容需要实时信息时，在 skills 中列出要用的技能（只能读取信息，不会修改任何东西），不需要时为空数组。例如提醒吃饭时可以顺便看看天气，主动聊天时可以翻翻记得的事：
 ${skillLines}
 

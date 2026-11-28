@@ -6,6 +6,18 @@ import { summarizeInput } from '@/agent/utils'
 const fileSkill = { id: 'files', name: '本地文件' } as Skill
 
 describe('执行过程', () => {
+  it('意图识别拆出多个步骤时记下来显示；只有一步时不显示', () => {
+    const trace = createTrace(0)
+    applyAgentEvent(trace, { type: 'routing', stage: 'intent' }, 0)
+    applyAgentEvent(trace, { type: 'routed', decision: { task: true, reason: '两步', steps: ['转录音频', '翻译成中文'], skills: ['audio', 'selection'] } }, 300)
+    expect(trace.nodes[0]).toMatchObject({ kind: 'route', steps: ['转录音频', '翻译成中文'] })
+
+    const single = createTrace(0)
+    applyAgentEvent(single, { type: 'routing', stage: 'intent' }, 0)
+    applyAgentEvent(single, { type: 'routed', decision: { task: true, reason: '一步', steps: ['查天气'] } }, 300)
+    expect(single.nodes[0]).not.toHaveProperty('steps')
+  })
+
   it('记录意图识别、每一轮的工具调用与生成回复的耗时', () => {
     const trace = createTrace(0)
     applyAgentEvent(trace, { type: 'routing', stage: 'intent' }, 0)

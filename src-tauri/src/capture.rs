@@ -98,8 +98,9 @@ pub fn set_capture_shortcut(
     .parse()
     .map_err(|e| format!("无效的快捷键 {accelerator}：{e}"))?;
 
-  if shortcuts.values().any(|other| other.id() == parsed.id()) {
-    return Err(format!("快捷键 {accelerator} 已被划词或截图占用"));
+  // 本应用注册的快捷键（另一个划词 / 截图快捷键、显示 / 隐藏快捷键）
+  if global_shortcut.is_registered(parsed) {
+    return Err(format!("快捷键 {accelerator} 已被桌宠的其他功能占用"));
   }
 
   global_shortcut

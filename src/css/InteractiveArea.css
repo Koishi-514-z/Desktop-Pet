@@ -9,28 +9,6 @@ svg {
   stroke-width: 2;
 }
 
-/* ===== 悬浮按钮 ===== */
-
-.toggle-button {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 1000;
-  width: 48px;
-  height: 48px;
-  font-size: 20px;
-  color: #fff;
-  cursor: pointer;
-  background: rgb(64 158 255 / 85%);
-  border: none;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
-}
-
-.toggle-button:hover {
-  background: rgb(64 158 255 / 100%);
-}
-
 /* ===== 面板 ===== */
 
 /* 外框：位置与尺寸由组件设置（用户调整后的大小），窗口较小时自动收缩 */
@@ -1163,6 +1141,83 @@ svg {
 }
 
 /* 输入框上方待发送的图片 */
+/* 音频附件：文件名与时长 */
+.pending-audios,
+.message-audios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pending-audios {
+  margin-bottom: 8px;
+}
+
+.message-audios {
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.audio-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 260px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: rgb(255 255 255 / 85%);
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 999px;
+}
+
+.audio-chip.loading {
+  color: rgb(255 255 255 / 45%);
+}
+
+.audio-chip svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.audio-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-duration {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: rgb(255 255 255 / 45%);
+}
+
+.audio-remove {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  color: rgb(255 255 255 / 60%);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+}
+
+.audio-remove:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 12%);
+}
+
+.audio-remove svg {
+  width: 10px;
+  height: 10px;
+}
+
 .pending-images {
   display: flex;
   flex-wrap: wrap;

@@ -5,7 +5,8 @@ import type { Provider } from '@/stores/providers'
  *
  * - 语音合成：支持标签的服务商（Fish Audio、ElevenLabs v3 / v4）原样收到标签，据此调整语气、发出笑声、停顿；
  *   其他服务商收到的文字去掉了标签，免得把标签念出来（见 supportsEmotionTags）；
- * - 表情与动作：随机播放 Live2D 模型上带有同名标签（如 happy、giggles）的一个表情或动作；
+ * - 表情与动作：随机播放 Live2D 模型上带有同名标签（如 happy、giggles）的一个表情或动作
+ *   （标签来自模型文件，或在设置中手动、自动打的，见 live2d/tags.ts）；
  * - 显示：对话框与字幕中去掉所有标签（见 stripEmotionTags）。
  */
 
@@ -16,6 +17,8 @@ export interface EmotionTag {
 }
 
 export interface EmotionTagGroup {
+  /** emotion：情绪与语气；sound：非语言声音；delivery：语音表达方式；rhythm：节奏与停顿 */
+  id: 'emotion' | 'sound' | 'delivery' | 'rhythm'
   title: string
   tags: EmotionTag[]
 }
@@ -23,6 +26,7 @@ export interface EmotionTagGroup {
 // 桌宠可以使用的标签（写进系统提示词）
 export const EMOTION_TAG_GROUPS: EmotionTagGroup[] = [
   {
+    id: 'emotion',
     title: '情绪与语气',
     tags: [
       { tag: 'happy', description: '开心、愉悦' },
@@ -49,6 +53,7 @@ export const EMOTION_TAG_GROUPS: EmotionTagGroup[] = [
     ],
   },
   {
+    id: 'sound',
     title: '非语言声音',
     tags: [
       { tag: 'laughs', description: '笑出声' },
@@ -64,6 +69,7 @@ export const EMOTION_TAG_GROUPS: EmotionTagGroup[] = [
     ],
   },
   {
+    id: 'delivery',
     title: '语音表达方式',
     tags: [
       { tag: 'whispers', description: '低声耳语' },
@@ -75,6 +81,7 @@ export const EMOTION_TAG_GROUPS: EmotionTagGroup[] = [
     ],
   },
   {
+    id: 'rhythm',
     title: '节奏与停顿',
     tags: [
       { tag: 'short pause', description: '短暂停顿' },

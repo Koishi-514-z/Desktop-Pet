@@ -8,6 +8,7 @@ import { isTauri } from '@/composables/desktop'
 import { useAgentStore } from '@/stores/agent'
 import { DEFAULT_SHORTCUTS, useCaptureStore } from '@/stores/capture'
 import { useProvidersStore } from '@/stores/providers'
+import ShortcutRecorder from '@/components/settings/ShortcutRecorder.vue'
 
 const agentStore = useAgentStore()
 const captureStore = useCaptureStore()
@@ -20,7 +21,7 @@ const CAPTURE_ITEMS: { kind: CaptureKind, label: string, desc: string, skill: st
     kind: 'selection',
     label: '划词快捷键',
     desc: '在任意应用中选中文字后按下快捷键，鼠标旁会弹出工具栏，可以翻译、解释、总结、润色或分析代码',
-    skill: '划词助手',
+    skill: '文字处理',
   },
   {
     kind: 'screenshot',
@@ -30,53 +31,13 @@ const CAPTURE_ITEMS: { kind: CaptureKind, label: string, desc: string, skill: st
   },
 ]
 
-const MODIFIER_CODES = new Set(['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'])
-
-// 正在录制的快捷键
-const recording = ref<CaptureKind | null>(null)
+// 录制快捷键时的提示（如缺少修饰键）
 const recordHint = ref<Partial<Record<CaptureKind, string>>>({})
-
-// Ctrl+Alt+KeyQ → Ctrl + Alt + Q
-function formatShortcut(shortcut: string) {
-  return shortcut
-    .split('+')
-    .map((part) => part.replace(/^Key(?=[A-Z]$)/, '').replace(/^Digit(?=\d$)/, ''))
-    .join(' + ')
-}
 
 // 只用 Alt 作修饰键时，松开 Alt 可能激活应用菜单栏导致复制失败
 function isAltOnly(shortcut: string) {
   const parts = shortcut.split('+')
   return parts.includes('Alt') && !parts.includes('Ctrl') && !parts.includes('Super')
-}
-
-function stopRecording(event: Event) {
-  recording.value = null
-  ;(event.target as HTMLElement).blur()
-}
-
-function onRecordKeydown(kind: CaptureKind, event: KeyboardEvent) {
-  event.preventDefault()
-  if (event.key === 'Escape') {
-    recordHint.value[kind] = ''
-    stopRecording(event)
-    return
-  }
-  if (MODIFIER_CODES.has(event.code)) return
-
-  const modifiers: string[] = []
-  if (event.ctrlKey) modifiers.push('Ctrl')
-  if (event.altKey) modifiers.push('Alt')
-  if (event.shiftKey) modifiers.push('Shift')
-  if (event.metaKey) modifiers.push('Super')
-  if (modifiers.length === 0) {
-    recordHint.value[kind] = '需要至少一个修饰键（Ctrl / Alt / Shift）'
-    return
-  }
-
-  recordHint.value[kind] = ''
-  captureStore.shortcuts[kind] = [...modifiers, event.code].join('+')
-  stopRecording(event)
 }
 
 // ===== 单独指定的模型：意图识别、图片理解 =====
@@ -108,6 +69,7 @@ function useModelChoice(choice: Ref<ModelChoice | null>) {
 
 const routerChoice = useModelChoice(toRef(agentStore, 'routerModel'))
 const visionChoice = useModelChoice(toRef(agentStore, 'visionModel'))
+const audioChoice = useModelChoice(toRef(agentStore, 'audioModel'))
 
 // 查看屏幕前是否每次询问（用户在授权卡片上选择「始终允许」后为 false）
 const askBeforeScreenCapture = computed({
@@ -205,27 +167,12 @@ const askBeforeScreenCapture = computed({
           <span>{{ item.label }}</span>
           <span class="setting-desc">{{ item.desc }}</span>
         </div>
-        <div class="shortcut-row">
-          <button
-            type="button"
-            class="shortcut-recorder"
-            :class="{ recording: recording === item.kind }"
-            :disabled="!captureStore.active[item.kind]"
-            @click="recording = item.kind"
-            @blur="recording = null"
-            @keydown="recording === item.kind && onRecordKeydown(item.kind, $event)"
-          >
-            {{ recording === item.kind ? '请按下组合键…' : formatShortcut(captureStore.shortcuts[item.kind]) }}
-          </button>
-          <button
-            v-if="captureStore.shortcuts[item.kind] !== DEFAULT_SHORTCUTS[item.kind]"
-            class="reset-button"
-            type="button"
-            @click="captureStore.shortcuts[item.kind] = DEFAULT_SHORTCUTS[item.kind]"
-          >
-            恢复默认
-          </button>
-        </div>
+        <ShortcutRecorder
+          v-model="captureStore.shortcuts[item.kind]"
+          :default-value="DEFAULT_SHORTCUTS[item.kind]"
+          :disabled="!captureStore.active[item.kind]"
+          @hint="recordHint[item.kind] = $event"
+        />
         <span v-if="recordHint[item.kind]" class="setting-desc warn">{{ recordHint[item.kind] }}</span>
         <span v-else-if="!isTauri" class="setting-desc warn">需要在桌面应用中使用，浏览器中可以直接把文字或图片发给桌宠处理</span>
         <span v-else-if="!captureStore.active[item.kind]" class="setting-desc">启用 Agent 与「{{ item.skill }}」技能后生效</span>
@@ -270,6 +217,39 @@ const askBeforeScreenCapture = computed({
       </div>
     </section>
 
+    <section class="tile" :class="{ disabled: !agentStore.isSkillEnabled('audio') }">
+      <header class="tile-head">
+        <span class="tile-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 18V5l12-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="18" cy="16" r="3" />
+          </svg>
+        </span>
+        <span class="tile-title">音频理解</span>
+      </header>
+
+      <div class="setting">
+        <div class="setting-label">
+          <span>听声音的模型</span>
+          <span class="setting-desc">转录与总结说话内容使用语音识别服务（Provider 中的语音识别）和对话模型；分析声音本身（音乐、环境声、语气情绪）需要能接收音频的模型（如 Gemini、gpt-4o-audio、Qwen-Omni），对话模型不支持时在这里单独指定一个</span>
+        </div>
+        <div class="model-row">
+          <select v-model="audioChoice.providerId" class="field">
+            <option value="">跟随对话模型</option>
+            <option v-for="provider in llmProviders" :key="provider.id" :value="provider.id">{{ provider.name }}</option>
+          </select>
+          <template v-if="audioChoice.selected && !audioChoice.providerMissing">
+            <input v-model.lazy="audioChoice.modelId" class="field" list="audio-models" placeholder="模型 ID" />
+            <datalist id="audio-models">
+              <option v-for="model in audioChoice.models" :key="model.id" :value="model.id">{{ model.name }}</option>
+            </datalist>
+          </template>
+        </div>
+        <span v-if="audioChoice.providerMissing" class="setting-desc warn">之前选择的 Provider 已被删除，当前使用对话模型</span>
+      </div>
+    </section>
+
     <section class="tile">
       <header class="tile-head">
         <span class="tile-icon">
@@ -307,43 +287,10 @@ const askBeforeScreenCapture = computed({
   cursor: default;
 }
 
-.shortcut-row,
 .model-row {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-.shortcut-recorder {
-  min-width: 160px;
-  padding: 8px 14px;
-  font: inherit;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  cursor: pointer;
-  background: rgb(0 0 0 / 28%);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 10px;
-  outline: none;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-}
-
-.shortcut-recorder:hover:not(:disabled) {
-  border-color: rgb(52 211 153 / 50%);
-}
-
-.shortcut-recorder.recording {
-  color: var(--mint);
-  border-color: var(--mint);
-  box-shadow: 0 0 0 3px rgb(52 211 153 / 20%);
-}
-
-.shortcut-recorder:disabled {
-  cursor: default;
 }
 
 .field {
@@ -369,11 +316,4 @@ const askBeforeScreenCapture = computed({
   background: #1e1e22;
 }
 
-.setting-desc.warn {
-  color: #fbbf24;
-}
-
-.setting-desc.ok {
-  color: var(--mint);
-}
 </style>

@@ -12,6 +12,18 @@ describe('意图识别结果', () => {
     expect(stepBudget(parseRouteDecision('{"task": true, "reason": "找文件"}', true))).toBe(DEFAULT_MAX_STEPS)
   })
 
+  it('任务拆成的步骤与需要的技能：去掉空白与重复；闲聊时不保留', () => {
+    expect(parseRouteDecision('{"task": true, "steps": ["转录音频中的语音", " ", "把转录内容翻译成中文"], "skills": ["audio", "selection", "audio", 3], "reason": "两步"}', true)).toEqual({
+      task: true,
+      reason: '两步',
+      steps: ['转录音频中的语音', '把转录内容翻译成中文'],
+      skills: ['audio', 'selection'],
+    })
+    expect(parseRouteDecision('{"task": false, "steps": ["聊天"], "skills": ["weather"], "reason": "闲聊"}', true)).toEqual({ task: false, reason: '闲聊' })
+    // 格式不对时忽略
+    expect(parseRouteDecision('{"task": true, "steps": "转录", "skills": "audio", "reason": "x"}', true)).toEqual({ task: true, reason: 'x' })
+  })
+
   it('兼容代码块包裹、布尔值写成字符串的输出', () => {
     expect(parseRouteDecision('```json\n{"task": "true", "complex": "false", "reason": "查天气"}\n```', false)).toEqual({ task: true, reason: '查天气' })
   })

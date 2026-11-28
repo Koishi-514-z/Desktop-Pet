@@ -1,6 +1,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useLocalStorage } from '@vueuse/core'
+import { expressionTags, motionKey, motionTags } from '@/live2d/tags'
 import { randInt } from '@/utils/math'
 
 export interface Live2dMotion {
@@ -22,6 +23,15 @@ export interface Live2dExpression {
   tags?: string[]
 }
 
+/**
+ * 在设置中给表情、动作打的情绪标签（手动或自动），优先于模型文件中的 Tags（见 live2d/tags.ts）。
+ * expressions 的键为表情名称，motions 的键为「动作组:序号」；没有的表情、动作用模型文件中的标签
+ */
+export interface Live2dCustomTags {
+  expressions?: Record<string, string[]>
+  motions?: Record<string, string[]>
+}
+
 export interface Live2dModel {
   id: string
   name: string
@@ -34,6 +44,7 @@ export interface Live2dModel {
   // 常驻表情：一直叠加在模型上、不会被其他表情替换的表情名称，
   // 对应 VTube Studio 里可以同时开启的开关类表情（如去水印、眼镜、外套）
   persistentExpressions?: string[]
+  customTags?: Live2dCustomTags
   availableMotions: Live2dMotion[]
   availableHitAreas: Live2dHitArea[]
   availableExpressions: Live2dExpression[]
@@ -242,13 +253,15 @@ export const useLive2dStore = defineStore('live2d', () => {
     playMotion(motion.group, motion.index)
   }
 
-  function playMotionByTag(tag: string) {
-    const motions = availableMotions.value.filter(motion => motion.tags?.includes(tag))
-    if (motions.length === 0) return
+  // 随机做一个带有这个情绪标签的动作；没有这样的动作时返回 false
+  function playMotionByTag(tag: string): boolean {
+    const motions = availableMotions.value.filter((motion) => motionTags(currentModel.value, motion).includes(tag))
+    if (motions.length === 0) return false
 
     const randomIndex = randInt(0, motions.length - 1)
     const motion = motions[randomIndex]!
     playMotion(motion.group, motion.index)
+    return true
   }
 
   // 播放指定表情。非默认的表情在 duration（毫秒，默认约半分钟）后自动切回 defaultExpression，
@@ -282,12 +295,46 @@ export const useLive2dStore = defineStore('live2d', () => {
     playExpression(candidates[randInt(0, candidates.length - 1)]!.name, duration)
   }
 
-  function playExpressionByTag(tag: string, duration?: number) {
-    const expressions = availableExpressions.value.filter(expression => expression.tags?.includes(tag))
-    if (expressions.length === 0) return
+  // 随机换一个带有这个情绪标签的表情（不含常驻表情）；没有这样的表情时返回 false
+  function playExpressionByTag(tag: string, duration?: number): boolean {
+    const persistent = currentModel.value?.persistentExpressions ?? []
+    const expressions = availableExpressions.value.filter(
+      (expression) => !persistent.includes(expression.name) && expressionTags(currentModel.value, expression).includes(tag),
+    )
+    if (expressions.length === 0) return false
 
     const randomIndex = randInt(0, expressions.length - 1)
     playExpression(expressions[randomIndex]!.name, duration)
+    return true
+  }
+
+  // ===== 情绪标签（设置中手动、自动打的，见 live2d/tags.ts）=====
+
+  /** 设置某个表情的情绪标签；tags 为 null 时去掉设置中的修改，恢复为模型文件中的标签 */
+  function setExpressionTags(modelId: string, name: string, tags: string[] | null) {
+    setCustomTags(modelId, 'expressions', name, tags)
+  }
+
+  /** 设置某个动作的情绪标签；tags 为 null 时恢复为模型文件中的标签 */
+  function setMotionTags(modelId: string, motion: Pick<Live2dMotion, 'group' | 'index'>, tags: string[] | null) {
+    setCustomTags(modelId, 'motions', motionKey(motion), tags)
+  }
+
+  /** 去掉某一类（表情或动作）在设置中打的所有标签，全部恢复为模型文件中的 */
+  function clearCustomTags(modelId: string, kind: keyof Live2dCustomTags) {
+    const model = getModelById(modelId)
+    if (!model?.customTags?.[kind]) return
+    const { [kind]: _, ...rest } = model.customTags
+    model.customTags = rest
+  }
+
+  // 每次都换成新的对象，界面与保存都能收到变化
+  function setCustomTags(modelId: string, kind: keyof Live2dCustomTags, key: string, tags: string[] | null) {
+    const model = getModelById(modelId)
+    if (!model) return
+    const { [key]: _, ...others } = model.customTags?.[kind] ?? {}
+    const entries = tags ? { ...others, [key]: [...new Set(tags)] } : others
+    model.customTags = { ...model.customTags, [kind]: entries }
   }
 
   function playDefaultExpression(duration?: number) {
@@ -365,6 +412,9 @@ export const useLive2dStore = defineStore('live2d', () => {
     playMotionByTag,
     playExpression,
     playExpressionByTag,
+    setExpressionTags,
+    setMotionTags,
+    clearCustomTags,
     playRandomExpression,
     playDefaultExpression,
     isDefaultModel,

@@ -3,6 +3,7 @@ import type { AgentEvent, AgentResult, DirectToolCall, PermissionRequest, Skill,
 import type { AgentTrace } from '@/agent/trace'
 import type { RecalledMemory, RememberedMemory } from '@/memory/types'
 import type { DueReminder } from '@/stores/reminders'
+import type { AudioRef } from '@/utils/audios'
 import type { ImageRef } from '@/utils/images'
 import { useLocalStorage } from '@vueuse/core'
 import { streamText } from 'ai'
@@ -25,6 +26,7 @@ import { useRemindersStore } from '@/stores/reminders'
 import { useSceneStore } from '@/stores/scene'
 import { useMemoryStore } from '@/stores/memory'
 import { addHook } from '@/utils/hooks'
+import { audioMarkers, deleteAudios, MAX_AUDIOS } from '@/utils/audios'
 import { deleteImages } from '@/utils/images'
 import { resolveLanguageModel } from '@/utils/llm'
 import { toMemoryDialog } from '@/memory/writer'
@@ -34,7 +36,11 @@ import { MEMORY_SKILL_ID } from '@/agent/skills/memory'
 // 本地持久化的对话消息（结构子集，调用 AI SDK 时再断言为 ModelMessage）
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
+  // assistant 消息：去掉情绪标签后的文字，用于显示、复制、整理记忆等
   content: string
+  // assistant 消息：模型输出的原文，带着情绪标签（如 [happy]、[short pause]）。
+  // 只在角色扮演阶段的对话历史中使用，让模型照着之前带标签的说法继续；以前的消息没有这个字段，用 content
+  rawContent?: string
   // 不在界面上展示的消息，如触发桌宠主动说话的系统事件
   hidden?: boolean
   // assistant 消息：生成该回复时从长期记忆中想起的事情
@@ -60,6 +66,8 @@ export interface ChatMessage {
   quote?: string
   // user 消息：附带的图片（数据保存在 IndexedDB 中）
   images?: ImageRef[]
+  // user 消息：附带的音频文件（数据保存在 IndexedDB 中，见 utils/audios.ts）
+  audios?: AudioRef[]
 }
 
 export interface SendMessageOptions {
@@ -67,6 +75,8 @@ export interface SendMessageOptions {
   quote?: string
   // 附带的图片，需先通过 addImage 保存
   images?: ImageRef[]
+  // 附带的音频，需先通过 addAudio 保存
+  audios?: AudioRef[]
   // 意图明确时直接调用指定工具，跳过意图识别（如划词工具栏上的按钮）
   directCall?: DirectToolCall
 }
@@ -115,7 +125,11 @@ const SESSION_TITLE_LENGTH = 40
 // 图片本身不发给对话模型（它不一定支持图片），由图片理解技能根据标记读取。
 // withToolLogs：附上每轮的工具调用记录，交给 Agent（意图识别与工具执行）。角色扮演阶段不附上，
 // 以免模型模仿这种格式，把记录写进回复里
-function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: boolean } = {}): ModelMessage[] {
+/**
+ * 会话消息 → 发给模型的消息。
+ * withEmotionTags：桌宠之前的回复使用带情绪标签的原文（角色扮演阶段）；不带时用去掉标签的文字（意图识别、工具执行、检索记忆）
+ */
+function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: boolean, withEmotionTags?: boolean } = {}): ModelMessage[] {
   let latestQuoteIndex = -1
   messages.forEach((message, index) => {
     if (message.quote) latestQuoteIndex = index
@@ -126,20 +140,26 @@ function toModelMessages(messages: ChatMessage[], options: { withToolLogs?: bool
 
     if (message.role === 'user') {
       const images = message.images ?? []
-      let content = message.content || (images.length ? `（发送了 ${images.length} 张图片）` : '')
+      const audios = message.audios ?? []
+      let content = message.content
+        || [images.length && `（发送了 ${images.length} 张图片）`, audios.length && `（发送了 ${audios.length} 个音频）`].filter(Boolean).join('')
       if (message.quote) {
         content = attachQuote(content, index === latestQuoteIndex ? message.quote : truncate(message.quote, HISTORY_ATTACHMENT_LENGTH))
       }
       if (images.length) {
         content = `${content}\n\n${imageMarkers(images.map((image) => image.id))}`
       }
+      if (audios.length) {
+        content = `${content}\n\n${audioMarkers(audios)}`
+      }
       return [{ role: 'user', content }]
     }
 
     const cards = (message.displays ?? [])
       .map((display) => `【已展示给用户的「${display.title}」】\n${truncate(display.content, HISTORY_ATTACHMENT_LENGTH)}`)
+    const text = options.withEmotionTags ? (message.rawContent ?? message.content) : message.content
     // 回复失败或被打断、只保留了执行过程的消息没有内容，部分服务商不接受空的 assistant 消息
-    const content = [message.content, ...cards].filter(Boolean).join('\n\n')
+    const content = [text, ...cards].filter(Boolean).join('\n\n')
       || (message.interrupted ? '（这次回复被用户打断了）' : '（这次回复失败了，没有内容）')
     return [{ role: 'assistant', content: options.withToolLogs ? appendToolLog(content, message.toolLog) : content }]
   })
@@ -274,10 +294,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // 删除消息中引用的图片数据
+  // 删除消息中引用的图片与音频数据
   function removeImagesOf(messages: ChatMessage[]) {
     const ids = messages.flatMap((message) => message.images?.map((image) => image.id) ?? [])
     deleteImages(ids).catch((error) => console.warn('[chat] 删除图片失败：', error))
+    const audioIds = messages.flatMap((message) => message.audios?.map((audio) => audio.id) ?? [])
+    deleteAudios(audioIds).catch((error) => console.warn('[chat] 删除音频失败：', error))
   }
 
   // 重命名会话
@@ -393,14 +415,16 @@ export const useChatStore = defineStore('chat', () => {
     if (turn.type === 'user') {
       const quote = turn.quote?.trim()
       const images = turn.images?.slice(0, MAX_IMAGES)
+      const audios = turn.audios?.slice(0, MAX_AUDIOS)
       session.messages.push({
         role: 'user',
         content: turn.content,
         ...(quote ? { quote: quote.slice(0, MAX_TEXT_LENGTH) } : {}),
         ...(images?.length ? { images } : {}),
+        ...(audios?.length ? { audios } : {}),
       })
       if (session.title === '新对话' && !session.messages.some((m) => m.role === 'assistant')) {
-        session.title = (turn.content || (images?.length ? '图片' : '新对话')).slice(0, SESSION_TITLE_LENGTH)
+        session.title = (turn.content || (images?.length ? '图片' : audios?.length ? audios[0]!.name : '新对话')).slice(0, SESSION_TITLE_LENGTH)
       }
     }
     else {
@@ -417,8 +441,11 @@ export const useChatStore = defineStore('chat', () => {
 
     // 请求消息不包含下面新增的占位回复；系统提示词单独传入，以便附加技能执行结果
     const systemPrompt = session.messages.find((m) => m.role === 'system')?.content ?? personaStore.systemPrompt
-    const dialog = toModelMessages(session.messages)
-    // 交给 Agent 的对话附上之前每轮的工具调用记录，追问时可以直接使用其中的路径等信息
+    // 角色扮演阶段的对话：桌宠之前的回复带着情绪标签，模型才会照着继续使用标签（否则对话一长，标签越用越少）
+    const dialog = toModelMessages(session.messages, { withEmotionTags: true })
+    // 检索记忆用的对话不带标签（标签对语义检索只是干扰）
+    const plainDialog = toModelMessages(session.messages)
+    // 交给 Agent 的对话不带标签，附上之前每轮的工具调用记录，追问时可以直接使用其中的路径等信息
     const agentDialog = toModelMessages(session.messages, { withToolLogs: true })
 
     // 占位的 assistant 消息，随流式响应实时更新其内容；使用 Agent 时同时记录执行过程
@@ -441,7 +468,7 @@ export const useChatStore = defineStore('chat', () => {
       // 记忆读取：根据最新的用户消息检索相关的长期记忆，与意图识别并行进行；检索失败不影响对话。
       // 主动交互时根据事件说明检索，以便说起用户的近况、计划
       const recallPromise = turn.type === 'user' || proactive
-        ? memoryStore.recall(dialog).catch((error) => {
+        ? memoryStore.recall(plainDialog).catch((error) => {
             console.warn('[chat] 检索记忆失败：', error)
             return null
           })
@@ -474,6 +501,11 @@ export const useChatStore = defineStore('chat', () => {
           attachImages: (images) => {
             const userMessage = session.messages[assistantIndex - 1]
             if (userMessage?.role === 'user') userMessage.images = [...(userMessage.images ?? []), ...images]
+          },
+          // 技能读取的音频（如授权文件夹中的音频文件）同样附加到这轮的用户消息上
+          attachAudios: (audios) => {
+            const userMessage = session.messages[assistantIndex - 1]
+            if (userMessage?.role === 'user') userMessage.audios = [...(userMessage.audios ?? []), ...audios]
           },
         })
       }
@@ -536,8 +568,10 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         fullText += delta
-        // 过滤掉情绪标签（以及末尾还没接收完整的半截标签），使其不显示在聊天界面中
-        session.messages[assistantIndex]!.content = stripEmotionTags(fullText, true)
+        const message = session.messages[assistantIndex]!
+        // 显示用的文字过滤掉情绪标签（以及末尾还没接收完整的半截标签）；带标签的原文另存一份，之后作为历史发给模型
+        message.content = stripEmotionTags(fullText, true)
+        message.rawContent = fullText
         session.updatedAt = Date.now()
         onChunkHooks.value.forEach(hook => hook(delta))
       }

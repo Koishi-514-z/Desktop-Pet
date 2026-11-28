@@ -8903,15 +8903,15 @@
       "hair": [
         {
           "File": "Motions_hair_0.json",
-          "Tags": ["happy", "love", "shy", "smug"]
+          "Tags": []
         },
         {
           "File": "Motions_hair_1.json",
-          "Tags": ["happy", "love", "shy", "smug"]
+          "Tags": []
         },
         {
           "File": "Motions_hair_2.json",
-          "Tags": ["happy", "love", "shy", "smug"]
+          "Tags": []
         },
         {
           "File": "Motions_face_1.json",
@@ -8929,27 +8929,27 @@
       "face": [
         {
           "File": "Motions_hair_0.json",
-          "Tags": ["happy", "love", "shy", "smug"]
+          "Tags": []
         },
         {
           "File": "Motions_hair_1.json",
-          "Tags": ["happy", "love", "shy", "smug"]
+          "Tags": []
         },
         {
           "File": "Motions_hair_2.json",
-          "Tags": ["happy", "love", "shy", "smug"]
+          "Tags": []
         },
         {
           "File": "Motions_face_1.json",
-          "Tags": ["happy", "excited"]
+          "Tags": []
         },
         {
           "File": "Motions_face_2.json",
-          "Tags": ["happy", "excited"]
+          "Tags": []
         },
         {
           "File": "Motions_face_3.json",
-          "Tags": ["happy", "excited"]
+          "Tags": []
         }
       ]
     },
@@ -8962,7 +8962,7 @@
       {
         "Name": "expression2.exp3",
         "File": "Expressions_1.json",
-        "Tags": ["surprised", "confused", "sad", "angry", "cry", "sleepy"]
+        "Tags": []
       },
       {
         "Name": "expression3.exp3",
@@ -8987,17 +8987,17 @@
       {
         "Name": "expression7.exp3",
         "File": "Expressions_6.json",
-        "Tags": ["shy", "smug", "surprised", "confused", "thinking"]
+        "Tags": []
       },
       {
         "Name": "expression8.exp3",
         "File": "Expressions_7.json",
-        "Tags": ["thinking"]
+        "Tags": []
       },
       {
         "Name": "expression9.exp3",
         "File": "Expressions_8.json",
-        "Tags": ["sad", "angry", "cry"]
+        "Tags": []
       },
       {
         "Name": "expression10.exp3",
@@ -9012,12 +9012,12 @@
       {
         "Name": "expression12.exp3",
         "File": "Expressions_11.json",
-        "Tags": ["shy", "confused", "sad", "angry", "cry"]
+        "Tags": []
       },
       {
         "Name": "expression13.exp3",
         "File": "Expressions_12.json",
-        "Tags": ["excited", "love", "shy", "smug"]
+        "Tags": []
       },
       {
         "Name": "expression14.exp3",
@@ -9027,12 +9027,12 @@
       {
         "Name": "expression15.exp3",
         "File": "Expressions_14.json",
-        "Tags": ["sad", "angry"]
+        "Tags": []
       },
       {
         "Name": "expression16.exp3",
         "File": "Expressions_15.json",
-        "Tags": ["angry"]
+        "Tags": []
       }
     ]
   },

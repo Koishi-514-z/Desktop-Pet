@@ -70,18 +70,20 @@ describe('本地筛选', () => {
 
   it('两次主动说话之间的间隔：优先级高的短一些，连续被忽略时拉长', () => {
     const spoke = (minutesAgo: number, ignoredStreak = 0) => context({ state: { lastSpokeAt: NOW - minutesAgo * MINUTE, ignoredStreak } })
-    // 适中：30 分钟；主动聊天优先级低，45 分钟
-    expect(reason(checkGate(topic, spoke(40)))).toBe('距离上次主动说话还不到 45 分钟')
-    expect(checkGate(topic, spoke(50))).toEqual({ ok: true })
-    // 提醒吃饭优先级高，15 分钟
-    expect(checkGate(triggerInfo('lunch'), spoke(20))).toEqual({ ok: true })
-    // 连续 2 次没有回应：间隔变成 4 倍
-    expect(reason(checkGate(triggerInfo('lunch'), spoke(20, 2)))).toBe('距离上次主动说话还不到 1 小时（最近 2 次没有得到回应，间隔拉长了）')
+    // 适中：15 分钟；主动聊天优先级低，22.5 分钟
+    expect(reason(checkGate(topic, spoke(20)))).toBe('距离上次主动说话还不到 23 分钟')
+    expect(checkGate(topic, spoke(25))).toEqual({ ok: true })
+    // 提醒吃饭优先级高，7.5 分钟
+    expect(checkGate(triggerInfo('lunch'), spoke(10))).toEqual({ ok: true })
+    // 连续没有回应时只稍微拉长：1 次 1.5 倍，2 次及以上 2 倍
+    expect(reason(checkGate(triggerInfo('lunch'), spoke(10, 1)))).toBe('距离上次主动说话还不到 11 分钟（最近 1 次没有得到回应，间隔拉长了）')
+    expect(reason(checkGate(triggerInfo('lunch'), spoke(10, 3)))).toBe('距离上次主动说话还不到 15 分钟（最近 3 次没有得到回应，间隔拉长了）')
+    expect(checkGate(triggerInfo('lunch'), spoke(16, 3))).toEqual({ ok: true })
     expect(checkGate(topic, { ...spoke(1), force: true })).toEqual({ ok: true })
   })
 
   it('每天的次数有上限', () => {
-    expect(reason(checkGate(topic, context({ state: { spokenToday: 12 } })))).toBe('今天已经主动说了 12 次，到上限了')
-    expect(checkGate(topic, context({ state: { spokenToday: 12 }, settings: { frequency: 'high' } }))).toEqual({ ok: true })
+    expect(reason(checkGate(topic, context({ state: { spokenToday: 24 } })))).toBe('今天已经主动说了 24 次，到上限了')
+    expect(checkGate(topic, context({ state: { spokenToday: 24 }, settings: { frequency: 'high' } }))).toEqual({ ok: true })
   })
 })

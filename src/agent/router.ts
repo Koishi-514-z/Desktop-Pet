@@ -7,10 +7,21 @@ import { parseJsonObject, recentMessages } from '@/agent/utils'
 // 意图识别时参考的最近消息条数（含用户的最新消息）
 const ROUTER_CONTEXT_SIZE = 6
 
+// 最多保留几个步骤、每个步骤最多多少字
+const MAX_STEPS = 8
+const STEP_LENGTH = 100
+
 function parseFlag(value: unknown): boolean | undefined {
   if (value === true || value === 'true') return true
   if (value === false || value === 'false') return false
   return undefined
+}
+
+/** 字符串数组：去掉空白与重复；不是数组时为空 */
+function parseStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const items = value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
+  return [...new Set(items)]
 }
 
 /**
@@ -22,11 +33,16 @@ export function parseRouteDecision(text: string, fallback: boolean): RouteDecisi
   const data = parseJsonObject(text)
   const task = parseFlag(data?.task)
   if (task === undefined) return { task: fallback, reason: '无法解析意图识别结果' }
+  if (!task) return { task, reason: typeof data?.reason === 'string' ? data.reason : '' }
+  const steps = parseStrings(data?.steps).slice(0, MAX_STEPS).map((step) => step.slice(0, STEP_LENGTH))
+  const skills = parseStrings(data?.skills)
   return {
     task,
     reason: typeof data?.reason === 'string' ? data.reason : '',
     // 需要较多步骤的任务允许更多轮的工具调用；只有明确为 true 时才算
-    ...(task && parseFlag(data?.complex) ? { complex: true } : {}),
+    ...(parseFlag(data?.complex) ? { complex: true } : {}),
+    ...(steps.length ? { steps } : {}),
+    ...(skills.length ? { skills } : {}),
   }
 }
 

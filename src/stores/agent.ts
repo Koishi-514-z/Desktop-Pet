@@ -21,6 +21,8 @@ export const useAgentStore = defineStore('agent', () => {
   const disabledSkillIds = useLocalStorage<string[]>('settings/agent/disabledSkillIds', [])
   // 图片理解使用的模型；为 null 时与对话使用同一个模型
   const visionModel = useLocalStorage<ModelChoice | null>('settings/agent/visionModel', null, { serializer: StorageSerializers.object })
+  // 音频理解中「听声音」（分析音乐、环境声、语气等）使用的模型，需要能接收音频输入；为 null 时与对话使用同一个模型
+  const audioModel = useLocalStorage<ModelChoice | null>('settings/agent/audioModel', null, { serializer: StorageSerializers.object })
   // 意图识别（区分闲聊与任务）使用的模型，只需要输出很短的判断结果，适合便宜快速的小模型；为 null 时与对话使用同一个模型
   const routerModel = useLocalStorage<ModelChoice | null>('settings/agent/routerModel', null, { serializer: StorageSerializers.object })
   // 用户选择了「始终允许」的权限类型（如 screen-capture），这些请求不再询问
@@ -68,6 +70,11 @@ export const useAgentStore = defineStore('agent', () => {
     return resolveModelChoice(visionModel.value)
   }
 
+  // 「听声音」使用的模型
+  function resolveAudioModel(): LanguageModel | undefined {
+    return resolveModelChoice(audioModel.value)
+  }
+
   // 意图识别使用的模型
   function resolveRouterModel(): LanguageModel | undefined {
     return resolveModelChoice(routerModel.value)
@@ -77,6 +84,7 @@ export const useAgentStore = defineStore('agent', () => {
     enabled,
     disabledSkillIds,
     visionModel,
+    audioModel,
     routerModel,
     alwaysAllowedPermissions,
     skills,
@@ -85,6 +93,7 @@ export const useAgentStore = defineStore('agent', () => {
     setSkillEnabled,
     getSkillById,
     resolveVisionModel,
+    resolveAudioModel,
     resolveRouterModel,
     isAlwaysAllowed,
     setAlwaysAllowed,

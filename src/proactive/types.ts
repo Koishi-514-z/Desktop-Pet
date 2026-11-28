@@ -232,9 +232,9 @@ export interface FrequencyPreset {
 const MINUTE = 60_000
 
 export const FREQUENCY_PRESETS: Record<Frequency, FrequencyPreset> = {
-  low: { label: '少', minIntervalMs: 60 * MINUTE, dailyLimit: 6, spontaneousScale: 0.5 },
-  normal: { label: '适中', minIntervalMs: 30 * MINUTE, dailyLimit: 12, spontaneousScale: 1 },
-  high: { label: '多', minIntervalMs: 15 * MINUTE, dailyLimit: 24, spontaneousScale: 2 },
+  low: { label: '少', minIntervalMs: 30 * MINUTE, dailyLimit: 12, spontaneousScale: 0.5 },
+  normal: { label: '适中', minIntervalMs: 15 * MINUTE, dailyLimit: 24, spontaneousScale: 1 },
+  high: { label: '多', minIntervalMs: 8 * MINUTE, dailyLimit: 48, spontaneousScale: 2 },
 }
 
 export interface ProactiveSettings {

@@ -82,14 +82,15 @@ async function runTextTask(
   return { display, sourceLength: text.length, truncated }
 }
 
-const textParam = z.string().optional().describe('要处理的文本。处理划词内容时省略，工具会自动读取完整的划词内容')
+const textParam = z.string().optional().describe('要处理的文本：用户发来的文字，或其他工具得到的文字（如转录稿、读出的文件内容）。处理划词内容时省略，工具会自动读取完整的划词内容')
 
 export const selectionSkill: Skill = {
   id: SELECTION_SKILL_ID,
-  name: '划词助手',
-  description: `处理用户划词选中的文字（消息中带有${QUOTE_MARKER}），或用户直接贴在消息里的一段文字：翻译、解释、总结、润色改写、分析代码，以及针对这段文字的提问。`,
+  name: '文字处理',
+  description: `处理一段文字：翻译、解释、总结、润色改写、分析代码，以及针对这段文字的提问。文字可以是用户划词选中的（消息中带有${QUOTE_MARKER}）、直接贴在消息里的，也可以是其他技能得到的（如音频的转录稿、读出的文件或网页内容、图片中提取的文字）。`,
   examples: ['翻译一下', '这段话是什么意思', '帮我总结一下', '润色这段文字', '这段代码有什么问题'],
   instructions: `- 用户划词选中的文字会以「${QUOTE_MARKER}」附在用户消息的末尾。处理划词内容时省略 text 参数，工具会自动读取完整的划词内容；如果用户把文字直接写在消息里，则把这段文字填入 text。
+- 处理其他工具得到的文字时（如先转录音频再翻译、先读文件再总结），把那段文字完整填入 text。
 - 按用户的要求选择工具：翻译用 translate_text，解释或回答关于这段文字的问题用 explain_text，总结用 summarize_text，润色或改写用 polish_text，分析代码用 analyze_code。
 - 翻译时用户指定了目标语言就填写 targetLanguage，否则省略（中文译成英语，其他语言译成简体中文）。
 - 用户对文字提出了具体问题或关注点时，填入 question、focus 或 style 参数。
